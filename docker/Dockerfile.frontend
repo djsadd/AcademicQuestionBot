@@ -1,0 +1,17 @@
+# Build stage
+FROM node:20-alpine AS builder
+WORKDIR /frontend
+
+ARG VITE_API_BASE_URL=http://localhost:8000/api
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
+
+COPY frontend/package.json ./
+RUN npm install
+COPY frontend ./
+RUN VITE_API_BASE_URL=${VITE_API_BASE_URL} npm run build
+
+# Production stage
+FROM nginx:1.25-alpine
+COPY --from=builder /frontend/dist /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
