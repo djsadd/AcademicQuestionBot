@@ -1,21 +1,17 @@
-"""Vector store abstraction backed by Qdrant."""
+"""Vector store implementations backed by Qdrant with an in-memory fallback."""
 from __future__ import annotations
 
 import logging
-import math
 import os
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Sequence
+from typing import Iterable, List, Optional
 
 from qdrant_client import QdrantClient
-from qdrant_client.http import models as qmodels
-from qdrant_client.http.exceptions import (
-    ResponseHandlingException,
-    UnexpectedResponse,
-)
+from qdrant_client.http import models as qdrant_models
+from qdrant_client.http.exceptions import UnexpectedResponse
 
-from .embeddings import VECTOR_SIZE
+from . import embeddings
 from .types import DocumentChunk
 
 logger = logging.getLogger(__name__)
@@ -27,228 +23,332 @@ class VectorSearchResult:
     score: float
 
 
-class VectorStoreUnavailableError(RuntimeError):
-    """Raised when Qdrant is unreachable and fallback is disabled."""
+class InMemoryVectorStore:
+    """Simple in-memory vector store used as a fallback."""
 
+    def __init__(self, vector_size: int) -> None:
+        self._vector_size = vector_size
+        self._items: List[tuple[DocumentChunk, List[float]]] = []
 
-class _InMemoryVectorStore:
-    """Minimal in-memory fallback used when Qdrant is unavailable."""
+    def add(self, chunk: DocumentChunk, vector: List[float]) -> None:
+        normalized = _normalize(_coerce_vector(vector, self._vector_size))
+        self._items.append((chunk, normalized))
 
-    def __init__(self) -> None:
-        self._points: Dict[str, tuple[DocumentChunk, List[float]]] = {}
-
-    def add(self, chunk: DocumentChunk, embedding: Sequence[float]) -> None:
-        self._points[chunk.id] = (chunk, list(embedding))
-
-    def search(
-        self, query_embedding: Sequence[float], *, top_k: int = 3
-    ) -> List[VectorSearchResult]:
-        if not self._points:
+    def search(self, vector: List[float], *, top_k: int = 3) -> List[VectorSearchResult]:
+        if not self._items:
             return []
-        normalized_query = list(query_embedding)
-        query_norm = _vector_norm(normalized_query)
-        if not query_norm:
-            return []
-        scores: List[VectorSearchResult] = []
-        for chunk, vector in self._points.values():
-            score = _cosine_similarity(vector, normalized_query, query_norm)
-            scores.append(VectorSearchResult(chunk=chunk, score=score))
-        scores.sort(key=lambda item: item.score, reverse=True)
-        return scores[:top_k]
+        query_vector = _normalize(_coerce_vector(vector, self._vector_size))
+        results = [
+            VectorSearchResult(chunk=item[0], score=_dot(query_vector, item[1]))
+            for item in self._items
+        ]
+        results.sort(key=lambda item: item.score, reverse=True)
+        return results[:top_k]
 
     def delete_document(self, document_id: str) -> None:
-        if not document_id:
-            return
-        to_remove = [
-            chunk_id
-            for chunk_id, (chunk, _) in self._points.items()
+        self._items = [
+            (chunk, vector)
+            for chunk, vector in self._items
+            if chunk.metadata.get("document_id") != document_id
+        ]
+
+    def list_document_chunks(
+        self,
+        document_id: str,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+    ) -> List[DocumentChunk]:
+        if limit <= 0:
+            return []
+        filtered = [
+            chunk
+            for chunk, _ in self._items
             if chunk.metadata.get("document_id") == document_id
         ]
-        for chunk_id in to_remove:
-            self._points.pop(chunk_id, None)
-
-
-def _vector_norm(vector: Sequence[float]) -> float:
-    return math.sqrt(sum(value * value for value in vector))
-
-
-def _cosine_similarity(
-    a_vector: Sequence[float],
-    b_vector: Sequence[float],
-    b_norm: float,
-) -> float:
-    a_norm = _vector_norm(a_vector)
-    if not a_norm or not b_norm:
-        return 0.0
-    dot = sum(x * y for x, y in zip(a_vector, b_vector))
-    return dot / (a_norm * b_norm)
+        filtered.sort(key=_chunk_sort_key)
+        return filtered[offset : offset + limit]
 
 
 class VectorStore:
-    """Stores embeddings using Qdrant."""
+    """Vector store that prefers Qdrant with an optional in-memory fallback."""
 
-    def __init__(
-        self,
-        *,
-        url: str = "http://localhost:6333",
-        collection_name: str = "academic_documents",
-    ) -> None:
-        self.collection_name = collection_name
-        self.client = QdrantClient(url=url)
-        self.retry_base_delay = float(os.getenv("QDRANT_RETRY_DELAY", "0.2"))
-        self.retry_max_delay = float(os.getenv("QDRANT_RETRY_MAX_DELAY", "2.0"))
-        self.operation_retry_attempts = int(os.getenv("QDRANT_RETRY_ATTEMPTS", "15"))
-        allow_fallback = os.getenv("QDRANT_FALLBACK_ENABLED", "false").lower() in {
-            "1",
-            "true",
-            "yes",
-        }
-        self._fallback_allowed = allow_fallback
-        self._use_fallback = False
-        self._fallback_store: _InMemoryVectorStore | None = None
-        self._collection_ready = False
-        # Don't block backend startup if Qdrant is still booting — retry lazily later.
-        self._ensure_collection(
-            raise_on_failure=False,
-            max_attempts=1,
-            allow_fallback=False,
+    def __init__(self, *, url: str, collection_name: str) -> None:
+        self._collection_name = collection_name
+        self._url = url
+        self._vector_size = embeddings.VECTOR_SIZE
+        self._api_key = os.getenv("QDRANT_API_KEY") or None
+        self._strict = _parse_bool(os.getenv("QDRANT_STRICT", "false"), default=False)
+        self._fallback_enabled = _parse_bool(
+            os.getenv("QDRANT_FALLBACK_ENABLED", "true"), default=True
+        )
+        if self._strict:
+            self._fallback_enabled = False
+        self._retry_attempts = int(os.getenv("QDRANT_RETRY_ATTEMPTS", "5"))
+        self._retry_delay = float(os.getenv("QDRANT_RETRY_DELAY", "0.2"))
+        self._retry_max_delay = float(os.getenv("QDRANT_RETRY_MAX_DELAY", "2.0"))
+
+        self._client: Optional[QdrantClient] = None
+        self._fallback_store = (
+            InMemoryVectorStore(self._vector_size) if self._fallback_enabled else None
         )
 
-    def _ensure_collection(
-        self,
-        *,
-        raise_on_failure: bool = True,
-        max_attempts: int | None = None,
-        allow_fallback: bool = True,
-    ) -> None:
-        """Ensure the collection exists without accidentally dropping data."""
-        if self._collection_ready and not self._use_fallback:
-            return
-        attempts = max(1, max_attempts or self.operation_retry_attempts)
-        if self._use_fallback:
-            # When operating on the fallback store we still probe Qdrant, but
-            # keep retries short to avoid adding noticeable latency.
-            attempts = min(attempts, 2)
-        delay_seconds = max(0.05, self.retry_base_delay)
-        for attempt in range(attempts):
+        self._init_qdrant()
+
+    def add(self, chunk: DocumentChunk, vector: List[float]) -> None:
+        payload = {"content": chunk.content, **chunk.metadata}
+        vector_payload = _coerce_vector(vector, self._vector_size)
+
+        if self._client is None:
+            self._init_qdrant()
+        if self._client is None and self._strict:
+            raise RuntimeError("Qdrant is unavailable; strict mode enabled.")
+        if self._client:
             try:
-                self.client.get_collection(self.collection_name)
-                self._mark_primary_ready()
+                point = qdrant_models.PointStruct(
+                    id=chunk.id,
+                    vector=vector_payload,
+                    payload=payload,
+                )
+                self._with_retry(
+                    lambda: self._client.upsert(
+                        collection_name=self._collection_name,
+                        points=[point],
+                    )
+                )
                 return
-            except UnexpectedResponse as exc:
-                status = getattr(exc, "status_code", None)
-                # Qdrant returns 404 if the collection has never been created.
-                if status == 404:
-                    self._create_collection()
-                    self._mark_primary_ready()
-                    return
-            except ResponseHandlingException:
-                pass
             except Exception:
-                # Covers connection errors while Qdrant container is still booting.
-                pass
-            if attempt < attempts - 1:
-                time.sleep(delay_seconds)
-                delay_seconds = min(delay_seconds * 1.5, self.retry_max_delay)
-        if self._use_fallback and allow_fallback:
-            # We are already serving requests via the fallback store; keep using it.
-            self._collection_ready = True
-            return
-        if self._fallback_allowed and allow_fallback:
-            self._switch_to_fallback(attempts)
-            return
-        if raise_on_failure:
-            raise VectorStoreUnavailableError(
-                f"Unable to verify Qdrant collection '{self.collection_name}'. "
-                "Ensure the qdrant service is reachable or adjust "
-                "QDRANT_RETRY_ATTEMPTS/QDRANT_RETRY_DELAY."
-            )
+                if self._try_reconnect():
+                    return self.add(chunk, vector_payload)
+                if not self._fallback_enabled:
+                    raise
+        if self._fallback_store:
+            self._fallback_store.add(chunk, vector_payload)
 
-    def _create_collection(self) -> None:
-        self.client.recreate_collection(
-            collection_name=self.collection_name,
-            vectors_config=qmodels.VectorParams(
-                size=VECTOR_SIZE,
-                distance=qmodels.Distance.COSINE,
-            ),
-        )
-
-    def add(self, chunk: DocumentChunk, embedding: Sequence[float]) -> None:
-        self._ensure_collection(max_attempts=self.operation_retry_attempts)
-        if self._use_fallback and self._fallback_store:
-            self._fallback_store.add(chunk, embedding)
-            return
-        payload = {
-            "content": chunk.content,
-            "metadata": chunk.metadata,
-        }
-        point = qmodels.PointStruct(id=chunk.id, vector=embedding, payload=payload)
-        self.client.upsert(collection_name=self.collection_name, points=[point])
-
-    def search(
-        self,
-        query_embedding: Sequence[float],
-        *,
-        top_k: int = 3,
-    ) -> List[VectorSearchResult]:
-        """Return the most relevant chunks."""
-        self._ensure_collection(max_attempts=self.operation_retry_attempts)
-        if self._use_fallback and self._fallback_store:
-            return self._fallback_store.search(query_embedding, top_k=top_k)
-        results = self.client.search(
-            collection_name=self.collection_name,
-            query_vector=query_embedding,
-            limit=top_k,
-        )
-
-        formatted_results: List[VectorSearchResult] = []
-        for result in results:
-            payload = result.payload or {}
-            metadata = payload.get("metadata") or {}
-            chunk = DocumentChunk(
-                id=str(result.id),
-                content=payload.get("content", ""),
-                metadata=metadata,
-            )
-            formatted_results.append(
-                VectorSearchResult(chunk=chunk, score=result.score or 0.0)
-            )
-        return formatted_results
+    def search(self, vector: List[float], *, top_k: int = 3) -> List[VectorSearchResult]:
+        vector_payload = _coerce_vector(vector, self._vector_size)
+        if self._client is None:
+            self._init_qdrant()
+        if self._client is None and self._strict:
+            raise RuntimeError("Qdrant is unavailable; strict mode enabled.")
+        if self._client:
+            try:
+                hits = self._with_retry(
+                    lambda: self._client.search(
+                        collection_name=self._collection_name,
+                        query_vector=vector_payload,
+                        limit=top_k,
+                        with_payload=True,
+                    )
+                )
+                return [_to_search_result(hit) for hit in hits]
+            except Exception:
+                if self._try_reconnect():
+                    return self.search(vector_payload, top_k=top_k)
+                if not self._fallback_enabled:
+                    raise
+        if self._fallback_store:
+            return self._fallback_store.search(vector_payload, top_k=top_k)
+        return []
 
     def delete_document(self, document_id: str) -> None:
-        """Delete all vectors associated with a specific document."""
-        if not document_id:
-            return
-        self._ensure_collection(max_attempts=self.operation_retry_attempts)
-        if self._use_fallback and self._fallback_store:
+        if self._client is None:
+            self._init_qdrant()
+        if self._client is None and self._strict:
+            raise RuntimeError("Qdrant is unavailable; strict mode enabled.")
+        if self._client:
+            try:
+                filter_payload = qdrant_models.Filter(
+                    must=[
+                        qdrant_models.FieldCondition(
+                            key="document_id",
+                            match=qdrant_models.MatchValue(value=document_id),
+                        )
+                    ]
+                )
+                self._with_retry(
+                    lambda: self._client.delete(
+                        collection_name=self._collection_name,
+                        points_selector=filter_payload,
+                    )
+                )
+            except Exception:
+                if self._try_reconnect():
+                    return self.delete_document(document_id)
+                if not self._fallback_enabled:
+                    raise
+        if self._fallback_store:
             self._fallback_store.delete_document(document_id)
+
+    def list_document_chunks(self, document_id: str, *, limit: int = 200) -> List[DocumentChunk]:
+        if limit <= 0:
+            return []
+        if self._client is None:
+            self._init_qdrant()
+        if self._client is None and self._strict:
+            raise RuntimeError("Qdrant is unavailable; strict mode enabled.")
+        if self._client:
+            try:
+                filter_payload = qdrant_models.Filter(
+                    must=[
+                        qdrant_models.FieldCondition(
+                            key="document_id",
+                            match=qdrant_models.MatchValue(value=document_id),
+                        )
+                    ]
+                )
+                collected: List[DocumentChunk] = []
+                next_offset = None
+                while len(collected) < limit:
+                    page_limit = min(200, limit - len(collected))
+                    points, next_offset = self._with_retry(
+                        lambda: self._client.scroll(
+                            collection_name=self._collection_name,
+                            scroll_filter=filter_payload,
+                            limit=page_limit,
+                            with_payload=True,
+                            offset=next_offset,
+                        )
+                    )
+                    if not points:
+                        break
+                    collected.extend(_to_document_chunk(point) for point in points)
+                    if not next_offset:
+                        break
+                collected.sort(key=_chunk_sort_key)
+                return collected
+            except Exception:
+                if self._try_reconnect():
+                    return self.list_document_chunks(document_id, limit=limit)
+                if not self._fallback_enabled:
+                    raise
+        if self._fallback_store:
+            return self._fallback_store.list_document_chunks(document_id, limit=limit)
+        return []
+
+    def _init_qdrant(self) -> None:
+        for attempt in range(self._retry_attempts):
+            try:
+                client = QdrantClient(url=self._url, api_key=self._api_key)
+                client.get_collections()
+                self._ensure_collection(client)
+                self._client = client
+                logger.info(
+                    "Qdrant connected: url=%s collection=%s vector_size=%s strict=%s fallback=%s",
+                    self._url,
+                    self._collection_name,
+                    self._vector_size,
+                    self._strict,
+                    self._fallback_enabled,
+                )
+                return
+            except Exception:
+                if attempt == self._retry_attempts - 1:
+                    if self._strict or not self._fallback_enabled:
+                        raise
+                    logger.warning(
+                        "Qdrant unavailable; using fallback store: url=%s collection=%s",
+                        self._url,
+                        self._collection_name,
+                    )
+                    return
+                time.sleep(_next_delay(self._retry_delay, self._retry_max_delay, attempt))
+
+    def _try_reconnect(self) -> bool:
+        if self._client is not None:
+            self._client = None
+        self._init_qdrant()
+        return self._client is not None
+
+    def _ensure_collection(self, client: QdrantClient) -> None:
+        try:
+            exists = client.collection_exists(collection_name=self._collection_name)
+        except Exception:
+            exists = False
+        if exists:
             return
-        condition = qmodels.FieldCondition(
-            key="metadata.document_id",
-            match=qmodels.MatchValue(value=document_id),
-        )
-        filter_selector = qmodels.FilterSelector(
-            filter=qmodels.Filter(must=[condition])
-        )
-        self.client.delete(
-            collection_name=self.collection_name,
-            points_selector=filter_selector,
-        )
-
-    def _mark_primary_ready(self) -> None:
-        if self._use_fallback:
-            logger.info("Qdrant connection restored; using primary vector store.")
-        self._use_fallback = False
-        self._collection_ready = True
-
-    def _switch_to_fallback(self, attempts: int) -> None:
-        if not self._use_fallback:
-            logger.warning(
-                "Qdrant unavailable after %s attempts. "
-                "Falling back to in-memory vector store.",
-                attempts,
+        try:
+            client.create_collection(
+                collection_name=self._collection_name,
+                vectors_config=qdrant_models.VectorParams(
+                    size=self._vector_size,
+                    distance=qdrant_models.Distance.COSINE,
+                ),
             )
-        self._use_fallback = True
-        if not self._fallback_store:
-            self._fallback_store = _InMemoryVectorStore()
-        self._collection_ready = True
+            logger.info("Qdrant collection created: %s", self._collection_name)
+        except UnexpectedResponse as exc:
+            if exc.status_code == 409:
+                logger.info("Qdrant collection already exists: %s", self._collection_name)
+                return
+            raise
+
+    def _with_retry(self, operation):
+        for attempt in range(self._retry_attempts):
+            try:
+                return operation()
+            except Exception:
+                if attempt == self._retry_attempts - 1:
+                    raise
+                time.sleep(_next_delay(self._retry_delay, self._retry_max_delay, attempt))
+
+
+def _to_search_result(hit) -> VectorSearchResult:
+    payload = hit.payload or {}
+    content = payload.get("content", "")
+    metadata = {key: value for key, value in payload.items() if key != "content"}
+    return VectorSearchResult(
+        chunk=DocumentChunk(id=str(hit.id), content=content, metadata=metadata),
+        score=float(getattr(hit, "score", 0.0)),
+    )
+
+
+def _to_document_chunk(point) -> DocumentChunk:
+    payload = point.payload or {}
+    content = payload.get("content", "")
+    metadata = {key: value for key, value in payload.items() if key != "content"}
+    return DocumentChunk(id=str(point.id), content=content, metadata=metadata)
+
+
+def _chunk_sort_key(chunk: DocumentChunk) -> tuple[int, int, str]:
+    index = chunk.metadata.get("chunk_index")
+    offset = chunk.metadata.get("offset")
+    safe_index = int(index) if isinstance(index, int) or (isinstance(index, str) and index.isdigit()) else 0
+    safe_offset = int(offset) if isinstance(offset, int) or (isinstance(offset, str) and offset.isdigit()) else 0
+    return safe_index, safe_offset, chunk.id
+
+
+def _coerce_vector(vector: Iterable[float], size: int) -> List[float]:
+    result = list(vector)
+    if size <= 0:
+        return result
+    if len(result) < size:
+        result.extend([0.0] * (size - len(result)))
+    if len(result) > size:
+        result = result[:size]
+    return result
+
+
+def _dot(left: List[float], right: List[float]) -> float:
+    return sum(a * b for a, b in zip(left, right))
+
+
+def _normalize(vector: List[float]) -> List[float]:
+    norm = sum(value * value for value in vector) ** 0.5
+    if norm == 0:
+        return vector
+    return [value / norm for value in vector]
+
+
+def _next_delay(delay: float, max_delay: float, attempt: int) -> float:
+    return min(max_delay, delay * (2**attempt))
+
+
+def _parse_bool(value: str, *, default: bool = False) -> bool:
+    if value is None:
+        return default
+    normalized = value.strip().lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default

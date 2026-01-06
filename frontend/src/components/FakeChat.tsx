@@ -23,6 +23,7 @@ type ChatMessage = {
   role: "user" | "bot";
   content: string;
   status?: "pending" | "error";
+  details?: ChatResult;
 };
 
 const BOT_PLACEHOLDER = "Получаем ответ...";
@@ -35,6 +36,7 @@ export function FakeChat() {
   const [messages, setMessages] = useState<ChatMessage[]>(() => [
     { id: "intro", role: "bot", content: INTRO_MESSAGE },
   ]);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const requestMeta = useMemo(
     () => ({
@@ -68,6 +70,10 @@ export function FakeChat() {
     );
   };
 
+  const toggleDetails = (id: string) => {
+    setExpandedId((current) => (current === id ? null : id));
+  };
+
   const handleSend = () => {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
@@ -97,6 +103,7 @@ export function FakeChat() {
         replaceMessage(botMessageId, {
           content: result.final_answer || "Нет ответа от агентов.",
           status: undefined,
+          details: result,
         });
       },
       onError: (error) => {
@@ -133,11 +140,38 @@ export function FakeChat() {
               className={`chat-bubble ${message.role === "user" ? "user" : "bot"}${
                 message.status === "pending" ? " pending" : ""
               }${message.status === "error" ? " error" : ""}`}
+              onClick={() => {
+                if (message.role === "bot" && message.details) {
+                  toggleDetails(message.id);
+                }
+              }}
+              role={message.role === "bot" && message.details ? "button" : undefined}
+              tabIndex={message.role === "bot" && message.details ? 0 : undefined}
+              onKeyDown={(event) => {
+                if (
+                  event.key === "Enter" &&
+                  message.role === "bot" &&
+                  message.details
+                ) {
+                  event.preventDefault();
+                  toggleDetails(message.id);
+                }
+              }}
             >
               <span className="bubble-label">
                 {message.role === "user" ? "Пользователь" : "Бот"}
               </span>
               <p>{message.content}</p>
+              {message.role === "bot" && message.details ? (
+                <div
+                  className={`chat-bubble__details ${
+                    expandedId === message.id ? "open" : ""
+                  }`}
+                >
+                  <span className="chat-bubble__details-label">Details JSON</span>
+                  <pre>{JSON.stringify(message.details, null, 2)}</pre>
+                </div>
+              ) : null}
             </div>
           ))}
         </div>

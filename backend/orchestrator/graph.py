@@ -21,11 +21,14 @@ class OrchestratorGraph:
             "documents": ("policy",),
             "admission": ("admission", "policy"),
             "deadline": ("tutor",),
+            "password_reset": ("dean",),
+            "calendar": ("dean",),
         }
         self.agent_descriptions: Dict[str, str] = {
             "tutor": "Academic Tutor Agent",
             "policy": "Academic Policy Agent",
             "admission": "Admission Agent",
+            "dean": "Dean Calendar Agent",
             "validator": "Validator Agent",
         }
         self.default_agents: Sequence[str] = ("tutor",)

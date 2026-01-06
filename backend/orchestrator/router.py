@@ -2,6 +2,7 @@
 from typing import Any, Dict, List
 
 from ..agents.admission import AdmissionAgent
+from ..agents.dean import DeanCalendarAgent
 from ..agents.intent import IntentRouterAgent
 from ..agents.policy import AcademicPolicyAgent
 from ..agents.tutor import AcademicTutorAgent
@@ -18,6 +19,7 @@ class AgentRouter:
         self.tutor_agent = AcademicTutorAgent(name="academic-tutor")
         self.policy_agent = AcademicPolicyAgent(name="academic-policy")
         self.admission_agent = AdmissionAgent(name="admission-agent")
+        self.dean_agent = DeanCalendarAgent(name="dean-calendar")
         self.validator_agent = ValidatorAgent(name="validator")
         self.graph = OrchestratorGraph()
         self.aggregator = ResponseAggregator()
@@ -25,6 +27,7 @@ class AgentRouter:
             "tutor": self.tutor_agent,
             "policy": self.policy_agent,
             "admission": self.admission_agent,
+            "dean": self.dean_agent,
             "validator": self.validator_agent,
         }
         self.intent_step = AgentPlanStep(

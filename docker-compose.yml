@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: docker/Dockerfile
     env_file:
-      - .env.example
+      - .env
     volumes:
       - rag_storage:/app/storage
     ports:
@@ -20,18 +20,31 @@ services:
       context: .
       dockerfile: docker/Dockerfile.frontend
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8000/api}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
     ports:
       - "3000:80"
     depends_on:
       - api
+
+  telegram:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+    env_file:
+      - .env
+    depends_on:
+      - postgresql
+    command:
+      - python
+      - -m
+      - backend.telegram_service.polling
 
   celery:
     build:
       context: .
       dockerfile: docker/Dockerfile.worker
     env_file:
-      - .env.example
+      - .env
     volumes:
       - rag_storage:/app/storage
     depends_on:
@@ -61,4 +74,6 @@ services:
 
 volumes:
   rag_storage:
+    name: academicquestionbot_rag_storage
   qdrant_data:
+    name: academicquestionbot_qdrant_data

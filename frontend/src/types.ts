@@ -6,18 +6,71 @@ export type RagDocument = {
   chunks: number;
   uploaded_at: string;
   metadata: Record<string, unknown>;
+  status?: string;
+  job_id?: string;
+  error?: string | null;
+};
+
+export type RagChunk = {
+  id: string;
+  content: string;
+  metadata: Record<string, unknown>;
 };
 
 export type RagDocumentListResponse = {
   documents: RagDocument[];
 };
 
+export type RagDocumentDetailResponse = {
+  document: RagDocument;
+};
+
+export type RagChunkListResponse = {
+  document_id: string;
+  chunks: RagChunk[];
+};
+
+export type RagJob = {
+  job_id: string;
+  document_id: string | null;
+  status: string;
+  error?: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  original_file: string;
+  stored_file: string;
+  size_bytes: number;
+};
+
+export type RagJobListResponse = {
+  jobs: RagJob[];
+};
+
+export type RagJobResponse = {
+  job: RagJob;
+};
+
 export type RagUploadResponse = {
   status: string;
+  task_id: string;
   document_id: string;
   file_name: string;
   stored_file: string;
-  chunks: number;
+  job_id?: string;
+};
+
+export type RagIngestionStatusResponse = {
+  task_id: string;
+  status: string;
+  result?: {
+    status?: string;
+    document_id?: string;
+    chunks?: number;
+    file_name?: string;
+  };
+  error?: string;
 };
 
 export type ChatContext = {

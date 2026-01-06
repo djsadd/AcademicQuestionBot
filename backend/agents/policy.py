@@ -46,7 +46,7 @@ class AcademicPolicyAgent(BaseAgent):
 
     async def run(self, payload: Dict[str, Any]) -> AgentResult:
         query = payload.get("message") or payload.get("policy") or "академическая политика"
-        related_context = rag_service.search(query, top_k=5)
+        related_context = rag_service.search(query, top_k=5, compress=True)
         guidelines = self._build_guidelines(related_context)
         citations = self._build_citations(related_context)
         explanation = self._compose_answer(query, guidelines, citations)

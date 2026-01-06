@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import embeddings, loader, retriever
+from .compression import compress_context
 from .vector_store import VectorStore
 
 
@@ -138,16 +139,36 @@ class RAGService:
         self._save_manifest()
         return record.to_dict()
 
-    def search(self, query: str, *, top_k: int = 3) -> List[Dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        *,
+        top_k: int = 3,
+        compress: bool = False,
+    ) -> List[Dict[str, Any]]:
         """Retrieve relevant chunks for the provided query."""
         results = retriever.retrieve(query, self.vector_store, top_k=top_k)
-        return [
+        payload = [
             {
                 "content": result.chunk.content,
                 "score": result.score,
                 "metadata": result.chunk.metadata,
             }
             for result in results
+        ]
+        if compress:
+            return compress_context(query, payload)
+        return payload
+
+    def list_document_chunks(self, document_id: str, *, limit: int = 200) -> List[Dict[str, Any]]:
+        chunks = self.vector_store.list_document_chunks(document_id, limit=limit)
+        return [
+            {
+                "id": chunk.id,
+                "content": chunk.content,
+                "metadata": chunk.metadata,
+            }
+            for chunk in chunks
         ]
 
     def _register_document(

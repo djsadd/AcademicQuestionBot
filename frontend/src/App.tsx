@@ -1,17 +1,20 @@
-import { useState } from "react";
+import { HashRouter, NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { RagDocumentDetail } from "./components/RagDocumentDetail";
+import { RagJobs } from "./components/RagJobs";
 import { RagManager } from "./components/RagManager";
 import { FakeChat } from "./components/FakeChat";
+import { MiniApp } from "./components/MiniApp";
 
 const NAV_ITEMS = [
-  { id: "rag", label: "RAG" },
-  { id: "llm", label: "LLM" },
-  { id: "chat", label: "CHAT" },
-  { id: "agents", label: "AGENTS" },
+  { id: "rag", label: "RAG", path: "/rag" },
+  { id: "rag-jobs", label: "JOBS", path: "/rag-jobs" },
+  { id: "llm", label: "LLM", path: "/llm" },
+  { id: "chat", label: "CHAT", path: "/chat" },
+  { id: "agents", label: "AGENTS", path: "/agents" },
+  { id: "miniapp", label: "MINI APP", path: "/mini-app" },
 ] as const;
 
 type PageId = (typeof NAV_ITEMS)[number]["id"];
-
-const DEFAULT_PAGE: PageId = NAV_ITEMS[0].id;
 
 const FEATURE_SECTIONS = [
   {
@@ -52,26 +55,19 @@ const FEATURE_SECTIONS = [
   },
 ] as const;
 
-interface SiteHeaderProps {
-  activePage: PageId;
-  onNavigate: (pageId: PageId) => void;
-}
-
-function SiteHeader({ activePage, onNavigate }: SiteHeaderProps) {
+function SiteHeader() {
   return (
     <header className="site-header">
       <div className="logo">AcademicQuestionBot</div>
       <nav>
         {NAV_ITEMS.map((item) => (
-          <button
+          <NavLink
             key={item.id}
-            type="button"
-            onClick={() => onNavigate(item.id)}
-            className={item.id === activePage ? "active" : undefined}
-            aria-current={item.id === activePage ? "page" : undefined}
+            to={item.path}
+            className={({ isActive }) => (isActive ? "active" : undefined)}
           >
             {item.label}
-          </button>
+          </NavLink>
         ))}
       </nav>
       <a className="ghost docs-link" href="README.MD" target="_blank" rel="noreferrer">
@@ -145,38 +141,57 @@ function FeatureSection({
   );
 }
 
-function PageContent({ pageId }: { pageId: PageId }) {
-  if (pageId === "rag") {
-    return (
-      <>
-        <Hero />
-        <RagManager sectionId="rag" />
-      </>
-    );
-  }
-
-  if (pageId === "chat") {
-    return <FakeChat />;
-  }
-
+function FeaturePage({ pageId }: { pageId: PageId }) {
   const featureSection = FEATURE_SECTIONS.find((section) => section.id === pageId);
+  return featureSection ? <FeatureSection key={featureSection.id} {...featureSection} /> : null;
+}
 
-  if (!featureSection) {
-    return null;
-  }
+function RagPage() {
+  return (
+    <>
+      <Hero />
+      <RagManager sectionId="rag" />
+    </>
+  );
+}
 
-  return <FeatureSection key={featureSection.id} {...featureSection} />;
+function MiniAppPage() {
+  return (
+    <div className="mini-app-page">
+      <main className="mini-app-page__main">
+        <MiniApp />
+      </main>
+    </div>
+  );
+}
+
+function MainLayout() {
+  return (
+    <>
+      <SiteHeader />
+      <main className="page-main">
+        <Outlet />
+      </main>
+    </>
+  );
 }
 
 export default function App() {
-  const [activePage, setActivePage] = useState<PageId>(DEFAULT_PAGE);
-
   return (
-    <>
-      <SiteHeader activePage={activePage} onNavigate={setActivePage} />
-      <main>
-        <PageContent pageId={activePage} />
-      </main>
-    </>
+    <HashRouter>
+      <Routes>
+        <Route element={<MainLayout />}>
+          <Route path="/" element={<Navigate to="/rag" replace />} />
+          <Route path="/rag" element={<RagPage />} />
+          <Route path="/rag/:documentId" element={<RagDocumentDetail />} />
+          <Route path="/rag-jobs" element={<RagJobs />} />
+          <Route path="/llm" element={<FeaturePage pageId="llm" />} />
+          <Route path="/chat" element={<FakeChat />} />
+          <Route path="/agents" element={<FeaturePage pageId="agents" />} />
+        </Route>
+        <Route path="/mini-app" element={<MiniAppPage />} />
+        <Route path="*" element={<Navigate to="/rag" replace />} />
+      </Routes>
+    </HashRouter>
   );
 }

@@ -1,7 +1,12 @@
 FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt ./
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-rus tesseract-ocr-eng tesseract-ocr-kaz poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend ./backend
+COPY docker/entrypoint.sh /entrypoint.sh
 RUN mkdir -p /app/storage/documents
+ENTRYPOINT ["/entrypoint.sh"]
 CMD ["celery", "-A", "backend.workers.tasks:celery_app", "worker", "--loglevel=info"]

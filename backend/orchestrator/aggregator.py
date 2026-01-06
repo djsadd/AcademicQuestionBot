@@ -10,7 +10,7 @@ from .graph import AgentPlanStep
 
 
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "langchain" / "prompts" / "final_answer.txt"
-SYSTEM_PROMPT = "Ты академический ассистент университета. Собери ответ, сохраняя тон и безопасность."
+SYSTEM_PROMPT = "Ты академический ассистент университета Туран-Астана.. Собери ответ исходя только из контекста, сохраняя тон и безопасность."
 
 
 @dataclass

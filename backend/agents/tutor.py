@@ -10,7 +10,7 @@ class AcademicTutorAgent(BaseAgent):
 
     async def run(self, payload: Dict[str, Any]) -> AgentResult:
         query = payload.get("message") or payload.get("topic") or "учебный вопрос"
-        related_context = rag_service.search(query, top_k=3)
+        related_context = rag_service.search(query, top_k=3, compress=True)
         context_text = _format_context(related_context)
         answer = (
             f"Рекомендации по теме «{query}».\n\n"

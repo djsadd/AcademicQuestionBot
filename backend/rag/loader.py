@@ -1,11 +1,15 @@
 """Document loading utilities."""
 from __future__ import annotations
 
+import logging
+import os
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .types import DocumentChunk
+
+logger = logging.getLogger(__name__)
 
 
 def load_file(
@@ -46,7 +50,14 @@ def _extract_text(path: Path) -> str:
         except ImportError as exc:  # pragma: no cover - informative guard
             raise RuntimeError("pypdf is required to parse PDF files") from exc
         reader = PdfReader(str(path))
-        return "\n".join(filter(None, (page.extract_text() or "" for page in reader.pages)))
+        text = "\n".join(filter(None, (page.extract_text() or "" for page in reader.pages)))
+        if text.strip():
+            return text
+        if _ocr_enabled():
+            ocr_text = _ocr_pdf(path)
+            if ocr_text.strip():
+                return ocr_text
+        return text
     if suffix in {".docx", ".doc"}:
         try:
             from docx import Document
@@ -57,6 +68,35 @@ def _extract_text(path: Path) -> str:
 
     # fallback - treat as text
     return path.read_text(encoding="utf-8", errors="ignore")
+
+
+def _ocr_enabled() -> bool:
+    value = os.getenv("OCR_ENABLED", "false").strip().lower()
+    return value in {"1", "true", "yes", "on"}
+
+
+def _ocr_pdf(path: Path) -> str:
+    try:
+        from pdf2image import convert_from_path
+        import pytesseract
+    except ImportError:
+        logger.warning("OCR requested but dependencies are missing (pdf2image, pytesseract).")
+        return ""
+
+    lang = os.getenv("OCR_LANG", "rus+eng")
+    try:
+        images = convert_from_path(str(path))
+    except Exception:
+        logger.warning("OCR failed to render PDF for %s", path)
+        return ""
+
+    extracted: List[str] = []
+    for image in images:
+        try:
+            extracted.append(pytesseract.image_to_string(image, lang=lang))
+        except Exception:
+            continue
+    return "\n".join(part for part in extracted if part)
 
 
 def _chunk_text(
