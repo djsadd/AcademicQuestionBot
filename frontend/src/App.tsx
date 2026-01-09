@@ -4,14 +4,19 @@ import { RagJobs } from "./components/RagJobs";
 import { RagManager } from "./components/RagManager";
 import { FakeChat } from "./components/FakeChat";
 import { MiniApp } from "./components/MiniApp";
+import { PlatonusStatus } from "./components/PlatonusStatus";
+import { TelegramLogin } from "./components/TelegramLogin";
+import { Profile } from "./components/Profile";
+import { authStorage } from "./api/client";
 
 const NAV_ITEMS = [
+  { id: "profile", label: "PROFILE", path: "/profile" },
   { id: "rag", label: "RAG", path: "/rag" },
   { id: "rag-jobs", label: "JOBS", path: "/rag-jobs" },
   { id: "llm", label: "LLM", path: "/llm" },
   { id: "chat", label: "CHAT", path: "/chat" },
   { id: "agents", label: "AGENTS", path: "/agents" },
-  { id: "miniapp", label: "MINI APP", path: "/mini-app" },
+  { id: "platonus", label: "PLATONUS", path: "/platonus" },
 ] as const;
 
 type PageId = (typeof NAV_ITEMS)[number]["id"];
@@ -165,6 +170,16 @@ function MiniAppPage() {
   );
 }
 
+function TelegramLoginPage() {
+  return (
+    <div className="mini-app-page">
+      <main className="mini-app-page__main">
+        <TelegramLogin />
+      </main>
+    </div>
+  );
+}
+
 function MainLayout() {
   return (
     <>
@@ -176,20 +191,31 @@ function MainLayout() {
   );
 }
 
+function RequireAuth({ children }: { children: JSX.Element }) {
+  const token = authStorage.getAccessToken();
+  if (!token) {
+    return <Navigate to="/telegram-login" replace />;
+  }
+  return children;
+}
+
 export default function App() {
   return (
     <HashRouter>
       <Routes>
-        <Route element={<MainLayout />}>
-          <Route path="/" element={<Navigate to="/rag" replace />} />
+        <Route element={<RequireAuth><MainLayout /></RequireAuth>}>
+          <Route path="/" element={<Navigate to="/profile" replace />} />
+          <Route path="/profile" element={<Profile />} />
           <Route path="/rag" element={<RagPage />} />
           <Route path="/rag/:documentId" element={<RagDocumentDetail />} />
           <Route path="/rag-jobs" element={<RagJobs />} />
           <Route path="/llm" element={<FeaturePage pageId="llm" />} />
           <Route path="/chat" element={<FakeChat />} />
           <Route path="/agents" element={<FeaturePage pageId="agents" />} />
+          <Route path="/platonus" element={<PlatonusStatus />} />
         </Route>
         <Route path="/mini-app" element={<MiniAppPage />} />
+        <Route path="/telegram-login" element={<TelegramLoginPage />} />
         <Route path="*" element={<Navigate to="/rag" replace />} />
       </Routes>
     </HashRouter>

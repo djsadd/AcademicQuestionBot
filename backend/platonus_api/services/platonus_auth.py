@@ -132,6 +132,55 @@ def auth(username: str, password: str) -> dict:
             }
         if "деканат" in role_names:
             browser.close()
-            raise RuntimeError("Временно отключено для выбранной роли.")
+            raise RuntimeError("Выбран деканатский аккаунт для неверной роли.")
         browser.close()
-        raise RuntimeError("Роль не поддерживается для входа.")
+        raise RuntimeError("Роль не определилась для текущего аккаунта.")
+
+
+def fetch_token(username: str, password: str) -> dict:
+    browser = None
+    with sync_playwright() as p:
+        try:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.set_default_timeout(60000)
+            page.goto(
+                "https://platonus.tau-edu.kz/mail?type=1", wait_until="domcontentloaded"
+            )
+
+            try:
+                page.wait_for_selector("#login_input", state="visible")
+                page.fill("#login_input", username)
+                page.fill("#pass_input", password)
+            except TimeoutError as exc:
+                raise RuntimeError("Login or password input not available.") from exc
+
+            page.click("#Submit1")
+            page.wait_for_load_state("networkidle")
+
+            cookies = page.context.cookies("https://platonus.tau-edu.kz")
+            cookie_map = {cookie["name"]: cookie["value"] for cookie in cookies}
+            cookie_header = "; ".join(
+                f"{cookie['name']}={cookie['value']}" for cookie in cookies
+            )
+            user_agent = page.evaluate("() => navigator.userAgent")
+            sid_value = cookie_map.get("plt_sid") or cookie_map.get("sid") or ""
+            try:
+                token_value = page.evaluate(
+                    "() => localStorage.getItem('token') || localStorage.getItem('access_token') || ''"
+                )
+            except Error:
+                page.wait_for_load_state("domcontentloaded")
+                token_value = page.evaluate(
+                    "() => localStorage.getItem('token') || localStorage.getItem('access_token') || ''"
+                )
+
+            return {
+                "token": token_value,
+                "cookie": cookie_header,
+                "sid": sid_value,
+                "user_agent": user_agent,
+            }
+        finally:
+            if browser is not None:
+                browser.close()

@@ -1,0 +1,1 @@
+"""Platonus API microservice package."""

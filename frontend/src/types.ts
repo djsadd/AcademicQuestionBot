@@ -89,6 +89,8 @@ export type ChatMetadata = {
 
 export type ChatRequestPayload = {
   user_id: number;
+  telegram_id?: number;
+  person_id?: string | null;
   message: string;
   language: string;
   context: ChatContext;
@@ -124,4 +126,23 @@ export type ChatResult = {
 
 export type ChatResponse = {
   result: ChatResult;
+};
+
+export type ChatHistoryMessage = {
+  id: string;
+  role: "user" | "bot";
+  content: string;
+  created_at: string;
+};
+
+export type ChatHistorySession = {
+  session_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  messages: ChatHistoryMessage[];
+};
+
+export type ChatHistoryResponse = {
+  sessions: ChatHistorySession[];
 };

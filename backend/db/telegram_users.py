@@ -93,6 +93,59 @@ def get_or_create_user(
         }
 
 
+def upsert_user_profile(
+    telegram_id: int,
+    username: str | None,
+    first_name: str | None,
+    last_name: str | None,
+) -> dict:
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO telegram_users (telegram_id, username, first_name, last_name)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (telegram_id) DO UPDATE
+            SET username = COALESCE(EXCLUDED.username, telegram_users.username),
+                first_name = COALESCE(EXCLUDED.first_name, telegram_users.first_name),
+                last_name = COALESCE(EXCLUDED.last_name, telegram_users.last_name),
+                updated_at = NOW()
+            RETURNING telegram_id, platonus_auth, platonus_role, platonus_person_id, platonus_iin;
+            """,
+            (telegram_id, username, first_name, last_name),
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        return {
+            "telegram_id": row[0],
+            "platonus_auth": row[1],
+            "platonus_role": row[2],
+            "platonus_person_id": row[3],
+            "platonus_iin": row[4],
+        }
+
+
+def get_user(telegram_id: int) -> dict | None:
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT telegram_id, platonus_auth, platonus_role, platonus_person_id, platonus_iin
+            FROM telegram_users
+            WHERE telegram_id = %s;
+            """,
+            (telegram_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "telegram_id": row[0],
+            "platonus_auth": row[1],
+            "platonus_role": row[2],
+            "platonus_person_id": row[3],
+            "platonus_iin": row[4],
+        }
+
+
 def set_platonus_auth(
     telegram_id: int,
     value: bool,

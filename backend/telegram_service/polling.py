@@ -67,7 +67,7 @@ def _send_message(
         raise requests.HTTPError(f"{exc} | response={response.text}") from exc
 
 
-def _build_ai_payload(message: str) -> dict:
+def _build_ai_payload(message: str, telegram_id: int | None) -> dict:
     """Prepare minimal chat payload with only query content."""
     return {
         "message": message,
@@ -75,11 +75,12 @@ def _build_ai_payload(message: str) -> dict:
         "topic": None,
         "policy": None,
         "program": None,
+        "telegram_id": telegram_id,
     }
 
 
-def _run_ai_chat(agent_router: AgentRouter, message: str) -> str:
-    payload = _build_ai_payload(message)
+def _run_ai_chat(agent_router: AgentRouter, message: str, telegram_id: int | None) -> str:
+    payload = _build_ai_payload(message, telegram_id)
     result = asyncio.run(agent_router.route(payload))
     return (result or {}).get("final_answer") or "Ответ временно недоступен."
 
@@ -95,7 +96,7 @@ def run() -> None:
     agent_router = AgentRouter()
 
     base_url = f"https://api.telegram.org/bot{token}"
-    mini_app_url = os.getenv("TELEGRAM_MINI_APP_URL", "").strip()
+    mini_app_url = os.getenv("TELEGRAM_MINI_APP_URL", "https://academiq.tau-edu.kz").strip()
     poll_timeout = _get_env_int("TELEGRAM_POLL_TIMEOUT", 20)
     poll_interval = _get_env_float("TELEGRAM_POLL_INTERVAL", 1.0)
 
@@ -192,7 +193,7 @@ def run() -> None:
                     continue
 
                 try:
-                    answer = _run_ai_chat(agent_router, text)
+                    answer = _run_ai_chat(agent_router, text, telegram_id)
                 except Exception as exc:
                     logger.warning("AI chat failed: %s", exc)
                     answer = "Не удалось получить ответ. Попробуйте позже."
