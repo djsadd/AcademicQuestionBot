@@ -2,16 +2,19 @@
 import asyncio
 import logging
 import os
+import re
 import time
 
 import requests
 
 from backend.db.chat_history import (
     ensure_tables as ensure_chat_tables,
+    clear_history_if_limit,
     get_or_create_session,
     save_message,
     touch_session,
 )
+from backend.db import chat_analytics
 from backend.db.telegram_users import ensure_table, get_or_create_user
 from backend.orchestrator.router import AgentRouter
 
@@ -52,8 +55,11 @@ def _send_message(
     chat_id: int,
     text: str,
     reply_markup: dict | None = None,
+    parse_mode: str | None = "HTML",
 ) -> None:
     payload = {"chat_id": chat_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
     if reply_markup:
         payload["reply_markup"] = reply_markup
     response = requests.post(
@@ -65,6 +71,36 @@ def _send_message(
         response.raise_for_status()
     except requests.HTTPError as exc:
         raise requests.HTTPError(f"{exc} | response={response.text}") from exc
+
+
+def _normalize_telegram_html(text: str) -> str:
+    if not text:
+        return text
+    normalized = text
+    normalized = re.sub(r"<\s*br\s*/?>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*/?p\s*>", "\n\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*/?h[1-6]\s*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*li\s*>", "- ", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*/\s*li\s*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*/?ul\s*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*/?ol\s*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*strong\s*>", "<b>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*/\s*strong\s*>", "</b>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*em\s*>", "<i>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*/\s*em\s*>", "</i>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*blockquote\s*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*/\s*blockquote\s*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*code\s*>", "<code>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*/\s*code\s*>", "</code>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*pre\s*>", "<pre>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*/\s*pre\s*>", "</pre>", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<\s*(table|thead|tbody|tr|th|td)[^>]*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"</\s*(table|thead|tbody|tr|th|td)\s*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"</?(span|div|section|article|header|footer|main)[^>]*>", "\n", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"</?(?:a)[^>]*>", "", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(r"<[^>]+>", "", normalized)
+    normalized = re.sub(r"\n{3,}", "\n\n", normalized)
+    return normalized.strip()
 
 
 def _build_ai_payload(message: str, telegram_id: int | None) -> dict:
@@ -79,10 +115,9 @@ def _build_ai_payload(message: str, telegram_id: int | None) -> dict:
     }
 
 
-def _run_ai_chat(agent_router: AgentRouter, message: str, telegram_id: int | None) -> str:
+def _run_ai_chat(agent_router: AgentRouter, message: str, telegram_id: int | None) -> dict:
     payload = _build_ai_payload(message, telegram_id)
-    result = asyncio.run(agent_router.route(payload))
-    return (result or {}).get("final_answer") or "Ответ временно недоступен."
+    return asyncio.run(agent_router.route(payload)) or {}
 
 
 def run() -> None:
@@ -93,6 +128,7 @@ def run() -> None:
 
     ensure_table()
     ensure_chat_tables()
+    chat_analytics.ensure_tables()
     agent_router = AgentRouter()
 
     base_url = f"https://api.telegram.org/bot{token}"
@@ -189,14 +225,48 @@ def run() -> None:
                         content=auth_text,
                     )
                     touch_session(session_id)
-                    _send_message(base_url, chat_id, auth_text, reply_markup)
+                    if clear_history_if_limit(session_id, limit=5):
+                        _send_message(
+                            base_url,
+                            chat_id,
+                            "История чата очищена.",
+                            parse_mode=None,
+                        )
+                    try:
+                        chat_analytics.save_chat_event(
+                            session_id=session_id,
+                            telegram_id=telegram_id,
+                            person_id=user.get("platonus_person_id"),
+                            channel="telegram",
+                            query=text,
+                            response=auth_text,
+                            llm_model=None,
+                            llm_used=False,
+                            llm_error=None,
+                            intents=[],
+                            agents=[],
+                            trace=[],
+                            metadata={"chat_id": chat_id},
+                        )
+                    except Exception as exc:
+                        logger.warning("Chat analytics failed: %s", exc)
+                    _send_message(base_url, chat_id, auth_text, reply_markup, parse_mode=None)
                     continue
 
                 try:
-                    answer = _run_ai_chat(agent_router, text, telegram_id)
+                    result = _run_ai_chat(agent_router, text, telegram_id)
+                    answer = result.get("final_answer") or "Ответ временно недоступен."
                 except Exception as exc:
                     logger.warning("AI chat failed: %s", exc)
                     answer = "Не удалось получить ответ. Попробуйте позже."
+                    result = {
+                        "query": text,
+                        "final_answer": answer,
+                        "intents": [],
+                        "plan": [],
+                        "trace": [],
+                        "llm": {"model": None, "used": False, "error": str(exc)},
+                    }
                 save_message(
                     session_id=session_id,
                     telegram_id=telegram_id,
@@ -205,7 +275,33 @@ def run() -> None:
                     content=answer,
                 )
                 touch_session(session_id)
-                _send_message(base_url, chat_id, answer)
+                if clear_history_if_limit(session_id, limit=5):
+                    _send_message(
+                        base_url,
+                        chat_id,
+                        "История чата очищена.",
+                        parse_mode=None,
+                    )
+                try:
+                    chat_analytics.save_chat_event(
+                        session_id=session_id,
+                        telegram_id=telegram_id,
+                        person_id=user.get("platonus_person_id"),
+                        channel="telegram",
+                        query=text,
+                        response=answer,
+                        llm_model=(result.get("llm") or {}).get("model"),
+                        llm_used=(result.get("llm") or {}).get("used"),
+                        llm_error=(result.get("llm") or {}).get("error"),
+                        intents=result.get("intents"),
+                        agents=result.get("plan"),
+                        trace=result.get("trace"),
+                        metadata={"chat_id": chat_id},
+                    )
+                except Exception as exc:
+                    logger.warning("Chat analytics failed: %s", exc)
+                safe_answer = _normalize_telegram_html(answer)
+                _send_message(base_url, chat_id, safe_answer, parse_mode="HTML")
         except Exception as exc:
             logger.warning("Telegram polling error: %s", exc)
             time.sleep(poll_interval)

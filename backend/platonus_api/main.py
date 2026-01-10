@@ -30,6 +30,43 @@ class PlatonusAuthPayload(BaseModel):
     password: str
 
 
+def _coerce_str(value: object) -> str | None:
+    if isinstance(value, (str, int)):
+        text = str(value).strip()
+        return text or None
+    return None
+
+
+def _extract_fullname(info: object) -> str | None:
+    if isinstance(info, dict):
+        student = info.get("student")
+        if isinstance(student, dict):
+            for key in ("fullName", "fullname", "name"):
+                value = _coerce_str(student.get(key))
+                if value:
+                    return value
+        for key in ("fullName", "fullname", "name"):
+            value = _coerce_str(info.get(key))
+            if value:
+                return value
+    return None
+
+
+def _extract_status_name(info: object) -> str | None:
+    if isinstance(info, dict):
+        student = info.get("student")
+        if isinstance(student, dict):
+            for key in ("statusName", "status_name", "status"):
+                value = _coerce_str(student.get(key))
+                if value:
+                    return value
+        for key in ("statusName", "status_name", "status"):
+            value = _coerce_str(info.get(key))
+            if value:
+                return value
+    return None
+
+
 @app.on_event("startup")
 async def startup_event() -> None:
     await token_manager.start()
@@ -84,4 +121,6 @@ async def authenticate(payload: PlatonusAuthPayload) -> dict:
         "role": result.get("role"),
         "person_id": result.get("person_id"),
         "iin": result.get("iin"),
+        "fullname": _extract_fullname(result.get("info")),
+        "statusName": _extract_status_name(result.get("info")),
     }

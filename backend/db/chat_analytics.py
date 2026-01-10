@@ -168,3 +168,32 @@ def fetch_chat_history(telegram_id: int) -> list[dict[str, Any]]:
     sessions_list = list(sessions.values())
     sessions_list.sort(key=lambda item: item["updated_at"], reverse=True)
     return sessions_list
+
+
+def fetch_session_history(session_id: str, limit: int = 20) -> list[dict[str, Any]]:
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT query, response, created_at
+            FROM chat_analytics
+            WHERE session_id = %s
+            ORDER BY created_at DESC
+            LIMIT %s;
+            """,
+            (session_id, limit),
+        )
+        rows = cursor.fetchall()
+
+    rows.reverse()
+    history: list[dict[str, Any]] = []
+    for query, response, created_at in rows:
+        timestamp = created_at.isoformat()
+        if query:
+            history.append(
+                {"role": "user", "content": query, "created_at": timestamp}
+            )
+        if response:
+            history.append(
+                {"role": "assistant", "content": response, "created_at": timestamp}
+            )
+    return history

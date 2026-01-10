@@ -69,6 +69,8 @@ async def handle_chat(payload: ChatPayload, authorization: str | None = Header(d
         router_payload["user_id"] = telegram_id
     if person_id:
         router_payload["person_id"] = person_id
+    if session_id:
+        router_payload["history"] = chat_analytics.fetch_session_history(session_id)
 
     response = await agent_router.route(router_payload)
 

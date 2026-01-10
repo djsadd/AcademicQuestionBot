@@ -18,11 +18,12 @@ body {
   margin: 0;
   min-height: 100vh;
   background: linear-gradient(180deg, #f8fafc 0%, #e2e8f0 100%);
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 #root {
   min-height: 100vh;
+  height: 100vh;
 }
 
 .site-header {
@@ -111,6 +112,8 @@ body {
   display: flex;
   flex-direction: column;
   gap: 2rem;
+  height: calc(100vh - 72px);
+  overflow: hidden;
 }
 
 .hero {
@@ -451,7 +454,7 @@ td {
   grid-template-columns: minmax(220px, 300px) minmax(0, 1fr);
   gap: 0;
   align-items: stretch;
-  min-height: calc(100vh - 120px);
+  height: 100%;
   background: #ffffff;
   border-radius: 0;
   width: 100vw;
@@ -483,6 +486,7 @@ td {
   min-height: 70vh;
   border-right: 1px solid #e2e8f0;
   transition: padding 0.25s ease, border-color 0.25s ease;
+  overflow: hidden;
 }
 
 .chat-sidebar__content {
@@ -504,15 +508,69 @@ td {
   gap: 0.5rem;
 }
 
-.chat-sidebar .eyebrow {
-  color: #64748b;
-}
-
 .chat-sidebar__header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
+  justify-content: flex-end;
+}
+
+.chat-sidebar__primary {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.chat-sidebar__new-chat {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
+  border-radius: 14px;
+  padding: 0.6rem 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+
+.chat-sidebar__new-chat:hover,
+.chat-sidebar__new-chat:focus-visible {
+  background: #f8fafc;
+  border-color: #cbd5f5;
+}
+
+.chat-sidebar__new-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: currentColor;
+  stroke-width: 1.6;
+}
+
+.chat-sidebar__search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 0.55rem 0.75rem;
+  background: #f8fafc;
+}
+
+.chat-sidebar__search input {
+  border: none;
+  outline: none;
+  background: transparent;
+  flex: 1;
+  font-size: 0.9rem;
+  color: #0f172a;
+}
+
+.chat-sidebar__search-icon svg {
+  width: 18px;
+  height: 18px;
+  stroke: #64748b;
+  stroke-width: 1.6;
 }
 
 .chat-sidebar__list {
@@ -665,7 +723,8 @@ td {
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
-  min-height: 70vh;
+  min-height: 0;
+  height: 100%;
 }
 
 .fake-chat__header {

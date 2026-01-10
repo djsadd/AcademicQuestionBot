@@ -3,10 +3,12 @@ from fastapi import FastAPI
 
 from backend.db.chat_history import (
     ensure_tables as ensure_chat_tables,
+    clear_history_if_limit,
     get_or_create_session,
     save_message,
     touch_session,
 )
+from backend.db import chat_analytics
 
 app = FastAPI(title="Academic Question Bot Telegram Service")
 
@@ -32,6 +34,7 @@ def _extract_message(payload: dict) -> tuple[int | None, int | None, str | None]
 @app.on_event("startup")
 async def startup_event() -> None:
     ensure_chat_tables()
+    chat_analytics.ensure_tables()
 
 
 @app.get("/health")
@@ -58,4 +61,23 @@ async def webhook(payload: dict) -> dict:
             content=text,
         )
         touch_session(session_id)
+        clear_history_if_limit(session_id, limit=5)
+        try:
+            chat_analytics.save_chat_event(
+                session_id=session_id,
+                telegram_id=telegram_id,
+                person_id=None,
+                channel="telegram",
+                query=text,
+                response=text,
+                llm_model=None,
+                llm_used=False,
+                llm_error=None,
+                intents=[],
+                agents=[],
+                trace=[],
+                metadata={"chat_id": chat_id, "source": "telegram_webhook_echo"},
+            )
+        except Exception:
+            pass
     return {"status": "ok", "chat_id": chat_id, "echo": text}

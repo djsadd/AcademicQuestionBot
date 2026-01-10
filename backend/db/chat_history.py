@@ -131,3 +131,27 @@ def save_message(
         )
         conn.commit()
     return message_id
+
+
+def clear_history_if_limit(session_id: str, limit: int = 5) -> bool:
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT COUNT(*)
+            FROM telegram_messages
+            WHERE session_id = %s;
+            """,
+            (session_id,),
+        )
+        count = cursor.fetchone()[0]
+        if count < limit:
+            return False
+        cursor.execute(
+            """
+            DELETE FROM telegram_messages
+            WHERE session_id = %s;
+            """,
+            (session_id,),
+        )
+        conn.commit()
+    return True

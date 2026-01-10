@@ -201,7 +201,9 @@ export function FakeChat() {
   const [storageKey, setStorageKey] = useState(() => buildStorageKey(null));
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [highlightedChatId, setHighlightedChatId] = useState<string | null>(null);
+  const [searchValue, setSearchValue] = useState("");
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const highlightTimeoutRef = useRef<number | null>(null);
   const [chatState, setChatState] = useState<ChatHistoryState>(() => {
     if (typeof window === "undefined") {
@@ -228,6 +230,17 @@ export function FakeChat() {
         new Date(second.updatedAt).getTime() - new Date(first.updatedAt).getTime()
     );
   }, [chatState.chats]);
+
+  const filteredChats = useMemo(() => {
+    const query = searchValue.trim().toLowerCase();
+    if (!query) return sortedChats;
+    return sortedChats.filter((chat) => {
+      const titleMatch = chat.title.toLowerCase().includes(query);
+      const lastMessage = chat.messages[chat.messages.length - 1];
+      const preview = lastMessage?.content ?? "";
+      return titleMatch || preview.toLowerCase().includes(query);
+    });
+  }, [searchValue, sortedChats]);
 
   const requestMeta = useMemo(() => {
     return {
@@ -500,34 +513,51 @@ export function FakeChat() {
       <aside className="chat-sidebar" aria-hidden={!isSidebarOpen}>
         <div className="chat-sidebar__content">
           <div className="chat-sidebar__header">
-            <div className="chat-sidebar__actions">
-              <button
-                type="button"
-                className="icon-button"
-                onClick={handleNewChat}
-                aria-label="New chat"
-              >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <circle cx="12" cy="12" r="8" fill="none" />
-                <line x1="12" y1="8.5" x2="12" y2="15.5" />
-                <line x1="8.5" y1="12" x2="15.5" y2="12" />
-              </svg>
-                </button>
-              <button
-                type="button"
-                className="icon-button"
-                onClick={() => setIsSidebarOpen(false)}
-                aria-label="Collapse history"
-              >
+            <button
+              type="button"
+              className="icon-button icon-button--ghost"
+              onClick={() => setIsSidebarOpen(false)}
+              aria-label="Collapse history"
+            >
               <svg viewBox="0 0 24 24" aria-hidden="true">
                 <rect x="3" y="5" width="18" height="14" rx="3" fill="none" />
                 <line x1="9" y1="5" x2="9" y2="19" />
               </svg>
             </button>
-            </div>
+          </div>
+          <div className="chat-sidebar__primary">
+            <button
+              type="button"
+              className="chat-sidebar__new-chat"
+              onClick={handleNewChat}
+            >
+              <span className="chat-sidebar__new-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="12" cy="12" r="8" fill="none" />
+                  <line x1="12" y1="8.5" x2="12" y2="15.5" />
+                  <line x1="8.5" y1="12" x2="15.5" y2="12" />
+                </svg>
+              </span>
+              Новый чат
+            </button>
+            <label className="chat-sidebar__search">
+              <span className="chat-sidebar__search-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24">
+                  <circle cx="11" cy="11" r="6" fill="none" />
+                  <line x1="15.5" y1="15.5" x2="20" y2="20" />
+                </svg>
+              </span>
+              <input
+                ref={searchRef}
+                type="search"
+                value={searchValue}
+                onChange={(event) => setSearchValue(event.target.value)}
+                placeholder="Поиск в чатах"
+              />
+            </label>
           </div>
           <div className="chat-sidebar__list">
-            {sortedChats.map((chat) => {
+            {filteredChats.map((chat) => {
               const lastMessage = chat.messages[chat.messages.length - 1];
               const preview = lastMessage?.content
                 ? stripHtml(lastMessage.content).slice(0, 64)
@@ -578,8 +608,11 @@ export function FakeChat() {
           <button
             type="button"
             className="icon-button"
-            onClick={() => inputRef.current?.focus()}
-            aria-label="Focus input"
+            onClick={() => {
+              setIsSidebarOpen(true);
+              window.setTimeout(() => searchRef.current?.focus(), 0);
+            }}
+            aria-label="Search chats"
           >
             <svg viewBox="0 0 24 24" aria-hidden="true">
               <circle cx="11" cy="11" r="6" fill="none" />

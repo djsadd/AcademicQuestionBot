@@ -167,6 +167,7 @@ class ResponseAggregator:
         citations_text = self._format_citations(citations)
         answers_text = "\n---\n".join(answers) or "нет промежуточных ответов"
         intents_text = ", ".join(intents.get("intents", []) or ["general"])
+        history_text = self._format_history(user_payload.get("history"))
 
         return self.prompt_template.format(
             question=user_payload.get("message", ""),
@@ -175,6 +176,7 @@ class ResponseAggregator:
             context=context_text,
             agent_answers=answers_text,
             citations=citations_text,
+            history=history_text,
         )
 
     def _format_context(self, context: List[Dict[str, Any]]) -> str:
@@ -191,6 +193,18 @@ class ResponseAggregator:
                 prefix += f" (score={float(score):.2f})"
             lines.append(f"{prefix} {content[:400].strip()}")
         return "\n".join(lines)
+
+    def _format_history(self, history: Any) -> str:
+        if not history:
+            return "- Р?РчС' РёС?С'Р?С?РёРё"
+        lines: List[str] = []
+        for item in history:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role") or "unknown"
+            content = item.get("content") or ""
+            lines.append(f"- {role}: {content}")
+        return "\n".join(lines) if lines else "- Р?РчС' РёС?С'Р?С?РёРё"
 
     def _format_citations(self, citations: List[Dict[str, Any]]) -> str:
         if not citations:

@@ -58,6 +58,8 @@ async def telegram_auth(payload: TelegramAuthPayload) -> dict:
             "telegram_id": telegram_id,
             "person_id": user.get("platonus_person_id"),
             "iin": user.get("platonus_iin"),
+            "fullname": user.get("platonus_fullname"),
+            "statusName": user.get("platonus_status_name"),
             "role": user.get("platonus_role"),
         }
 
@@ -79,12 +81,16 @@ async def telegram_auth(payload: TelegramAuthPayload) -> dict:
         role=result.get("role"),
         person_id=result.get("person_id"),
         iin=result.get("iin"),
+        fullname=result.get("fullname"),
+        status_name=result.get("statusName"),
     )
     return {
         "status": "ok",
         "telegram_id": telegram_id,
         "person_id": result.get("person_id"),
         "iin": result.get("iin"),
+        "fullname": result.get("fullname"),
+        "statusName": result.get("statusName"),
         "role": result.get("role"),
     }
 
@@ -124,4 +130,6 @@ async def telegram_login(payload: TelegramLoginPayload) -> dict:
         "role": user["platonus_role"],
         "person_id": user["platonus_person_id"],
         "iin": user["platonus_iin"],
+        "fullname": user.get("platonus_fullname"),
+        "statusName": user.get("platonus_status_name"),
     }

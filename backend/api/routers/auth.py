@@ -97,6 +97,8 @@ async def telegram_login(payload: TelegramLoginPayload) -> dict:
             "role": user["platonus_role"],
             "person_id": user["platonus_person_id"],
             "iin": user["platonus_iin"],
+            "fullname": user.get("platonus_fullname"),
+            "statusName": user.get("platonus_status_name"),
         },
     }
 
@@ -159,5 +161,7 @@ async def auth_me(authorization: str | None = Header(default=None)) -> dict:
             "role": user["platonus_role"],
             "person_id": user["platonus_person_id"],
             "iin": user["platonus_iin"],
+            "fullname": user.get("platonus_fullname"),
+            "statusName": user.get("platonus_status_name"),
         },
     }
