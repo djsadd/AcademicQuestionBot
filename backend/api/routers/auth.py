@@ -3,16 +3,16 @@ from __future__ import annotations
 
 import os
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from ...db import auth_tokens
-from ...db.telegram_users import get_user, upsert_user_profile
+from ...db.telegram_users import upsert_user_profile
 from ...services.auth_tokens import (
     build_access_token,
     build_refresh_ttl_seconds,
-    decode_access_token,
 )
+from ...services.permissions import get_current_user
 from ...services.telegram_login import verify_login_payload
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -48,15 +48,6 @@ def _get_login_max_age() -> int | None:
     except ValueError:
         value = 86400
     return None if value <= 0 else value
-
-
-def _extract_bearer_token(authorization: str | None) -> str:
-    if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header missing.")
-    parts = authorization.split()
-    if len(parts) != 2 or parts[0].lower() != "bearer":
-        raise HTTPException(status_code=401, detail="Invalid authorization header.")
-    return parts[1]
 
 
 @router.post("/telegram")
@@ -99,6 +90,8 @@ async def telegram_login(payload: TelegramLoginPayload) -> dict:
             "iin": user["platonus_iin"],
             "fullname": user.get("platonus_fullname"),
             "statusName": user.get("platonus_status_name"),
+            "email": user.get("platonus_email"),
+            "birthDate": user.get("platonus_birth_date"),
         },
     }
 
@@ -136,23 +129,7 @@ async def logout(payload: RefreshPayload) -> dict:
 
 
 @router.get("/me")
-async def auth_me(authorization: str | None = Header(default=None)) -> dict:
-    token = _extract_bearer_token(authorization)
-    try:
-        payload = decode_access_token(token)
-    except Exception:
-        raise HTTPException(status_code=401, detail="Access token invalid.")
-    telegram_id = payload.get("sub")
-    if not telegram_id:
-        raise HTTPException(status_code=401, detail="Access token invalid.")
-    try:
-        telegram_id_int = int(telegram_id)
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Access token invalid.")
-
-    user = get_user(telegram_id_int)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found.")
+async def auth_me(user: dict = Depends(get_current_user)) -> dict:
     return {
         "status": "ok",
         "user": {
@@ -163,5 +140,7 @@ async def auth_me(authorization: str | None = Header(default=None)) -> dict:
             "iin": user["platonus_iin"],
             "fullname": user.get("platonus_fullname"),
             "statusName": user.get("platonus_status_name"),
+            "email": user.get("platonus_email"),
+            "birthDate": user.get("platonus_birth_date"),
         },
     }

@@ -5,13 +5,14 @@ import json
 import uuid
 from typing import Dict, Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from ...rag.service import rag_service
 from ...db import rag_documents
 from ...workers.tasks import celery_app, ingest_documents
+from ...services.permissions import require_admin
 
-router = APIRouter(prefix="/rag", tags=["rag"])
+router = APIRouter(prefix="/rag", tags=["rag"], dependencies=[Depends(require_admin)])
 
 
 @router.post("/documents/upload")

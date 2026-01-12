@@ -67,6 +67,36 @@ def _extract_status_name(info: object) -> str | None:
     return None
 
 
+def _extract_email(info: object) -> str | None:
+    if isinstance(info, dict):
+        student = info.get("student")
+        if isinstance(student, dict):
+            for key in ("mail", "email", "e_mail"):
+                value = _coerce_str(student.get(key))
+                if value:
+                    return value
+        for key in ("mail", "email", "e_mail"):
+            value = _coerce_str(info.get(key))
+            if value:
+                return value
+    return None
+
+
+def _extract_birth_date(info: object) -> str | None:
+    if isinstance(info, dict):
+        student = info.get("student")
+        if isinstance(student, dict):
+            for key in ("birthDate", "birth_date", "dateOfBirth"):
+                value = _coerce_str(student.get(key))
+                if value:
+                    return value
+        for key in ("birthDate", "birth_date", "dateOfBirth"):
+            value = _coerce_str(info.get(key))
+            if value:
+                return value
+    return None
+
+
 @app.on_event("startup")
 async def startup_event() -> None:
     await token_manager.start()
@@ -123,4 +153,6 @@ async def authenticate(payload: PlatonusAuthPayload) -> dict:
         "iin": result.get("iin"),
         "fullname": _extract_fullname(result.get("info")),
         "statusName": _extract_status_name(result.get("info")),
+        "email": _extract_email(result.get("info")),
+        "birthDate": _extract_birth_date(result.get("info")),
     }

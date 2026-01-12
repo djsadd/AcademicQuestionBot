@@ -13,6 +13,12 @@ def _extract_iin(info: Any) -> str | None:
         value = info.get(key)
         if isinstance(value, (str, int)):
             return str(value).strip()
+    student = info.get("student")
+    if isinstance(student, dict):
+        for key in ("iin", "IIN", "iinNumber", "iin_number"):
+            value = student.get(key)
+            if isinstance(value, (str, int)):
+                return str(value).strip()
     return None
 
 

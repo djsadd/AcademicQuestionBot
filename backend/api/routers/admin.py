@@ -1,14 +1,15 @@
 """Admin endpoints for operational tasks."""
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
 from ...services.platonus_client import (
     fetch_platonus_session_status,
     fetch_student_academic_calendar,
 )
+from ...services.permissions import require_admin
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 
 @router.get("/health")

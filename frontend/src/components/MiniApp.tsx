@@ -1,4 +1,5 @@
 ﻿import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
 
 const TRANSLATIONS = {
@@ -11,31 +12,31 @@ const TRANSLATIONS = {
     submit: "Кіру",
     submitting: "Тексерілуде...",
     statusMissingTg: "Telegram қолданушысы табылмады. Форманы бот арқылы ашыңыз.",
-    statusDone: "Рұқсат беру аяқталды. Ботқа қайта оралыңыз.",
+    statusDone: "Авторизация сәтті. Ботты қолдана аласыз және сайтқа кіре аласыз: https://academiq.tau-edu.kz/",
     statusFailed: "Авторизация сәтсіз аяқталды.",
   },
   ru: {
-    login: "Логин",
+    login: "Логин Platonus",
     password: "Пароль",
     loginPlaceholder: "student.login",
-    passwordPlaceholder: "********",
+    passwordPlaceholder: "Пароль от Platonus",
     agree: "Я принимаю правила и политику конфиденциальности.",
     submit: "Войти",
     submitting: "Проверяем...",
     statusMissingTg: "Telegram пользователь не найден. Откройте форму из бота.",
-    statusDone: "Авторизация завершена. Вернитесь в бота.",
+    statusDone: "Авторизация успешна. Можно пользоваться ботом и зайти на сайт https://academiq.tau-edu.kz/",
     statusFailed: "Ошибка авторизации.",
   },
   en: {
-    login: "Login",
+    login: "Platonus login",
     password: "Password",
     loginPlaceholder: "student.login",
-    passwordPlaceholder: "********",
+    passwordPlaceholder: "Platonus password",
     agree: "I agree to the rules and privacy policy.",
     submit: "Sign in",
     submitting: "Checking...",
     statusMissingTg: "Telegram user not found. Open this form from the bot.",
-    statusDone: "Authorization completed. Return to the bot.",
+    statusDone: "Authorization completed. You can use the bot and visit https://academiq.tau-edu.kz/",
     statusFailed: "Authorization failed.",
   },
 } as const;
@@ -43,6 +44,7 @@ const TRANSLATIONS = {
 type Language = keyof typeof TRANSLATIONS;
 
 export function MiniApp() {
+  const navigate = useNavigate();
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [agreed, setAgreed] = useState(false);
@@ -142,6 +144,14 @@ export function MiniApp() {
         agreed,
       }));
       setStatus(t.statusDone);
+      const webApp = (window as any)?.Telegram?.WebApp;
+      window.setTimeout(() => {
+        if (webApp?.close) {
+          webApp.close();
+          return;
+        }
+        navigate("/chat");
+      }, 700);
     } catch (error) {
       const message = error instanceof Error ? error.message : t.statusFailed;
       setStatus(message);
@@ -153,6 +163,13 @@ export function MiniApp() {
   return (
     <section className="mini-app">
       <div className="mini-app__card">
+        <div className="mini-app__head">
+          <p className="mini-app__eyebrow">Academic Question Bot</p>
+          <h1 className="mini-app__title">Platonus access</h1>
+          <p className="mini-app__subtitle">
+            Подключите студенческий профиль, чтобы открыть чат и академические сервисы.
+          </p>
+        </div>
         <div className="mini-app__lang">
           <button
             type="button"
@@ -221,3 +238,4 @@ export function MiniApp() {
     </section>
   );
 }
+

@@ -1,4 +1,5 @@
-import { HashRouter, NavLink, Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { HashRouter, NavLink, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { RagDocumentDetail } from "./components/RagDocumentDetail";
 import { RagJobs } from "./components/RagJobs";
 import { RagManager } from "./components/RagManager";
@@ -7,7 +8,7 @@ import { MiniApp } from "./components/MiniApp";
 import { PlatonusStatus } from "./components/PlatonusStatus";
 import { TelegramLogin } from "./components/TelegramLogin";
 import { Profile } from "./components/Profile";
-import { authStorage } from "./api/client";
+import { apiClient, authStorage } from "./api/client";
 
 const NAV_ITEMS = [
   { id: "profile", label: "PROFILE", path: "/profile" },
@@ -20,6 +21,29 @@ const NAV_ITEMS = [
 ] as const;
 
 type PageId = (typeof NAV_ITEMS)[number]["id"];
+type AdminOnlyId = "rag" | "rag-jobs" | "llm" | "agents" | "platonus";
+
+const ADMIN_ONLY_IDS: Set<AdminOnlyId> = new Set([
+  "rag",
+  "rag-jobs",
+  "llm",
+  "agents",
+  "platonus",
+]);
+
+const ADMIN_ROLES = new Set([
+  "admin",
+  "administrator",
+  "superuser",
+  "staff",
+  "dean",
+  "deanery",
+]);
+
+const isAdminRole = (role?: string | null) => {
+  if (!role) return false;
+  return ADMIN_ROLES.has(role.trim().toLowerCase());
+};
 
 const FEATURE_SECTIONS = [
   {
@@ -60,12 +84,16 @@ const FEATURE_SECTIONS = [
   },
 ] as const;
 
-function SiteHeader() {
+function SiteHeader({ isAdmin }: { isAdmin: boolean }) {
+  const navItems = useMemo(
+    () => NAV_ITEMS.filter((item) => !ADMIN_ONLY_IDS.has(item.id as AdminOnlyId) || isAdmin),
+    [isAdmin],
+  );
   return (
     <header className="site-header">
       <div className="logo">AcademicQuestionBot</div>
       <nav>
-        {NAV_ITEMS.map((item) => (
+        {navItems.map((item) => (
           <NavLink
             key={item.id}
             to={item.path}
@@ -180,11 +208,13 @@ function TelegramLoginPage() {
   );
 }
 
-function MainLayout() {
+function MainLayout({ isAdmin }: { isAdmin: boolean }) {
+  const location = useLocation();
+  const isChatPage = location.pathname === "/chat";
   return (
     <>
-      <SiteHeader />
-      <main className="page-main">
+      <SiteHeader isAdmin={isAdmin} />
+      <main className={`page-main${isChatPage ? " page-main--no-scroll" : ""}`}>
         <Outlet />
       </main>
     </>
@@ -199,24 +229,74 @@ function RequireAuth({ children }: { children: JSX.Element }) {
   return children;
 }
 
+function RequireAdmin({ isAdmin, children }: { isAdmin: boolean; children: JSX.Element }) {
+  if (!isAdmin) {
+    return <Navigate to="/profile" replace />;
+  }
+  return children;
+}
+
 export default function App() {
+  const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const token = authStorage.getAccessToken();
+    if (!token) {
+      setIsAdmin(false);
+      return;
+    }
+    let active = true;
+    apiClient
+      .get<{ status: string; user: { role?: string | null } }>("/auth/me")
+      .then((response) => {
+        if (!active) return;
+        setIsAdmin(isAdminRole(response.user.role ?? null));
+      })
+      .catch(() => {
+        if (active) {
+          setIsAdmin(false);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
   return (
     <HashRouter>
       <Routes>
-        <Route element={<RequireAuth><MainLayout /></RequireAuth>}>
+        <Route element={<RequireAuth><MainLayout isAdmin={isAdmin} /></RequireAuth>}>
           <Route path="/" element={<Navigate to="/profile" replace />} />
           <Route path="/profile" element={<Profile />} />
-          <Route path="/rag" element={<RagPage />} />
-          <Route path="/rag/:documentId" element={<RagDocumentDetail />} />
-          <Route path="/rag-jobs" element={<RagJobs />} />
-          <Route path="/llm" element={<FeaturePage pageId="llm" />} />
+          <Route
+            path="/rag"
+            element={<RequireAdmin isAdmin={isAdmin}><RagPage /></RequireAdmin>}
+          />
+          <Route
+            path="/rag/:documentId"
+            element={<RequireAdmin isAdmin={isAdmin}><RagDocumentDetail /></RequireAdmin>}
+          />
+          <Route
+            path="/rag-jobs"
+            element={<RequireAdmin isAdmin={isAdmin}><RagJobs /></RequireAdmin>}
+          />
+          <Route
+            path="/llm"
+            element={<RequireAdmin isAdmin={isAdmin}><FeaturePage pageId="llm" /></RequireAdmin>}
+          />
           <Route path="/chat" element={<FakeChat />} />
-          <Route path="/agents" element={<FeaturePage pageId="agents" />} />
-          <Route path="/platonus" element={<PlatonusStatus />} />
+          <Route
+            path="/agents"
+            element={<RequireAdmin isAdmin={isAdmin}><FeaturePage pageId="agents" /></RequireAdmin>}
+          />
+          <Route
+            path="/platonus"
+            element={<RequireAdmin isAdmin={isAdmin}><PlatonusStatus /></RequireAdmin>}
+          />
         </Route>
         <Route path="/mini-app" element={<MiniAppPage />} />
         <Route path="/telegram-login" element={<TelegramLoginPage />} />
-        <Route path="*" element={<Navigate to="/rag" replace />} />
+        <Route path="*" element={<Navigate to="/profile" replace />} />
       </Routes>
     </HashRouter>
   );

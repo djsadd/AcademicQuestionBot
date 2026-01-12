@@ -35,6 +35,8 @@ def ensure_table() -> None:
                 platonus_iin TEXT,
                 platonus_fullname TEXT,
                 platonus_status_name TEXT,
+                platonus_email TEXT,
+                platonus_birth_date TEXT,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             );
@@ -47,7 +49,9 @@ def ensure_table() -> None:
                 ADD COLUMN IF NOT EXISTS platonus_person_id TEXT,
                 ADD COLUMN IF NOT EXISTS platonus_iin TEXT,
                 ADD COLUMN IF NOT EXISTS platonus_fullname TEXT,
-                ADD COLUMN IF NOT EXISTS platonus_status_name TEXT;
+                ADD COLUMN IF NOT EXISTS platonus_status_name TEXT,
+                ADD COLUMN IF NOT EXISTS platonus_email TEXT,
+                ADD COLUMN IF NOT EXISTS platonus_birth_date TEXT;
             """
         )
         conn.commit()
@@ -63,7 +67,7 @@ def get_or_create_user(
         cursor.execute(
             """
             SELECT telegram_id, platonus_auth, platonus_role, platonus_person_id, platonus_iin,
-                   platonus_fullname, platonus_status_name
+                   platonus_fullname, platonus_status_name, platonus_email, platonus_birth_date
             FROM telegram_users
             WHERE telegram_id = %s;
             """,
@@ -79,6 +83,8 @@ def get_or_create_user(
                 "platonus_iin": row[4],
                 "platonus_fullname": row[5],
                 "platonus_status_name": row[6],
+                "platonus_email": row[7],
+                "platonus_birth_date": row[8],
             }
 
         cursor.execute(
@@ -86,7 +92,7 @@ def get_or_create_user(
             INSERT INTO telegram_users (telegram_id, username, first_name, last_name)
             VALUES (%s, %s, %s, %s)
             RETURNING telegram_id, platonus_auth, platonus_role, platonus_person_id, platonus_iin,
-                      platonus_fullname, platonus_status_name;
+                      platonus_fullname, platonus_status_name, platonus_email, platonus_birth_date;
             """,
             (telegram_id, username, first_name, last_name),
         )
@@ -100,6 +106,8 @@ def get_or_create_user(
             "platonus_iin": row[4],
             "platonus_fullname": row[5],
             "platonus_status_name": row[6],
+            "platonus_email": row[7],
+            "platonus_birth_date": row[8],
         }
 
 
@@ -120,7 +128,7 @@ def upsert_user_profile(
                 last_name = COALESCE(EXCLUDED.last_name, telegram_users.last_name),
                 updated_at = NOW()
             RETURNING telegram_id, platonus_auth, platonus_role, platonus_person_id, platonus_iin,
-                      platonus_fullname, platonus_status_name;
+                      platonus_fullname, platonus_status_name, platonus_email, platonus_birth_date;
             """,
             (telegram_id, username, first_name, last_name),
         )
@@ -134,6 +142,8 @@ def upsert_user_profile(
             "platonus_iin": row[4],
             "platonus_fullname": row[5],
             "platonus_status_name": row[6],
+            "platonus_email": row[7],
+            "platonus_birth_date": row[8],
         }
 
 
@@ -142,7 +152,7 @@ def get_user(telegram_id: int) -> dict | None:
         cursor.execute(
             """
             SELECT telegram_id, platonus_auth, platonus_role, platonus_person_id, platonus_iin,
-                   platonus_fullname, platonus_status_name
+                   platonus_fullname, platonus_status_name, platonus_email, platonus_birth_date
             FROM telegram_users
             WHERE telegram_id = %s;
             """,
@@ -159,6 +169,8 @@ def get_user(telegram_id: int) -> dict | None:
             "platonus_iin": row[4],
             "platonus_fullname": row[5],
             "platonus_status_name": row[6],
+            "platonus_email": row[7],
+            "platonus_birth_date": row[8],
         }
 
 
@@ -170,6 +182,8 @@ def set_platonus_auth(
     iin: str | None = None,
     fullname: str | None = None,
     status_name: str | None = None,
+    email: str | None = None,
+    birth_date: str | None = None,
 ) -> None:
     with _get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
@@ -181,9 +195,11 @@ def set_platonus_auth(
                 platonus_iin = %s,
                 platonus_fullname = %s,
                 platonus_status_name = %s,
+                platonus_email = %s,
+                platonus_birth_date = %s,
                 updated_at = NOW()
             WHERE telegram_id = %s;
             """,
-            (value, role, person_id, iin, fullname, status_name, telegram_id),
+            (value, role, person_id, iin, fullname, status_name, email, birth_date, telegram_id),
         )
         conn.commit()

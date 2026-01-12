@@ -2,14 +2,15 @@
 import logging
 import os
 
+import requests
 from fastapi import APIRouter, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
-from ...db.telegram_users import get_or_create_user, set_platonus_auth, upsert_user_profile
+from ...db.telegram_users import set_platonus_auth, upsert_user_profile
 from ...services.platonus_client import authenticate_platonus_user
 from ...services.telegram_login import verify_login_payload
-from ...services.telegram_webapp import extract_telegram_id
+from ...services.telegram_webapp import extract_telegram_user
 
 router = APIRouter(prefix="/telegram", tags=["telegram"])
 logger = logging.getLogger("telegram_auth")
@@ -33,6 +34,29 @@ class TelegramLoginPayload(BaseModel):
     hash: str
 
 
+def _is_active_student(status_name: str | None) -> bool:
+    if not status_name:
+        return False
+    return status_name.strip().lower() == "обучающийся"
+
+
+def _send_telegram_message(telegram_id: int, message: str) -> None:
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+    if not token:
+        logger.warning("TELEGRAM_BOT_TOKEN is not configured; skipping Telegram notify.")
+        return
+    base_url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        response = requests.post(
+            base_url,
+            json={"chat_id": telegram_id, "text": message},
+            timeout=10,
+        )
+        response.raise_for_status()
+    except Exception as exc:
+        logger.warning("Failed to notify Telegram user %s: %s", telegram_id, exc)
+
+
 @router.post("/auth")
 async def telegram_auth(payload: TelegramAuthPayload) -> dict:
     if not payload.agreed:
@@ -41,16 +65,27 @@ async def telegram_auth(payload: TelegramAuthPayload) -> dict:
         raise HTTPException(status_code=400, detail="Login and password required.")
 
     telegram_id = payload.telegram_id
-    if telegram_id is None and payload.init_data:
-        telegram_id = extract_telegram_id(payload.init_data)
+    telegram_user = None
+    if payload.init_data:
+        telegram_user = extract_telegram_user(payload.init_data)
+        if telegram_id is None:
+            telegram_id = telegram_user.get("id") if telegram_user else None
     if telegram_id is None:
         raise HTTPException(status_code=400, detail="Telegram user id not found.")
 
-    user = get_or_create_user(
+    username = None
+    first_name = None
+    last_name = None
+    if telegram_user:
+        username = telegram_user.get("username")
+        first_name = telegram_user.get("first_name")
+        last_name = telegram_user.get("last_name")
+
+    user = upsert_user_profile(
         telegram_id=telegram_id,
-        username=None,
-        first_name=None,
-        last_name=None,
+        username=username,
+        first_name=first_name,
+        last_name=last_name,
     )
     if user["platonus_auth"]:
         return {
@@ -75,6 +110,10 @@ async def telegram_auth(payload: TelegramAuthPayload) -> dict:
         logger.exception("Platonus auth failed: %s", exc)
         raise HTTPException(status_code=500, detail="Platonus auth failed.") from exc
 
+    status_name = result.get("statusName")
+    if not _is_active_student(status_name):
+        raise HTTPException(status_code=403, detail="Student status required.")
+
     set_platonus_auth(
         telegram_id,
         True,
@@ -82,8 +121,14 @@ async def telegram_auth(payload: TelegramAuthPayload) -> dict:
         person_id=result.get("person_id"),
         iin=result.get("iin"),
         fullname=result.get("fullname"),
-        status_name=result.get("statusName"),
+        status_name=status_name,
+        email=result.get("email"),
+        birth_date=result.get("birthDate"),
     )
+    notify_text = (
+        "Успешно авторизовано. Вам доступен бот и сайт: https://academiq.tau-edu.kz/"
+    )
+    _send_telegram_message(telegram_id, notify_text)
     return {
         "status": "ok",
         "telegram_id": telegram_id,
@@ -91,6 +136,8 @@ async def telegram_auth(payload: TelegramAuthPayload) -> dict:
         "iin": result.get("iin"),
         "fullname": result.get("fullname"),
         "statusName": result.get("statusName"),
+        "email": result.get("email"),
+        "birthDate": result.get("birthDate"),
         "role": result.get("role"),
     }
 
@@ -132,4 +179,6 @@ async def telegram_login(payload: TelegramLoginPayload) -> dict:
         "iin": user["platonus_iin"],
         "fullname": user.get("platonus_fullname"),
         "statusName": user.get("platonus_status_name"),
+        "email": user.get("platonus_email"),
+        "birthDate": user.get("platonus_birth_date"),
     }

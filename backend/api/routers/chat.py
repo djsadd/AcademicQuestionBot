@@ -4,12 +4,11 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from ...db import chat_analytics
-from ...db.telegram_users import get_user
-from ...services.auth_tokens import decode_access_token
+from ...services.permissions import require_user
 
 from ...orchestrator.router import AgentRouter
 
@@ -28,45 +27,18 @@ class ChatPayload(BaseModel):
     metadata: dict[str, Any] | None = None
 
 
-def _extract_bearer(authorization: str | None) -> str | None:
-    if not authorization:
-        return None
-    parts = authorization.split()
-    if len(parts) == 2 and parts[0].lower() == "bearer":
-        return parts[1]
-    return None
-
-
 @router.post("/")
-async def handle_chat(payload: ChatPayload, authorization: str | None = Header(default=None)) -> dict:
-    token = _extract_bearer(authorization)
-    telegram_id = payload.telegram_id or payload.user_id
-    if telegram_id is None and token:
-        try:
-            decoded = decode_access_token(token)
-        except Exception:
-            decoded = None
-        if decoded:
-            sub = decoded.get("sub")
-            try:
-                telegram_id = int(sub) if sub is not None else None
-            except (TypeError, ValueError):
-                telegram_id = None
-
-    person_id = payload.person_id
-    if telegram_id is not None and not person_id:
-        user = get_user(telegram_id)
-        if user:
-            person_id = user.get("platonus_person_id")
+async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) -> dict:
+    telegram_id = user["telegram_id"]
+    person_id = payload.person_id or user.get("platonus_person_id")
 
     metadata = payload.metadata or {}
     session_id = metadata.get("session_id") or metadata.get("session") or None
     channel = metadata.get("channel") or "web"
 
     router_payload = payload.model_dump()
-    if telegram_id is not None:
-        router_payload["telegram_id"] = telegram_id
-        router_payload["user_id"] = telegram_id
+    router_payload["telegram_id"] = telegram_id
+    router_payload["user_id"] = telegram_id
     if person_id:
         router_payload["person_id"] = person_id
     if session_id:
@@ -97,23 +69,6 @@ async def handle_chat(payload: ChatPayload, authorization: str | None = Header(d
 
 
 @router.get("/history")
-async def get_chat_history(authorization: str | None = Header(default=None)) -> dict:
-    token = _extract_bearer(authorization)
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing access token.")
-    try:
-        decoded = decode_access_token(token)
-    except Exception:
-        decoded = None
-    if not decoded:
-        raise HTTPException(status_code=401, detail="Invalid access token.")
-    sub = decoded.get("sub")
-    try:
-        telegram_id = int(sub) if sub is not None else None
-    except (TypeError, ValueError):
-        telegram_id = None
-    if telegram_id is None:
-        raise HTTPException(status_code=401, detail="Telegram ID missing.")
-
-    history = chat_analytics.fetch_chat_history(telegram_id)
+async def get_chat_history(user: dict = Depends(require_user)) -> dict:
+    history = chat_analytics.fetch_chat_history(user["telegram_id"])
     return {"sessions": history}
