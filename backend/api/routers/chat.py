@@ -1,16 +1,21 @@
 """Chat endpoints for orchestrating academic conversations."""
 from __future__ import annotations
 
+import asyncio
+import json
 import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ...db import chat_analytics
+from ...langchain.llm import llm_client
 from ...services.permissions import require_user
 
 from ...orchestrator.router import AgentRouter
+from ...orchestrator.aggregator import SYSTEM_PROMPT
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 agent_router = AgentRouter()
@@ -66,6 +71,164 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
         logger.exception("Chat analytics failed: %s", exc)
 
     return {"result": response}
+
+
+def _sse(event: str, payload: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+@router.post("/stream")
+async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_user)) -> StreamingResponse:
+    telegram_id = user["telegram_id"]
+    person_id = payload.person_id or user.get("platonus_person_id")
+
+    metadata = payload.metadata or {}
+    session_id = metadata.get("session_id") or metadata.get("session") or None
+    channel = metadata.get("channel") or "web"
+
+    router_payload = payload.model_dump()
+    router_payload["telegram_id"] = telegram_id
+    router_payload["user_id"] = telegram_id
+    if person_id:
+        router_payload["person_id"] = person_id
+    if session_id:
+        router_payload["history"] = chat_analytics.fetch_session_history(session_id)
+
+    async def event_stream():
+        final_answer_parts: list[str] = []
+        response_obj: dict | None = None
+        try:
+            intents = await agent_router.intent_agent.run(router_payload)
+            plan_steps = agent_router.graph.plan(intents)
+            full_plan = [agent_router.intent_step, *plan_steps]
+
+            shared_context: dict[str, Any] = {
+                **router_payload,
+                "intents": intents.get("intents", []),
+            }
+            execution_trace: list[dict[str, Any]] = [
+                {
+                    "key": "intent",
+                    "name": agent_router.intent_agent.name,
+                    "description": agent_router.intent_step.description,
+                    "output": intents,
+                }
+            ]
+
+            for step in plan_steps:
+                agent = agent_router.agent_registry.get(step.key)
+                if not agent:
+                    execution_trace.append(
+                        {
+                            "key": step.key,
+                            "name": "unregistered",
+                            "description": step.description,
+                            "output": {"error": "agent is not registered"},
+                        }
+                    )
+                    continue
+
+                agent_payload = {
+                    **shared_context,
+                    "agent_history": execution_trace,
+                }
+                result = await agent.run(agent_payload)
+                shared_context.update(result)
+                execution_trace.append(
+                    {
+                        "key": step.key,
+                        "name": agent.name,
+                        "description": step.description,
+                        "output": result,
+                    }
+                )
+
+            artifacts = agent_router.aggregator._collect_artifacts(execution_trace)
+            fallback_answer = agent_router.aggregator._fallback_answer(artifacts.answers)
+            llm_answer = ""
+
+            if llm_client.is_configured and artifacts.answers:
+                prompt = agent_router.aggregator._render_prompt(
+                    user_payload=router_payload,
+                    intents=intents,
+                    answers=artifacts.answers,
+                    context=artifacts.context,
+                    citations=artifacts.citations,
+                )
+                messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ]
+                for chunk in llm_client.chat_stream(messages):
+                    final_answer_parts.append(chunk)
+                    yield _sse("delta", {"delta": chunk})
+                    await asyncio.sleep(0)
+                llm_answer = "".join(final_answer_parts).strip()
+            else:
+                for idx in range(0, len(fallback_answer), 140):
+                    chunk = fallback_answer[idx: idx + 140]
+                    if not chunk:
+                        continue
+                    final_answer_parts.append(chunk)
+                    yield _sse("delta", {"delta": chunk})
+                    await asyncio.sleep(0)
+
+            final_answer = llm_answer or "".join(final_answer_parts).strip() or fallback_answer
+            plan_view = [{"agent": step.key, "description": step.description} for step in full_plan]
+            response_obj = {
+                "query": router_payload.get("message"),
+                "intents": intents.get("intents", []),
+                "priority": intents.get("priority"),
+                "plan": plan_view,
+                "trace": execution_trace,
+                "final_answer": final_answer,
+                "validation": artifacts.validator,
+                "citations": artifacts.citations,
+                "supporting_context": artifacts.context,
+                "llm": {
+                    "model": getattr(llm_client, "model", None),
+                    "used": bool(llm_answer),
+                    "error": getattr(llm_client, "last_error", None),
+                    "raw_request": {
+                        "intents": intents.get("intents", []),
+                        "plan": [step.key for step in full_plan],
+                    } if not llm_answer else None,
+                },
+            }
+
+            try:
+                chat_analytics.save_chat_event(
+                    session_id=session_id,
+                    telegram_id=telegram_id,
+                    person_id=person_id,
+                    channel=str(channel) if channel is not None else None,
+                    query=response_obj.get("query"),
+                    response=response_obj.get("final_answer"),
+                    llm_model=(response_obj.get("llm") or {}).get("model"),
+                    llm_used=(response_obj.get("llm") or {}).get("used"),
+                    llm_error=(response_obj.get("llm") or {}).get("error"),
+                    intents=response_obj.get("intents"),
+                    agents=response_obj.get("plan"),
+                    trace=response_obj.get("trace"),
+                    metadata=metadata,
+                )
+            except Exception as exc:
+                logger.exception("Chat analytics failed: %s", exc)
+
+            yield _sse("done", {"result": response_obj})
+        except Exception as exc:
+            logger.exception("Streaming chat failed: %s", exc)
+            yield _sse("error", {"error": str(exc)})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/history")

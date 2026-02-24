@@ -91,7 +91,9 @@ function SiteHeader({ isAdmin }: { isAdmin: boolean }) {
   );
   return (
     <header className="site-header">
-      <div className="logo">AcademicQuestionBot</div>
+      <NavLink to="/chat" className="logo">
+        AcademicQuestionBot
+      </NavLink>
       <nav>
         {navItems.map((item) => (
           <NavLink
@@ -213,8 +215,8 @@ function MainLayout({ isAdmin }: { isAdmin: boolean }) {
   const isChatPage = location.pathname === "/chat";
   return (
     <>
-      <SiteHeader isAdmin={isAdmin} />
-      <main className={`page-main${isChatPage ? " page-main--no-scroll" : ""}`}>
+      {isChatPage ? null : <SiteHeader isAdmin={isAdmin} />}
+      <main className={`page-main${isChatPage ? " page-main--no-scroll page-main--chat" : ""}`}>
         <Outlet />
       </main>
     </>

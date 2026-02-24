@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useMutation } from "@tanstack/react-query";
 import { apiClient } from "../api/client";
-import { getChatHistory, sendChatMessage } from "../api/chat";
+import { getChatHistory, streamChatMessage } from "../api/chat";
 import type { ChatHistorySession, ChatRequestPayload, ChatResult } from "../types";
 
 const DEFAULT_PROFILE = {
@@ -90,11 +89,36 @@ const sanitizeHtml = (value: string) => {
   return document.body.innerHTML;
 };
 
-const stripHtml = (value: string) => value.replace(/<[^>]*>/g, "").trim();
+const truncateText = (value: string, maxLength: number) => {
+  const text = value ?? "";
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength)).trimEnd()}...`;
+};
+
+const renderCodeFences = (value: string) => {
+  const parts = value.split(/```/g);
+  if (parts.length === 1) return escapeHtml(value).replace(/\n/g, "<br />");
+
+  return parts
+    .map((part, index) => {
+      if (index % 2 === 0) {
+        return escapeHtml(part).replace(/\n/g, "<br />");
+      }
+      const lines = part.replace(/^\n+|\n+$/g, "").split("\n");
+      const first = (lines[0] ?? "").trim();
+      const hasLanguage = /^[a-z0-9#+.-]{1,24}$/i.test(first);
+      const code = (hasLanguage ? lines.slice(1) : lines).join("\n");
+      return `<pre class="chat-code"><code>${escapeHtml(code)}</code></pre>`;
+    })
+    .join("");
+};
 
 const formatMessageContent = (value: string) => {
   if (/<\/?[a-z][\s\S]*>/i.test(value)) {
     return sanitizeHtml(value);
+  }
+  if (value.includes("```")) {
+    return renderCodeFences(value);
   }
   return escapeHtml(value).replace(/\n/g, "<br />");
 };
@@ -102,7 +126,7 @@ const formatMessageContent = (value: string) => {
 const buildChatTitle = (message: string) => {
   const trimmed = message.replace(/\s+/g, " ").trim();
   if (!trimmed) return DEFAULT_CHAT_TITLE;
-  return trimmed.length > 48 ? `${trimmed.slice(0, 48)}...` : trimmed;
+  return trimmed.length > 100 ? `${trimmed.slice(0, 100)}...` : trimmed;
 };
 
 const createIntroMessage = (): ChatMessage => ({
@@ -135,14 +159,10 @@ const normalizeChatState = (state: ChatHistoryState): ChatHistoryState => {
       messages,
     };
   });
-  if (!chats.length) {
-    const chat = createInitialChat();
-    return { activeChatId: chat.id, chats: [chat] };
-  }
   const activeChatId =
     state.activeChatId && chats.some((chat) => chat.id === state.activeChatId)
       ? state.activeChatId
-      : chats[0].id;
+      : chats[0]?.id ?? null;
   return { activeChatId, chats };
 };
 
@@ -193,27 +213,35 @@ const formatChatDate = (value: string) => {
   });
 };
 
+const QUICK_ACTIONS = [
+  { title: "Сбросить пароль", prompt: "Помоги сбросить пароль и восстановить доступ к аккаунту." },
+  { title: "Когда сессия?", prompt: "Узнай, когда у меня сессия и какие даты экзаменов/зачётов." },
+  { title: "Справка/подтверждение", prompt: "Сформируй текст заявления/запроса справки для деканата." },
+  { title: "Статус заявки", prompt: "Проверь статус моей заявки и что ещё нужно предоставить." },
+] as const;
+
 export function FakeChat() {
   const [inputValue, setInputValue] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
+  const [isStreaming, setIsStreaming] = useState(false);
   const [storageKey, setStorageKey] = useState(() => buildStorageKey(null));
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [highlightedChatId, setHighlightedChatId] = useState<string | null>(null);
   const [searchValue, setSearchValue] = useState("");
+  const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null);
+  const [propertiesChatId, setPropertiesChatId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const highlightTimeoutRef = useRef<number | null>(null);
+  const streamAbortRef = useRef<AbortController | null>(null);
+  const draftSessionIdRef = useRef<string>(createSessionId());
   const [chatState, setChatState] = useState<ChatHistoryState>(() => {
-    if (typeof window === "undefined") {
-      const chat = createInitialChat();
-      return { activeChatId: chat.id, chats: [chat] };
-    }
+    const empty: ChatHistoryState = { activeChatId: null, chats: [] };
+    if (typeof window === "undefined") return empty;
     const stored = loadChatState(buildStorageKey(null));
-    if (stored) return stored;
-    const chat = createInitialChat();
-    return { activeChatId: chat.id, chats: [chat] };
+    return stored ?? empty;
   });
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -223,6 +251,17 @@ export function FakeChat() {
       ?? chatState.chats[0];
     return active ?? null;
   }, [chatState]);
+
+  const visibleMessages = useMemo(() => {
+    const messages = activeChat?.messages ?? [];
+    return messages.filter(
+      (message) => !(message.role === "bot" && message.content === INTRO_MESSAGE),
+    );
+  }, [activeChat?.messages]);
+
+  const hasUserMessages = useMemo(() => {
+    return visibleMessages.some((message) => message.role === "user");
+  }, [visibleMessages]);
 
   const sortedChats = useMemo(() => {
     return [...chatState.chats].sort(
@@ -246,12 +285,17 @@ export function FakeChat() {
     return {
       language: DEFAULT_PROFILE.language,
       channel: "web",
-      session: activeChat?.sessionId ?? createSessionId(),
+      session: activeChat?.sessionId ?? draftSessionIdRef.current,
       university: DEFAULT_PROFILE.context.university,
       program: DEFAULT_PROFILE.context.program,
       itp: DEFAULT_PROFILE.context.itp,
     };
   }, [activeChat?.sessionId]);
+
+  const propertiesChat = useMemo(() => {
+    if (!propertiesChatId) return null;
+    return chatState.chats.find((chat) => chat.id === propertiesChatId) ?? null;
+  }, [chatState.chats, propertiesChatId]);
 
   useEffect(() => {
     if (profile?.telegram_id) {
@@ -296,8 +340,7 @@ export function FakeChat() {
         return;
       }
     }
-    const chat = createInitialChat();
-    const nextState = { activeChatId: chat.id, chats: [chat] };
+    const nextState: ChatHistoryState = { activeChatId: null, chats: [] };
     saveChatState(storageKey, nextState);
     setChatState(nextState);
   }, [storageKey]);
@@ -337,6 +380,9 @@ export function FakeChat() {
       if (highlightTimeoutRef.current) {
         window.clearTimeout(highlightTimeoutRef.current);
       }
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort();
+      }
     };
   }, []);
 
@@ -344,24 +390,42 @@ export function FakeChat() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [activeChat?.messages.length]);
 
-  const chatMutation = useMutation<ChatResult, Error, string>({
-    mutationFn: async (message: string) => {
-      const payload: ChatRequestPayload = {
-        user_id: profile?.telegram_id ?? 0,
-        telegram_id: profile?.telegram_id,
-        person_id: profile?.person_id ?? undefined,
-        message,
-        language: DEFAULT_PROFILE.language,
-        context: DEFAULT_PROFILE.context,
-        metadata: {
-          channel: "web",
-          session_id: requestMeta.session,
-        },
-      };
-      const response = await sendChatMessage(payload);
-      return response.result;
-    },
-  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!openChatMenuId) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest("[data-chat-menu]")) return;
+      setOpenChatMenuId(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpenChatMenuId(null);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown, true);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown, true);
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [openChatMenuId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!propertiesChatId) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setPropertiesChatId(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => window.removeEventListener("keydown", handleKeyDown, true);
+  }, [propertiesChatId]);
 
   const replaceMessage = (chatId: string, id: string, data: Partial<ChatMessage>) => {
     setChatState((prev) => {
@@ -381,13 +445,27 @@ export function FakeChat() {
     setExpandedId((current) => (current === id ? null : id));
   };
 
+  const focusComposer = () => {
+    window.setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const abortStream = () => {
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort();
+      streamAbortRef.current = null;
+    }
+    setIsStreaming(false);
+  };
+
   const handleNewChat = () => {
+    abortStream();
     const chat = createInitialChat();
     setChatState((prev) => ({
       activeChatId: chat.id,
       chats: [chat, ...prev.chats],
     }));
     setHighlightedChatId(chat.id);
+    draftSessionIdRef.current = createSessionId();
     if (highlightTimeoutRef.current) {
       window.clearTimeout(highlightTimeoutRef.current);
     }
@@ -396,16 +474,21 @@ export function FakeChat() {
     }, 700);
     setExpandedId(null);
     setInputValue("");
+    focusComposer();
   };
 
   const handleSelectChat = (chatId: string) => {
+    abortStream();
     setChatState((prev) => ({ ...prev, activeChatId: chatId }));
     setExpandedId(null);
+    setOpenChatMenuId(null);
+    focusComposer();
   };
 
   const handleSend = () => {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
+    if (isStreaming) return;
     if (!profile?.telegram_id) {
       const chatId = activeChat?.id ?? createId("chat");
       const errorMessage: ChatMessage = {
@@ -449,11 +532,12 @@ export function FakeChat() {
     const placeholderMessage: ChatMessage = {
       id: botMessageId,
       role: "bot",
-      content: BOT_PLACEHOLDER,
+      content: "",
       status: "pending",
     };
 
-    const activeChatId = activeChat?.id ?? createInitialChat().id;
+    const activeChatId = activeChat?.id ?? createId("chat");
+    const newChatSessionId = activeChat?.sessionId ?? draftSessionIdRef.current;
     setChatState((prev) => {
       const normalized = normalizeChatState(prev);
       const now = new Date().toISOString();
@@ -478,6 +562,7 @@ export function FakeChat() {
             {
               ...createInitialChat(),
               id: activeChatId,
+              sessionId: newChatSessionId,
               title: buildChatTitle(trimmed),
               messages: [
                 createIntroMessage(),
@@ -490,28 +575,116 @@ export function FakeChat() {
       };
     });
     setInputValue("");
+    if (!activeChat?.id) {
+      draftSessionIdRef.current = createSessionId();
+    }
 
-    chatMutation.mutate(trimmed, {
-      onSuccess: (result) => {
+    const controller = new AbortController();
+    streamAbortRef.current = controller;
+    setIsStreaming(true);
+
+    const payload: ChatRequestPayload = {
+      user_id: profile?.telegram_id ?? 0,
+      telegram_id: profile?.telegram_id,
+      person_id: profile?.person_id ?? undefined,
+      message: trimmed,
+      language: DEFAULT_PROFILE.language,
+      context: DEFAULT_PROFILE.context,
+      metadata: {
+        channel: "web",
+        session_id: requestMeta.session,
+      },
+    };
+
+    let streamedText = "";
+    let pendingDelta = "";
+    let flushTimeout: number | null = null;
+
+    const flushStream = () => {
+      flushTimeout = null;
+      if (!pendingDelta) return;
+      streamedText += pendingDelta;
+      pendingDelta = "";
+      replaceMessage(activeChatId, botMessageId, {
+        content: streamedText || BOT_PLACEHOLDER,
+        status: "pending",
+      });
+    };
+
+    const scheduleFlush = () => {
+      if (flushTimeout) return;
+      flushTimeout = window.setTimeout(flushStream, 40);
+    };
+
+    streamChatMessage(
+      payload,
+      {
+        onDelta: (delta) => {
+          pendingDelta += delta;
+          scheduleFlush();
+        },
+        onError: (error) => {
+          if (flushTimeout) {
+            window.clearTimeout(flushTimeout);
+            flushTimeout = null;
+          }
+          replaceMessage(activeChatId, botMessageId, {
+            content: error || "Request failed.",
+            status: "error",
+          });
+        },
+      },
+      controller.signal,
+    )
+      .then((response) => {
+        if (flushTimeout) {
+          window.clearTimeout(flushTimeout);
+          flushTimeout = null;
+        }
+        if (pendingDelta) {
+          streamedText += pendingDelta;
+          pendingDelta = "";
+        }
+        const result = response.result;
         replaceMessage(activeChatId, botMessageId, {
-          content: result.final_answer || "No answer from the agent.",
+          content: result.final_answer || streamedText || "No answer from the agent.",
           status: undefined,
           details: result,
         });
-      },
-      onError: (error) => {
+      })
+      .catch((error) => {
+        if (error instanceof Error && error.name === "AbortError") {
+          return;
+        }
+        if (flushTimeout) {
+          window.clearTimeout(flushTimeout);
+          flushTimeout = null;
+        }
         replaceMessage(activeChatId, botMessageId, {
           content: error instanceof Error ? error.message : "Request failed.",
           status: "error",
         });
-      },
-    });
+      })
+      .finally(() => {
+        if (flushTimeout) {
+          window.clearTimeout(flushTimeout);
+          flushTimeout = null;
+        }
+        if (streamAbortRef.current === controller) {
+          streamAbortRef.current = null;
+        }
+        setIsStreaming(false);
+      });
   };
 
   return (
     <section className={`chat-shell${isSidebarOpen ? "" : " chat-shell--collapsed"}`}>
       <aside className="chat-sidebar" aria-hidden={!isSidebarOpen}>
         <div className="chat-sidebar__content">
+          <div className="chat-sidebar__brand">
+            <span className="chat-sidebar__logo" aria-hidden="true">AQB</span>
+            <span className="chat-sidebar__brand-text">Academic Question Bot</span>
+          </div>
           <div className="chat-sidebar__header">
             <button
               type="button"
@@ -558,25 +731,56 @@ export function FakeChat() {
           </div>
           <div className="chat-sidebar__list">
             {filteredChats.map((chat) => {
-              const lastMessage = chat.messages[chat.messages.length - 1];
-              const preview = lastMessage?.content
-                ? stripHtml(lastMessage.content).slice(0, 64)
-                : "No messages yet.";
               return (
-                <button
-                  type="button"
+                <div
                   key={chat.id}
                   className={`chat-list-item${
                     chat.id === activeChat?.id ? " active" : ""
                   }${chat.id === highlightedChatId ? " chat-list-item--new" : ""}`}
-                  onClick={() => handleSelectChat(chat.id)}
                 >
-                  <span className="chat-list-item__title">{chat.title}</span>
-                  <span className="chat-list-item__preview">
-                    {preview || "No messages yet."}
-                  </span>
-                  <span className="chat-list-item__meta">{formatChatDate(chat.updatedAt)}</span>
-                </button>
+                  <button
+                    type="button"
+                    className="chat-list-item__main"
+                    onClick={() => handleSelectChat(chat.id)}
+                    title={chat.title}
+                  >
+                    <span className="chat-list-item__title">
+                      {truncateText(chat.title, 100)}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-button icon-button--ghost chat-list-item__menu-button"
+                    aria-label="Chat options"
+                    data-chat-menu
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      setOpenChatMenuId((current) => (current === chat.id ? null : chat.id));
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <circle cx="6" cy="12" r="1.5" />
+                      <circle cx="12" cy="12" r="1.5" />
+                      <circle cx="18" cy="12" r="1.5" />
+                    </svg>
+                  </button>
+                  {openChatMenuId === chat.id ? (
+                    <div className="chat-list-item__menu" role="menu" data-chat-menu>
+                      <button
+                        type="button"
+                        className="chat-list-item__menu-item"
+                        role="menuitem"
+                        onClick={() => {
+                          setOpenChatMenuId(null);
+                          setPropertiesChatId(chat.id);
+                        }}
+                      >
+                        Properties
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
               );
             })}
           </div>
@@ -623,7 +827,7 @@ export function FakeChat() {
       </aside>
 
       <section className="fake-chat">
-        <header className="fake-chat__header">
+        <header className="fake-chat__header chat-topbar">
           <div className="fake-chat__actions">
             {!isSidebarOpen ? (
               <button
@@ -639,88 +843,202 @@ export function FakeChat() {
               </button>
             ) : null}
           </div>
+          <div className="chat-topbar__title">
+            <span className="chat-topbar__badge">Chat</span>
+            <span className="chat-topbar__name">Academic Assistant</span>
+          </div>
         </header>
 
-        <div
-          className={`chat-window${
-            activeChat?.id === highlightedChatId ? " chat-window--new" : ""
-          }`}
-        >
-          <div className="chat-messages">
-            {(activeChat?.messages ?? []).map((message) => (
-              <div
-                key={message.id}
-                className={`chat-bubble ${message.role === "user" ? "user" : "bot"}${
-                  message.status === "pending" ? " pending" : ""
-                }${message.status === "error" ? " error" : ""}`}
-                onClick={() => {
-                  if (message.role === "bot" && message.details) {
-                    toggleDetails(message.id);
-                  }
-                }}
-                role={message.role === "bot" && message.details ? "button" : undefined}
-                tabIndex={message.role === "bot" && message.details ? 0 : undefined}
-                onKeyDown={(event) => {
-                  if (
-                    event.key === "Enter" &&
-                    message.role === "bot" &&
-                    message.details
-                  ) {
-                    event.preventDefault();
-                    toggleDetails(message.id);
-                  }
-                }}
-              >
-                <span className="bubble-label">
-                  {message.role === "user" ? "User" : "Bot"}
-                </span>
-                <div
-                  className="chat-bubble__content"
-                  dangerouslySetInnerHTML={{
-                    __html: formatMessageContent(message.content),
+        {!hasUserMessages ? (
+          <div className="chat-empty">
+            <h1 className="chat-empty__title">Задайте вопрос</h1>
+            <div className="chat-composer chat-composer--center" role="form" aria-label="Chat composer">
+              {profileError ? <p className="error chat-composer__error">{profileError}</p> : null}
+              <div className="chat-composer__bar">
+                <textarea
+                  className="chat-composer__textarea"
+                  placeholder="Спросите Academic Assistant..."
+                  value={inputValue}
+                  onChange={(event) => setInputValue(event.target.value)}
+                  rows={2}
+                  ref={inputRef}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      handleSend();
+                    }
                   }}
                 />
-                {message.role === "bot" && message.details ? (
-                  <div
-                    className={`chat-bubble__details ${
-                      expandedId === message.id ? "open" : ""
-                    }`}
-                  >
-                    <span className="chat-bubble__details-label">Details JSON</span>
-                    <pre>{JSON.stringify(message.details, null, 2)}</pre>
-                  </div>
-                ) : null}
+                <button
+                  type="button"
+                  className="icon-button chat-composer__icon"
+                  onClick={handleSend}
+                  disabled={!inputValue.trim() || isStreaming}
+                  aria-label="Send"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 12h14" fill="none" />
+                    <path d="M12 5l7 7-7 7" fill="none" />
+                  </svg>
+                </button>
               </div>
-            ))}
-            <div ref={messagesEndRef} />
+              <p className="chat-composer__footnote">
+                Academic Question Bot может допускать ошибки. Проверяйте важную информацию.
+              </p>
+            </div>
+            <div className="chat-suggestions" aria-label="Quick actions">
+              {QUICK_ACTIONS.map((item) => (
+                <button
+                  key={item.title}
+                  type="button"
+                  className="chat-suggestion"
+                  onClick={() => {
+                    setInputValue(item.prompt);
+                    focusComposer();
+                  }}
+                >
+                  <span className="chat-suggestion__title">{item.title}</span>
+                  <span className="chat-suggestion__subtitle">{item.prompt}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <>
+            <div
+              className={`chat-window${
+                activeChat?.id === highlightedChatId ? " chat-window--new" : ""
+              }`}
+            >
+              <div className="chat-messages">
+                {visibleMessages.map((message) => (
+                  <article
+                    key={message.id}
+                    className={`chat-message ${message.role === "user" ? "user" : "bot"}${
+                      message.status === "pending" ? " pending" : ""
+                    }${message.status === "error" ? " error" : ""}`}
+                    onClick={() => {
+                      if (message.role === "bot" && message.details) {
+                        toggleDetails(message.id);
+                      }
+                    }}
+                    role={message.role === "bot" && message.details ? "button" : undefined}
+                    tabIndex={message.role === "bot" && message.details ? 0 : undefined}
+                    onKeyDown={(event) => {
+                      if (
+                        event.key === "Enter" &&
+                        message.role === "bot" &&
+                        message.details
+                      ) {
+                        event.preventDefault();
+                        toggleDetails(message.id);
+                      }
+                    }}
+                  >
+                    <div
+                      className="chat-message__content"
+                      dangerouslySetInnerHTML={{
+                        __html: formatMessageContent(message.content),
+                      }}
+                    />
+                    {message.role === "bot" && message.details ? (
+                      <div
+                        className={`chat-message__details ${
+                          expandedId === message.id ? "open" : ""
+                        }`}
+                      >
+                        <span className="chat-message__details-label">Details JSON</span>
+                        <pre>{JSON.stringify(message.details, null, 2)}</pre>
+                      </div>
+                    ) : null}
+                  </article>
+                ))}
+                <div ref={messagesEndRef} />
+              </div>
+            </div>
+
+            <div className="chat-composer chat-composer--bottom chat-composer--sticky" role="form" aria-label="Chat composer">
+              {profileError ? <p className="error chat-composer__error">{profileError}</p> : null}
+              <div className="chat-composer__bar">
+                <textarea
+                  className="chat-composer__textarea"
+                  placeholder="Спросите Academic Assistant..."
+                  value={inputValue}
+                  onChange={(event) => setInputValue(event.target.value)}
+                  rows={2}
+                  ref={inputRef}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="icon-button chat-composer__icon"
+                  onClick={handleSend}
+                  disabled={!inputValue.trim() || isStreaming}
+                  aria-label="Send"
+                >
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M4 12h14" fill="none" />
+                    <path d="M12 5l7 7-7 7" fill="none" />
+                  </svg>
+                </button>
+              </div>
+              <p className="chat-composer__footnote">
+                Academic Question Bot может допускать ошибки. Проверяйте важную информацию.
+              </p>
+            </div>
+          </>
+        )}
+      </section>
+
+      {propertiesChat ? (
+        <div
+          className="chat-properties-modal__overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Chat properties"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setPropertiesChatId(null);
+            }
+          }}
+        >
+          <div className="chat-properties-modal__panel">
+            <div className="chat-properties-modal__header">
+              <h3>Chat properties</h3>
+              <button
+                type="button"
+                className="icon-button icon-button--ghost"
+                onClick={() => setPropertiesChatId(null)}
+                aria-label="Close"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+            <dl className="chat-properties-modal__grid">
+              <dt>Title</dt>
+              <dd>{propertiesChat.title}</dd>
+              <dt>Chat ID</dt>
+              <dd>{propertiesChat.id}</dd>
+              <dt>Session ID</dt>
+              <dd>{propertiesChat.sessionId}</dd>
+              <dt>Created</dt>
+              <dd>{formatChatDate(propertiesChat.createdAt)}</dd>
+              <dt>Updated</dt>
+              <dd>{formatChatDate(propertiesChat.updatedAt)}</dd>
+              <dt>Messages</dt>
+              <dd>{propertiesChat.messages.length}</dd>
+            </dl>
           </div>
         </div>
-
-        <div className="chat-input-area">
-          {profileError ? <p className="error">{profileError}</p> : null}
-          <textarea
-            placeholder="Type your question..."
-            value={inputValue}
-            onChange={(event) => setInputValue(event.target.value)}
-            rows={2}
-            ref={inputRef}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                handleSend();
-              }
-            }}
-          />
-          <button
-            type="button"
-            className="primary"
-            onClick={handleSend}
-            disabled={!inputValue.trim() || chatMutation.isPending}
-          >
-            Send
-          </button>
-        </div>
-      </section>
+      ) : null}
     </section>
   );
 }

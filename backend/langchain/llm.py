@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Dict, List, Optional
+from typing import Dict, Iterator, List, Optional
 
 import requests
 
@@ -71,6 +71,81 @@ class LLMClient:
 
         self.last_error = f"LLM response did not contain text. Raw: {raw_body[:400]}"
         return ""
+
+    def chat_stream(self, messages: List[Dict[str, str]], **kwargs) -> Iterator[str]:
+        """Stream chat completion tokens as they arrive from the API."""
+        self.last_error = None
+        if not self.api_key:
+            self.last_error = "OPENAI_API_KEY is not configured"
+            return iter(())
+
+        temperature = kwargs.get("temperature", 0.2)
+        max_tokens = kwargs.get("max_tokens", 600)
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+        if self.team:
+            headers["OpenAI-Organization"] = self.team
+
+        try:
+            response = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                data=json.dumps(payload).encode("utf-8"),
+                timeout=60,
+                stream=True,
+            )
+            response.raise_for_status()
+        except requests.RequestException as exc:  # pragma: no cover - network errors
+            self.last_error = f"Request error: {exc}"
+            return iter(())
+
+        def _iter() -> Iterator[str]:
+            try:
+                for raw_line in response.iter_lines(decode_unicode=True):
+                    if not raw_line:
+                        continue
+                    line = raw_line.strip()
+                    if not line.startswith("data:"):
+                        continue
+                    data_str = line[len("data:"):].strip()
+                    if not data_str or data_str == "[DONE]":
+                        break
+                    try:
+                        data = json.loads(data_str)
+                    except json.JSONDecodeError:
+                        continue
+
+                    delta: str | None = None
+                    try:
+                        choice = (data.get("choices") or [])[0] or {}
+                        delta_obj = choice.get("delta") or {}
+                        if isinstance(delta_obj, dict):
+                            delta = delta_obj.get("content")
+                        if not delta:
+                            message_obj = choice.get("message") or {}
+                            if isinstance(message_obj, dict):
+                                delta = message_obj.get("content")
+                    except Exception:
+                        delta = None
+
+                    if delta:
+                        yield str(delta)
+            finally:
+                try:
+                    response.close()
+                except Exception:
+                    pass
+
+        return _iter()
 
     def _parse_message_content(self, content: object) -> str:
         if isinstance(content, str):
