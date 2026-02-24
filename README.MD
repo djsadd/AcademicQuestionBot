@@ -489,7 +489,7 @@ docker compose up --build -d frontend api celery postgresql qdrant redis
 * В `.env` задаются `QDRANT_URL`, `QDRANT_COLLECTION`, `RAG_STORAGE_PATH`.
 * Docker Compose использует volume `rag_storage`, чтобы API и Celery имели общий доступ к `/app/storage` (файлы для RAG).
 * Для Qdrant добавлен volume `qdrant_data`, чтобы коллекции не терялись между перезапусками.
-* Сервис `frontend` собирается через `docker/Dockerfile.frontend` (Vite → Nginx) и доступен на `http://localhost:3000`.
+* Сервис `frontend` собирается через `docker/Dockerfile.frontend` (Vite → Nginx) и доступен на `http://localhost:18030`.
 
 ## 21. LLM (финальный ответ)
 
@@ -517,7 +517,7 @@ npm run build                     # production-сборка
 npm run preview                   # предпросмотр собранной версии
 ```
 
-Параметр `VITE_API_BASE_URL` должен указывать на backend (`http://localhost:8000/api`), чтобы загрузка/удаление документов работали без прокси.
+Параметр `VITE_API_BASE_URL` должен указывать на backend (`http://localhost:18000/api`), чтобы загрузка/удаление документов работали без прокси.
 
 ### Docker
 
@@ -527,6 +527,6 @@ npm run preview                   # предпросмотр собранной 
 docker compose up --build frontend
 ```
 
-По умолчанию он доступен на `http://localhost:3000` и проксирует запросы в backend по внутреннему адресу `http://api:8000/api`.
+По умолчанию он доступен на `http://localhost:18030` и проксирует запросы в backend по внутреннему адресу `http://api:8000/api`.
 # AcademicQuestionBot
 # AcademicQuestionBot
