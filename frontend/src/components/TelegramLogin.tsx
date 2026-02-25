@@ -48,7 +48,9 @@ export function TelegramLogin() {
 
   useEffect(() => {
     if (!BOT_USERNAME) {
-      setError("VITE_TELEGRAM_BOT_USERNAME is not configured.");
+      setError(
+        "VITE_TELEGRAM_BOT_USERNAME is not configured (Vite reads env at build/dev-server start; restart `npm run dev` or rebuild the Docker image).",
+      );
       return;
     }
 
