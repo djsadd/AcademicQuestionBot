@@ -30,6 +30,50 @@ class ChatPayload(BaseModel):
     language: str | None = "ru"
     context: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
+    history: list[dict[str, Any]] | None = None
+
+
+def _normalize_history_item(item: Any) -> dict[str, str] | None:
+    if not isinstance(item, dict):
+        return None
+    content = str(item.get("content") or "").strip()
+    if not content:
+        return None
+    role = str(item.get("role") or "user").strip().lower()
+    if role == "bot":
+        role = "assistant"
+    if role not in {"user", "assistant", "system"}:
+        role = "user"
+    normalized = {"role": role, "content": content}
+    created_at = item.get("created_at")
+    if created_at:
+        normalized["created_at"] = str(created_at)
+    return normalized
+
+
+def _merge_history(
+    request_history: list[dict[str, Any]] | None,
+    stored_history: list[dict[str, Any]] | None,
+    limit: int = 20,
+) -> list[dict[str, str]]:
+    merged: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+
+    for raw_item in [*(stored_history or []), *(request_history or [])]:
+        item = _normalize_history_item(raw_item)
+        if not item:
+            continue
+        signature = (
+            item["role"],
+            item["content"],
+            item.get("created_at", ""),
+        )
+        if signature in seen:
+            continue
+        seen.add(signature)
+        merged.append(item)
+
+    return merged[-limit:]
 
 
 @router.post("/")
@@ -46,8 +90,10 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
     router_payload["user_id"] = telegram_id
     if person_id:
         router_payload["person_id"] = person_id
+    stored_history: list[dict[str, Any]] = []
     if session_id:
-        router_payload["history"] = chat_analytics.fetch_session_history(session_id)
+        stored_history = chat_analytics.fetch_session_history(session_id)
+    router_payload["history"] = _merge_history(payload.history, stored_history)
 
     response = await agent_router.route(router_payload)
 
@@ -91,8 +137,10 @@ async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_
     router_payload["user_id"] = telegram_id
     if person_id:
         router_payload["person_id"] = person_id
+    stored_history: list[dict[str, Any]] = []
     if session_id:
-        router_payload["history"] = chat_analytics.fetch_session_history(session_id)
+        stored_history = chat_analytics.fetch_session_history(session_id)
+    router_payload["history"] = _merge_history(payload.history, stored_history)
 
     async def event_stream():
         final_answer_parts: list[str] = []

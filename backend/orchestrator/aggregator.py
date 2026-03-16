@@ -10,7 +10,12 @@ from .graph import AgentPlanStep
 
 
 PROMPT_PATH = Path(__file__).resolve().parents[1] / "langchain" / "prompts" / "final_answer.txt"
-SYSTEM_PROMPT = "Ты академический ассистент университета Туран-Астана.. Собери ответ исходя только из контекста, сохраняя тон и безопасность."
+SYSTEM_PROMPT = (
+    "Ты академический ассистент университета Туран-Астана. "
+    "Отвечай только по доступному контексту. "
+    "Если в истории чата есть предыдущие сообщения, используй их для понимания продолжения диалога, "
+    "но не подменяй ими факты из документов."
+)
 
 
 @dataclass
@@ -27,6 +32,7 @@ def _load_prompt_template() -> str:
     except FileNotFoundError:  # pragma: no cover - fallback for deployments
         return (
             "Вопрос: {question}\n"
+            "История чата: {history}\n"
             "Ответы агентов: {agent_answers}\n"
             "Контекст: {context}\n"
             "Сформулируй итоговый ответ на языке {language}."
@@ -196,15 +202,17 @@ class ResponseAggregator:
 
     def _format_history(self, history: Any) -> str:
         if not history:
-            return "- Р?РчС' РёС?С'Р?С?РёРё"
+            return "- история текущего чата пуста"
         lines: List[str] = []
-        for item in history:
+        for idx, item in enumerate(history, 1):
             if not isinstance(item, dict):
                 continue
             role = item.get("role") or "unknown"
             content = item.get("content") or ""
-            lines.append(f"- {role}: {content}")
-        return "\n".join(lines) if lines else "- Р?РчС' РёС?С'Р?С?РёРё"
+            if not content:
+                continue
+            lines.append(f"{idx}. {role}: {content}")
+        return "\n".join(lines) if lines else "- история текущего чата пуста"
 
     def _format_citations(self, citations: List[Dict[str, Any]]) -> str:
         if not citations:

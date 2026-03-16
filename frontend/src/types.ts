@@ -87,6 +87,12 @@ export type ChatMetadata = {
   [key: string]: unknown;
 };
 
+export type ChatHistoryEntry = {
+  role: "user" | "assistant" | "bot";
+  content: string;
+  created_at?: string;
+};
+
 export type ChatRequestPayload = {
   user_id: number;
   telegram_id?: number;
@@ -95,6 +101,7 @@ export type ChatRequestPayload = {
   language: string;
   context: ChatContext;
   metadata: ChatMetadata;
+  history?: ChatHistoryEntry[];
 };
 
 export type ChatPlanStep = {

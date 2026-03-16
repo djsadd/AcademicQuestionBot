@@ -35,6 +35,9 @@ INTENT_PROMPT = (
     "\u043f\u0430\u0440\u043e\u043b\u044c\" \u2192 password_reset\n"
     "\"\u041a\u043e\u0433\u0434\u0430 \u043d\u0430\u0447\u0438\u043d\u0430\u0435\u0442\u0441\u044f "
     "\u0441\u0435\u0441\u0441\u0438\u044f?\" \u2192 calendar\n\n"
+    "\u0418\u0441\u0442\u043e\u0440\u0438\u044f "
+    "\u0434\u0438\u0430\u043b\u043e\u0433\u0430 (\u0435\u0441\u043b\u0438 "
+    "\u0435\u0441\u0442\u044c):\n{history}\n\n"
     "\u0412\u0435\u0440\u043d\u0438 \u0422\u041e\u041b\u042c\u041a\u041e "
     "\u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 intent.\n\n"
     "\u0417\u0430\u043f\u0440\u043e\u0441: {query}"
@@ -59,20 +62,41 @@ class IntentRouterAgent(BaseAgent):
 
     async def run(self, payload: Dict[str, Any]) -> AgentResult:
         text = (payload.get("message") or "").strip()
-        intent = await self._classify_intent(text)
+        intent = await self._classify_intent(text, payload.get("history"))
         priority = "high" if intent in {"password_reset"} else "medium"
         return AgentResult(intents=[intent], priority=priority)
 
-    async def _classify_intent(self, text: str) -> str:
+    async def _classify_intent(self, text: str, history: Any = None) -> str:
         if not text:
             return self.default_intent
         if not llm_client.is_configured:
             return self.default_intent
 
-        prompt = INTENT_PROMPT.format(query=text)
+        prompt = INTENT_PROMPT.format(
+            query=text,
+            history=self._format_history(history),
+        )
         messages = [{"role": "user", "content": prompt}]
         response = llm_client.chat(messages, temperature=0.0, max_tokens=10)
         intent = (response or "").strip().lower().splitlines()[0]
         if intent not in ALLOWED_INTENTS:
             return self.default_intent
         return intent
+
+    def _format_history(self, history: Any) -> str:
+        if not isinstance(history, list) or not history:
+            return "- no previous messages"
+
+        lines: list[str] = []
+        for item in history[-12:]:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role") or "user").strip().lower()
+            if role == "bot":
+                role = "assistant"
+            content = str(item.get("content") or "").strip()
+            if not content:
+                continue
+            lines.append(f"- {role}: {content}")
+
+        return "\n".join(lines) if lines else "- no previous messages"

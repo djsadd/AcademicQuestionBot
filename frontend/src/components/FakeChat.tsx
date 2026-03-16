@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiClient } from "../api/client";
 import { getChatHistory, streamChatMessage } from "../api/chat";
-import type { ChatHistorySession, ChatRequestPayload, ChatResult } from "../types";
+import type {
+  ChatHistoryEntry,
+  ChatHistorySession,
+  ChatRequestPayload,
+  ChatResult,
+} from "../types";
 
 const DEFAULT_PROFILE = {
   language: "ru",
@@ -180,6 +185,20 @@ const mapHistorySession = (session: ChatHistorySession): ChatSession => {
     sessionId: session.session_id,
     messages: messages.length ? messages : [createIntroMessage()],
   };
+};
+
+const buildRequestHistory = (messages: ChatMessage[], pendingMessage?: ChatMessage): ChatHistoryEntry[] => {
+  const source = pendingMessage ? [...messages, pendingMessage] : messages;
+  return source
+    .filter((message) => {
+      if (message.content === INTRO_MESSAGE) return false;
+      if (message.status === "pending") return false;
+      return true;
+    })
+    .map((message) => ({
+      role: message.role === "bot" ? "assistant" : "user",
+      content: message.content,
+    }));
 };
 
 const loadChatState = (key: string): ChatHistoryState | null => {
@@ -594,6 +613,7 @@ export function FakeChat() {
         channel: "web",
         session_id: requestMeta.session,
       },
+      history: buildRequestHistory(activeChat?.messages ?? [], userMessage),
     };
 
     let streamedText = "";

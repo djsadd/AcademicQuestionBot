@@ -180,6 +180,21 @@ def get_study_durations(
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
+    normalized_level = _normalize_level(level)
+    duration_rules = data.get("duration_rules") or {}
+
+    if normalized_level and not program:
+        rules = duration_rules.get(normalized_level)
+        if rules:
+            return {
+                "status": "ok",
+                "tool": "durations",
+                "results": [],
+                "duration_rules": [{"level": normalized_level, **rules}],
+                "data_updated_at": data.get("last_updated"),
+                "source_path": _source_path(),
+            }
+
     matches = _match_programs(data, program=program, level=level)
     if not matches:
         return _not_found("durations", data, level=level, program=program)
@@ -197,6 +212,11 @@ def get_study_durations(
         "status": "ok",
         "tool": "durations",
         "results": results,
+        "duration_rules": (
+            [{"level": normalized_level, **duration_rules[normalized_level]}]
+            if normalized_level and normalized_level in duration_rules
+            else []
+        ),
         "data_updated_at": data.get("last_updated"),
         "source_path": _source_path(),
     }
@@ -319,6 +339,19 @@ def format_admission_tool_result(result: Dict[str, Any]) -> str:
         contacts = result.get("contacts") or {}
         phones = ", ".join(contacts.get("phone") or []) or "не указаны"
         emails = ", ".join(contacts.get("email") or []) or "не указаны"
+        technical_contacts = contacts.get("technical_contacts") or []
+        technical_lines = []
+        for entry in technical_contacts:
+            name = entry.get("name") or "Специалист"
+            phone = entry.get("phone") or "не указан"
+            note = entry.get("note") or ""
+            suffix = f" ({note})" if note else ""
+            technical_lines.append(f"- {name}: {phone}{suffix}")
+        technical_block = (
+            "\nТехнические специалисты:\n" + "\n".join(technical_lines)
+            if technical_lines
+            else ""
+        )
         return (
             f"{contacts.get('department') or 'Приемная комиссия'}\n"
             f"Телефоны: {phones}\n"
@@ -326,6 +359,7 @@ def format_admission_tool_result(result: Dict[str, Any]) -> str:
             f"Адрес: {contacts.get('address') or 'не указан'}\n"
             f"Время работы: {contacts.get('working_hours') or 'не указано'}\n"
             f"Сайт: {contacts.get('website') or 'не указан'}"
+            f"{technical_block}"
         )
 
     if tool == "durations":
@@ -334,6 +368,10 @@ def format_admission_tool_result(result: Dict[str, Any]) -> str:
             lines.append(
                 f"- {item.get('program')} ({item.get('level')}): {item.get('duration') or 'не указано'}."
             )
+        for rule in result.get("duration_rules") or []:
+            lines.append(f"{rule.get('title')}:")
+            for item in rule.get("items") or []:
+                lines.append(f"- {item}")
         return "\n".join(lines)
 
     return "Данные по поступлению загружены, но формат ответа для этого инструмента не настроен."
