@@ -10,6 +10,7 @@ from ..langchain.tools.admission_info import (
     extract_program,
     format_admission_tool_result,
     get_admission_contacts,
+    get_available_programs,
     get_current_prices,
     get_passing_scores,
     get_required_documents,
@@ -29,7 +30,9 @@ class AdmissionAgent(BaseAgent):
         program = payload.get("program") or extract_program(query, data=data)
         requested_tool = detect_requested_tool(query)
 
-        if requested_tool == "prices":
+        if requested_tool == "programs":
+            result = get_available_programs(level=level)
+        elif requested_tool == "prices":
             result = get_current_prices(program=program, level=level)
         elif requested_tool == "passing_scores":
             result = get_passing_scores(program=program, level=level)
@@ -51,6 +54,7 @@ class AdmissionAgent(BaseAgent):
 
 
 def _build_overview(*, program: str | None, level: str | None) -> Dict[str, Any]:
+    programs = get_available_programs(level=level)
     prices = get_current_prices(program=program, level=level)
     scores = get_passing_scores(program=program, level=level)
     durations = get_study_durations(program=program, level=level)
@@ -59,6 +63,7 @@ def _build_overview(*, program: str | None, level: str | None) -> Dict[str, Any]
     answer = "\n\n".join(
         [
             "Информация приемной комиссии:",
+            format_admission_tool_result(programs),
             format_admission_tool_result(prices),
             format_admission_tool_result(scores),
             format_admission_tool_result(durations),

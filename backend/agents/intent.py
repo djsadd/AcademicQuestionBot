@@ -52,6 +52,22 @@ ALLOWED_INTENTS = {
     "general",
 }
 
+ADMISSION_KEYWORDS = (
+    "поступ",
+    "абитури",
+    "прием",
+    "приём",
+    "специальност",
+    "програм",
+    "магистрат",
+    "бакалав",
+    "докторант",
+    "грант",
+    "ент",
+    "стоимость обучения",
+    "проходной балл",
+)
+
 
 class IntentRouterAgent(BaseAgent):
     """Classifies incoming messages into intents."""
@@ -62,7 +78,7 @@ class IntentRouterAgent(BaseAgent):
 
     async def run(self, payload: Dict[str, Any]) -> AgentResult:
         text = (payload.get("message") or "").strip()
-        intent = await self._classify_intent(text, payload.get("history"))
+        intent = self._detect_intent_by_keywords(text) or await self._classify_intent(text, payload.get("history"))
         priority = "high" if intent in {"password_reset"} else "medium"
         return AgentResult(intents=[intent], priority=priority)
 
@@ -82,6 +98,14 @@ class IntentRouterAgent(BaseAgent):
         if intent not in ALLOWED_INTENTS:
             return self.default_intent
         return intent
+
+    def _detect_intent_by_keywords(self, text: str) -> str | None:
+        normalized = text.lower().strip()
+        if not normalized:
+            return None
+        if any(keyword in normalized for keyword in ADMISSION_KEYWORDS):
+            return "admission"
+        return None
 
     def _format_history(self, history: Any) -> str:
         if not isinstance(history, list) or not history:

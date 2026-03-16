@@ -20,6 +20,19 @@ LEVEL_ALIASES = {
 }
 
 TOOL_TERMS = {
+    "programs": {
+        "специальност",
+        "специальности",
+        "образовательные программы",
+        "программы",
+        "направления",
+        "какие есть программы",
+        "какие есть специальности",
+        "programs",
+        "majors",
+        "specialties",
+        "degrees",
+    },
     "prices": {"цена", "стоимость", "оплата", "tuition", "price", "cost"},
     "passing_scores": {"проход", "балл", "ент", "грант", "score", "scores"},
     "documents": {"документ", "справк", "что нужно", "что надо", "document", "documents"},
@@ -73,6 +86,34 @@ def get_current_prices(
     return {
         "status": "ok",
         "tool": "prices",
+        "results": results,
+        "data_updated_at": data.get("last_updated"),
+        "source_path": _source_path(),
+    }
+
+
+def get_available_programs(*, level: Optional[str] = None) -> Dict[str, Any]:
+    data = load_admission_data()
+    if data.get("status") in {"missing_data_file", "invalid_data_file"}:
+        return data
+
+    matches = _match_programs(data, program=None, level=level)
+    if not matches:
+        return _not_found("programs", data, level=level, program=None)
+
+    results = []
+    for item in matches:
+        results.append(
+            {
+                "program": item.get("name"),
+                "level": item.get("level"),
+                "duration": item.get("duration"),
+                "gop_code": (item.get("passing_score") or {}).get("gop_code"),
+            }
+        )
+    return {
+        "status": "ok",
+        "tool": "programs",
         "results": results,
         "data_updated_at": data.get("last_updated"),
         "source_path": _source_path(),
@@ -224,8 +265,14 @@ def get_study_durations(
 
 def detect_requested_tool(query: str) -> str:
     normalized_query = _normalize_text(query)
-    for tool_name in ("documents", "contacts", "prices", "passing_scores", "durations"):
-        if any(_term_matches_query(term, normalized_query) for term in TOOL_TERMS[tool_name]):
+    raw_query = (query or "").casefold()
+    for tool_name in ("programs", "documents", "contacts", "prices", "passing_scores", "durations"):
+        if any(
+            _term_matches_query(term, normalized_query)
+            or _normalize_text(term) in normalized_query
+            or term.casefold() in raw_query
+            for term in TOOL_TERMS[tool_name]
+        ):
             return tool_name
     return "overview"
 
@@ -282,6 +329,32 @@ def format_admission_tool_result(result: Dict[str, Any]) -> str:
         return "\n".join(lines)
 
     tool = result.get("tool")
+    if tool == "programs":
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for item in result.get("results") or []:
+            level = str(item.get("level") or "other")
+            grouped.setdefault(level, []).append(item)
+
+        level_titles = {
+            "bachelor": "Бакалавриат",
+            "master": "Магистратура",
+            "doctorate": "Докторантура",
+            "second_higher": "Второе высшее",
+            "other": "Другие программы",
+        }
+
+        lines = ["Доступные специальности:"]
+        for level in ("bachelor", "master", "doctorate", "second_higher", "other"):
+            items = grouped.get(level) or []
+            if not items:
+                continue
+            lines.append(f"{level_titles.get(level, level)}:")
+            for item in items:
+                gop_code = item.get("gop_code")
+                suffix = f" (ГОП {gop_code})" if gop_code else ""
+                lines.append(f"- {item.get('program')}{suffix}")
+        return "\n".join(lines)
+
     if tool == "prices":
         lines = ["Актуальные цены по обучению:"]
         for item in result.get("results") or []:
