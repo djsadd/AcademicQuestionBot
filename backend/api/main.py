@@ -16,7 +16,13 @@ else:
     logging.getLogger(__name__).warning("python-dotenv is not installed; .env not loaded.")
 
 from .routers import admin, auth, chat, rag, telegram
-from ..db import auth_tokens, chat_analytics, rag_documents, telegram_users
+from ..db import (
+    admission_applications,
+    auth_tokens,
+    chat_analytics,
+    rag_documents,
+    telegram_users,
+)
 
 app = FastAPI(title="Academic Question Bot")
 
@@ -36,6 +42,7 @@ async def startup_event() -> None:
     telegram_users.ensure_table()
     auth_tokens.ensure_table()
     chat_analytics.ensure_tables()
+    admission_applications.ensure_tables()
     rag_documents.ensure_tables()
     logger = logging.getLogger("rag")
     logger.info(

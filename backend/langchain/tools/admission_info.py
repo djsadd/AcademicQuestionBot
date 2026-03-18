@@ -309,6 +309,8 @@ def extract_program(query: str, *, data: Optional[Dict[str, Any]] = None) -> Opt
 def format_admission_tool_result(result: Dict[str, Any]) -> str:
     if result.get("tool") == "overview" and result.get("answer"):
         return str(result["answer"])
+    if result.get("tool") == "application_form" and result.get("answer"):
+        return str(result["answer"])
 
     status = result.get("status")
     if status == "missing_data_file":
