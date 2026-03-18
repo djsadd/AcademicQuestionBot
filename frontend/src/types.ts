@@ -153,3 +153,33 @@ export type ChatHistorySession = {
 export type ChatHistoryResponse = {
   sessions: ChatHistorySession[];
 };
+
+export type AdmissionApplication = {
+  id: string;
+  telegram_id: number | null;
+  person_id: string | null;
+  channel: string | null;
+  full_name: string;
+  iin: string | null;
+  birth_date: string | null;
+  phone: string;
+  email: string | null;
+  education_level: string;
+  program: string;
+  study_language: string | null;
+  study_format: string | null;
+  comment: string | null;
+  status: string;
+  source: string;
+  payload: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AdmissionApplicationListResponse = {
+  items: AdmissionApplication[];
+  page: number;
+  per_page: number;
+  total: number;
+  pages: number;
+};

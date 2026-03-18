@@ -130,3 +130,79 @@ def create_application(
         "status": row[1],
         "created_at": row[2].isoformat() if row and row[2] else None,
     }
+
+
+def list_applications(
+    *,
+    page: int = 1,
+    per_page: int = 20,
+) -> dict[str, Any]:
+    normalized_page = max(page, 1)
+    normalized_per_page = min(max(per_page, 1), 100)
+    offset = (normalized_page - 1) * normalized_per_page
+
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute("SELECT COUNT(*) FROM admission_applications;")
+        total = int(cursor.fetchone()[0])
+        cursor.execute(
+            """
+            SELECT
+                id,
+                telegram_id,
+                person_id,
+                channel,
+                full_name,
+                iin,
+                birth_date,
+                phone,
+                email,
+                education_level,
+                program,
+                study_language,
+                study_format,
+                comment,
+                status,
+                source,
+                payload,
+                created_at,
+                updated_at
+            FROM admission_applications
+            ORDER BY created_at DESC
+            LIMIT %s OFFSET %s;
+            """,
+            (normalized_per_page, offset),
+        )
+        rows = cursor.fetchall()
+
+    items = [
+        {
+            "id": row[0],
+            "telegram_id": row[1],
+            "person_id": row[2],
+            "channel": row[3],
+            "full_name": row[4],
+            "iin": row[5],
+            "birth_date": row[6],
+            "phone": row[7],
+            "email": row[8],
+            "education_level": row[9],
+            "program": row[10],
+            "study_language": row[11],
+            "study_format": row[12],
+            "comment": row[13],
+            "status": row[14],
+            "source": row[15],
+            "payload": row[16] if isinstance(row[16], dict) else {},
+            "created_at": row[17].isoformat() if row[17] else None,
+            "updated_at": row[18].isoformat() if row[18] else None,
+        }
+        for row in rows
+    ]
+    pages = (total + normalized_per_page - 1) // normalized_per_page if total else 0
+    return {
+        "items": items,
+        "page": normalized_page,
+        "per_page": normalized_per_page,
+        "total": total,
+        "pages": pages,
+    }

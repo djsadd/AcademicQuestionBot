@@ -3,6 +3,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
+from ...db import admission_applications
 from ...services.platonus_client import (
     fetch_platonus_session_status,
     fetch_student_academic_calendar,
@@ -26,3 +27,8 @@ async def platonus_session_status() -> dict:
 @router.get("/platonus/student-academic-calendar/{person_id}")
 async def platonus_student_academic_calendar(person_id: str, lang: str = "ru") -> Any:
     return fetch_student_academic_calendar(person_id, lang)
+
+
+@router.get("/admission-applications")
+async def get_admission_applications(page: int = 1, per_page: int = 20) -> dict[str, Any]:
+    return admission_applications.list_applications(page=page, per_page=per_page)

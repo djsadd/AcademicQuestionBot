@@ -8,6 +8,7 @@ import { MiniApp } from "./components/MiniApp";
 import { PlatonusStatus } from "./components/PlatonusStatus";
 import { TelegramLogin } from "./components/TelegramLogin";
 import { Profile } from "./components/Profile";
+import { AdmissionApplications } from "./components/AdmissionApplications";
 import { apiClient, authStorage } from "./api/client";
 
 const NAV_ITEMS = [
@@ -18,10 +19,11 @@ const NAV_ITEMS = [
   { id: "chat", label: "CHAT", path: "/chat" },
   { id: "agents", label: "AGENTS", path: "/agents" },
   { id: "platonus", label: "PLATONUS", path: "/platonus" },
+  { id: "admissions", label: "ADMISSIONS", path: "/admissions" },
 ] as const;
 
 type PageId = (typeof NAV_ITEMS)[number]["id"];
-type AdminOnlyId = "rag" | "rag-jobs" | "llm" | "agents" | "platonus";
+type AdminOnlyId = "rag" | "rag-jobs" | "llm" | "agents" | "platonus" | "admissions";
 
 const ADMIN_ONLY_IDS: Set<AdminOnlyId> = new Set([
   "rag",
@@ -29,6 +31,7 @@ const ADMIN_ONLY_IDS: Set<AdminOnlyId> = new Set([
   "llm",
   "agents",
   "platonus",
+  "admissions",
 ]);
 
 const ADMIN_ROLES = new Set([
@@ -294,6 +297,10 @@ export default function App() {
           <Route
             path="/platonus"
             element={<RequireAdmin isAdmin={isAdmin}><PlatonusStatus /></RequireAdmin>}
+          />
+          <Route
+            path="/admissions"
+            element={<RequireAdmin isAdmin={isAdmin}><AdmissionApplications /></RequireAdmin>}
           />
         </Route>
         <Route path="/mini-app" element={<MiniAppPage />} />
