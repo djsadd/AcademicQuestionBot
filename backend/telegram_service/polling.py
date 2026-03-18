@@ -103,20 +103,46 @@ def _normalize_telegram_html(text: str) -> str:
     return normalized.strip()
 
 
-def _build_ai_payload(message: str, telegram_id: int | None) -> dict:
-    """Prepare minimal chat payload with only query content."""
+def _build_ai_payload(
+    message: str,
+    telegram_id: int | None,
+    *,
+    session_id: str | None = None,
+    person_id: str | None = None,
+) -> dict:
+    """Prepare chat payload for Telegram requests with session history."""
+    history = chat_analytics.fetch_session_history(session_id) if session_id else []
     return {
         "message": message,
-        "language": None,
+        "language": "ru",
         "topic": None,
         "policy": None,
         "program": None,
         "telegram_id": telegram_id,
+        "user_id": telegram_id,
+        "person_id": person_id,
+        "metadata": {
+            "channel": "telegram",
+            "session_id": session_id,
+        },
+        "history": history,
     }
 
 
-def _run_ai_chat(agent_router: AgentRouter, message: str, telegram_id: int | None) -> dict:
-    payload = _build_ai_payload(message, telegram_id)
+def _run_ai_chat(
+    agent_router: AgentRouter,
+    message: str,
+    telegram_id: int | None,
+    *,
+    session_id: str | None = None,
+    person_id: str | None = None,
+) -> dict:
+    payload = _build_ai_payload(
+        message,
+        telegram_id,
+        session_id=session_id,
+        person_id=person_id,
+    )
     return asyncio.run(agent_router.route(payload)) or {}
 
 
@@ -254,7 +280,13 @@ def run() -> None:
                     continue
 
                 try:
-                    result = _run_ai_chat(agent_router, text, telegram_id)
+                    result = _run_ai_chat(
+                        agent_router,
+                        text,
+                        telegram_id,
+                        session_id=session_id,
+                        person_id=user.get("platonus_person_id"),
+                    )
                     answer = result.get("final_answer") or "Ответ временно недоступен."
                 except Exception as exc:
                     logger.warning("AI chat failed: %s", exc)
