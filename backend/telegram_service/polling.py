@@ -16,6 +16,7 @@ from backend.db.chat_history import (
 )
 from backend.db import chat_analytics
 from backend.db.telegram_users import ensure_table, get_or_create_user
+from backend.langchain.tools.admission_info import detect_requested_tool
 from backend.orchestrator.router import AgentRouter
 
 
@@ -129,6 +130,11 @@ def _build_ai_payload(
     }
 
 
+def _is_public_admission_query(message: str) -> bool:
+    """Allow admission FAQ requests without Platonus auth."""
+    return detect_requested_tool(message) != "overview"
+
+
 def _run_ai_chat(
     agent_router: AgentRouter,
     message: str,
@@ -212,7 +218,7 @@ def run() -> None:
                     first_name=from_user.get("first_name") if isinstance(from_user, dict) else None,
                     last_name=from_user.get("last_name") if isinstance(from_user, dict) else None,
                 )
-                if not user["platonus_auth"]:
+                if not user["platonus_auth"] and not _is_public_admission_query(text):
                     auth_text = "Authorization required. Please sign in via the mini app."
                     reply_markup = None
                     if mini_app_url:
