@@ -78,6 +78,8 @@ class AgentRouter:
                     "output": result,
                 }
             )
+            if result.get("direct_response"):
+                break
 
         return self.aggregator.aggregate(
             user_payload=payload,

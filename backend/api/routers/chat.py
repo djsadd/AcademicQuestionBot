@@ -12,6 +12,20 @@ from pydantic import BaseModel
 
 from ...db import chat_analytics
 from ...langchain.llm import llm_client
+from ...langchain.tools.admission_info import (
+    build_context_entries,
+    detect_requested_tool,
+    extract_level,
+    extract_program,
+    format_admission_tool_result,
+    get_admission_contacts,
+    get_available_programs,
+    get_current_prices,
+    get_passing_scores,
+    get_required_documents,
+    get_study_durations,
+    load_admission_data,
+)
 from ...services.permissions import require_user
 
 from ...orchestrator.router import AgentRouter
@@ -31,6 +45,11 @@ class ChatPayload(BaseModel):
     context: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
     history: list[dict[str, Any]] | None = None
+
+
+PUBLIC_ADMISSION_PLAN = [
+    {"agent": "admission", "description": "Admission Agent"},
+]
 
 
 def _normalize_history_item(item: Any) -> dict[str, str] | None:
@@ -76,6 +95,77 @@ def _merge_history(
     return merged[-limit:]
 
 
+def _build_public_admission_overview(*, program: str | None, level: str | None) -> dict[str, Any]:
+    programs = get_available_programs(level=level)
+    prices = get_current_prices(program=program, level=level)
+    scores = get_passing_scores(program=program, level=level)
+    durations = get_study_durations(program=program, level=level)
+    contacts = get_admission_contacts()
+
+    answer = "\n\n".join(
+        [
+            "Информация приемной комиссии:",
+            format_admission_tool_result(programs),
+            format_admission_tool_result(prices),
+            format_admission_tool_result(scores),
+            format_admission_tool_result(durations),
+            format_admission_tool_result(contacts),
+        ]
+    )
+    return {
+        "status": "ok",
+        "tool": "overview",
+        "answer": answer,
+        "source_path": prices.get("source_path") or contacts.get("source_path"),
+        "data_updated_at": prices.get("data_updated_at") or contacts.get("data_updated_at"),
+    }
+
+
+def _run_public_admission_chat(payload: ChatPayload) -> dict[str, Any]:
+    query = payload.message.strip()
+    data = load_admission_data()
+    level = extract_level(query)
+    program = extract_program(query, data=data)
+    requested_tool = detect_requested_tool(query)
+
+    if requested_tool == "programs":
+        tool_result = get_available_programs(level=level)
+    elif requested_tool == "prices":
+        tool_result = get_current_prices(program=program, level=level)
+    elif requested_tool == "passing_scores":
+        tool_result = get_passing_scores(program=program, level=level)
+    elif requested_tool == "documents":
+        tool_result = get_required_documents(level=level)
+    elif requested_tool == "contacts":
+        tool_result = get_admission_contacts()
+    elif requested_tool == "durations":
+        tool_result = get_study_durations(program=program, level=level)
+    else:
+        tool_result = _build_public_admission_overview(program=program, level=level)
+
+    final_answer = format_admission_tool_result(tool_result)
+    return {
+        "query": query,
+        "intents": ["admission"],
+        "plan": PUBLIC_ADMISSION_PLAN,
+        "trace": [
+            {
+                "key": "admission",
+                "name": "public-admission",
+                "description": "Public Admission FAQ",
+                "output": {
+                    "intent": "admission",
+                    "tool_data": tool_result,
+                },
+            }
+        ],
+        "context": build_context_entries(tool_result),
+        "llm": {"used": False, "model": None, "error": None},
+        "final_answer": final_answer,
+        "tool_data": tool_result,
+    }
+
+
 @router.post("/")
 async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) -> dict:
     telegram_id = user["telegram_id"]
@@ -115,6 +205,35 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
         )
     except Exception as exc:
         logger.exception("Chat analytics failed: %s", exc)
+
+    return {"result": response}
+
+
+@router.post("/public/admission")
+async def handle_public_admission_chat(payload: ChatPayload) -> dict:
+    response = _run_public_admission_chat(payload)
+    metadata = payload.metadata or {}
+    session_id = metadata.get("session_id") or metadata.get("session") or None
+    channel = metadata.get("channel") or "public_web"
+
+    try:
+        chat_analytics.save_chat_event(
+            session_id=session_id,
+            telegram_id=None,
+            person_id=None,
+            channel=str(channel) if channel is not None else None,
+            query=response.get("query"),
+            response=response.get("final_answer"),
+            llm_model=(response.get("llm") or {}).get("model"),
+            llm_used=(response.get("llm") or {}).get("used"),
+            llm_error=(response.get("llm") or {}).get("error"),
+            intents=response.get("intents"),
+            agents=response.get("plan"),
+            trace=response.get("trace"),
+            metadata=metadata,
+        )
+    except Exception as exc:
+        logger.exception("Public admission analytics failed: %s", exc)
 
     return {"result": response}
 
@@ -190,12 +309,22 @@ async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_
                         "output": result,
                     }
                 )
+                if result.get("direct_response"):
+                    break
 
             artifacts = agent_router.aggregator._collect_artifacts(execution_trace)
             fallback_answer = agent_router.aggregator._fallback_answer(artifacts.answers)
             llm_answer = ""
 
-            if llm_client.is_configured and artifacts.answers:
+            if artifacts.direct_response:
+                for idx in range(0, len(artifacts.direct_response), 140):
+                    chunk = artifacts.direct_response[idx: idx + 140]
+                    if not chunk:
+                        continue
+                    final_answer_parts.append(chunk)
+                    yield _sse("delta", {"delta": chunk})
+                    await asyncio.sleep(0)
+            elif llm_client.is_configured and artifacts.answers:
                 prompt = agent_router.aggregator._render_prompt(
                     user_payload=router_payload,
                     intents=intents,

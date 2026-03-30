@@ -132,6 +132,7 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
             intent="admission",
             tool_data=result,
             context=build_context_entries(result),
+            direct_response=True,
         )
 
     pending_key = state["pending_field"]
@@ -153,6 +154,7 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
             intent="admission",
             tool_data=result,
             context=build_context_entries(result),
+            direct_response=True,
         )
 
     if not state["awaiting_confirmation"]:
@@ -173,6 +175,7 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
             intent="admission",
             tool_data=result,
             context=build_context_entries(result),
+            direct_response=True,
         )
 
     normalized_query = _normalize_text(query)
@@ -189,6 +192,7 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
             intent="admission",
             tool_data=result,
             context=build_context_entries(result),
+            direct_response=True,
         )
 
     if normalized_query not in CONFIRM_TERMS:
@@ -204,6 +208,7 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
             intent="admission",
             tool_data=result,
             context=build_context_entries(result),
+            direct_response=True,
         )
 
     created = admission_applications.create_application(
@@ -244,6 +249,7 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
         intent="admission",
         tool_data=result,
         context=build_context_entries(result),
+        direct_response=True,
     )
 
 

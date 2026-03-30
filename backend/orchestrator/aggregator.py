@@ -24,6 +24,7 @@ class AggregationArtifacts:
     context: List[Dict[str, Any]]
     citations: List[Dict[str, Any]]
     validator: Dict[str, Any]
+    direct_response: str
 
 
 def _load_prompt_template() -> str:
@@ -54,6 +55,27 @@ class ResponseAggregator:
         trace: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         artifacts = self._collect_artifacts(trace)
+        if artifacts.direct_response:
+            plan_view = [
+                {"agent": step.key, "description": step.description} for step in plan
+            ]
+            return {
+                "query": user_payload.get("message"),
+                "intents": intents.get("intents", []),
+                "priority": intents.get("priority"),
+                "plan": plan_view,
+                "trace": trace,
+                "final_answer": artifacts.direct_response,
+                "validation": artifacts.validator,
+                "citations": artifacts.citations,
+                "supporting_context": artifacts.context,
+                "llm": {
+                    "model": getattr(llm_client, "model", None),
+                    "used": False,
+                    "error": None,
+                    "raw_request": None,
+                },
+            }
         fallback_answer = self._fallback_answer(artifacts.answers)
         llm_answer = self._synthesize_final_answer(
             user_payload=user_payload,
@@ -94,6 +116,7 @@ class ResponseAggregator:
         context: List[Dict[str, Any]] = []
         citations: List[Dict[str, Any]] = []
         validator: Dict[str, Any] = {}
+        direct_response = ""
 
         for item in trace:
             agent_key = item["key"]
@@ -105,6 +128,8 @@ class ResponseAggregator:
             answer = output.get("answer")
             if answer:
                 answers.append(str(answer))
+            if output.get("direct_response") and answer and not direct_response:
+                direct_response = str(answer)
 
             context_items = output.get("context")
             if isinstance(context_items, list):
@@ -127,6 +152,7 @@ class ResponseAggregator:
             context=context,
             citations=citations,
             validator=validator,
+            direct_response=direct_response,
         )
 
     def _fallback_answer(self, answers: List[str]) -> str:
