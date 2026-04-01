@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiClient } from "../api/client";
-import { getChatHistory, sendPublicAdmissionMessage, streamChatMessage } from "../api/chat";
+import { getChatHistory, streamChatMessage, streamPublicAdmissionMessage } from "../api/chat";
 import type {
   ChatHistoryEntry,
   ChatHistorySession,
@@ -682,29 +682,6 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
       history: buildRequestHistory(activeChat?.messages ?? [], config.introMessage, userMessage),
     };
 
-    if (isPublicAdmission) {
-      setIsStreaming(true);
-      sendPublicAdmissionMessage(payload)
-        .then((response) => {
-          const result = response.result;
-          replaceMessage(activeChatId, botMessageId, {
-            content: result.final_answer || "No answer from the agent.",
-            status: undefined,
-            details: result,
-          });
-        })
-        .catch((error) => {
-          replaceMessage(activeChatId, botMessageId, {
-            content: error instanceof Error ? error.message : "Request failed.",
-            status: "error",
-          });
-        })
-        .finally(() => {
-          setIsStreaming(false);
-        });
-      return;
-    }
-
     const controller = new AbortController();
     streamAbortRef.current = controller;
     setIsStreaming(true);
@@ -729,7 +706,9 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
       flushTimeout = window.setTimeout(flushStream, 40);
     };
 
-    streamChatMessage(
+    const streamRequest = isPublicAdmission ? streamPublicAdmissionMessage : streamChatMessage;
+
+    streamRequest(
       payload,
       {
         onDelta: (delta) => {

@@ -165,10 +165,11 @@ def _synthesize_public_admission_answer(
     }
 
 
-def _run_public_admission_chat(
+def _build_public_admission_response(
+    *,
     payload: ChatPayload,
     history: list[dict[str, Any]] | None = None,
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], str]:
     query = payload.message.strip()
     data = load_admission_data()
     level = extract_level(query)
@@ -191,14 +192,18 @@ def _run_public_admission_chat(
         tool_result = _build_public_admission_overview(program=program, level=level)
 
     fallback_answer = format_admission_tool_result(tool_result)
-    final_answer, llm_info = _synthesize_public_admission_answer(
-        payload=payload,
-        tool_result=tool_result,
-        fallback_answer=fallback_answer,
-        history=history,
-    )
+    return tool_result, fallback_answer
+
+
+def _assemble_public_admission_response(
+    *,
+    payload: ChatPayload,
+    tool_result: dict[str, Any],
+    final_answer: str,
+    llm_info: dict[str, Any],
+) -> dict[str, Any]:
     return {
-        "query": query,
+        "query": payload.message.strip(),
         "intents": ["admission"],
         "plan": PUBLIC_ADMISSION_PLAN,
         "trace": [
@@ -217,6 +222,55 @@ def _run_public_admission_chat(
         "final_answer": final_answer,
         "tool_data": tool_result,
     }
+
+
+def _run_public_admission_chat(
+    payload: ChatPayload,
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    tool_result, fallback_answer = _build_public_admission_response(
+        payload=payload,
+        history=history,
+    )
+    final_answer, llm_info = _synthesize_public_admission_answer(
+        payload=payload,
+        tool_result=tool_result,
+        fallback_answer=fallback_answer,
+        history=history,
+    )
+    return _assemble_public_admission_response(
+        payload=payload,
+        tool_result=tool_result,
+        final_answer=final_answer,
+        llm_info=llm_info,
+    )
+
+
+def _save_public_admission_analytics(
+    *,
+    response: dict[str, Any],
+    metadata: dict[str, Any],
+    session_id: str | None,
+    channel: str | None,
+) -> None:
+    try:
+        chat_analytics.save_chat_event(
+            session_id=session_id,
+            telegram_id=None,
+            person_id=None,
+            channel=str(channel) if channel is not None else None,
+            query=response.get("query"),
+            response=response.get("final_answer"),
+            llm_model=(response.get("llm") or {}).get("model"),
+            llm_used=(response.get("llm") or {}).get("used"),
+            llm_error=(response.get("llm") or {}).get("error"),
+            intents=response.get("intents"),
+            agents=response.get("plan"),
+            trace=response.get("trace"),
+            metadata=metadata,
+        )
+    except Exception as exc:
+        logger.exception("Public admission analytics failed: %s", exc)
 
 
 @router.post("/")
@@ -272,27 +326,102 @@ async def handle_public_admission_chat(payload: ChatPayload) -> dict:
         stored_history = chat_analytics.fetch_session_history(session_id)
     merged_history = _merge_history(payload.history, stored_history)
     response = _run_public_admission_chat(payload, history=merged_history)
-
-    try:
-        chat_analytics.save_chat_event(
-            session_id=session_id,
-            telegram_id=None,
-            person_id=None,
-            channel=str(channel) if channel is not None else None,
-            query=response.get("query"),
-            response=response.get("final_answer"),
-            llm_model=(response.get("llm") or {}).get("model"),
-            llm_used=(response.get("llm") or {}).get("used"),
-            llm_error=(response.get("llm") or {}).get("error"),
-            intents=response.get("intents"),
-            agents=response.get("plan"),
-            trace=response.get("trace"),
-            metadata=metadata,
-        )
-    except Exception as exc:
-        logger.exception("Public admission analytics failed: %s", exc)
-
+    _save_public_admission_analytics(
+        response=response,
+        metadata=metadata,
+        session_id=session_id,
+        channel=channel,
+    )
     return {"result": response}
+
+@router.post("/public/admission/stream")
+async def handle_public_admission_chat_stream(payload: ChatPayload) -> StreamingResponse:
+    metadata = payload.metadata or {}
+    session_id = metadata.get("session_id") or metadata.get("session") or None
+    channel = metadata.get("channel") or "public_web"
+    stored_history: list[dict[str, Any]] = []
+    if session_id:
+        stored_history = chat_analytics.fetch_session_history(session_id)
+    merged_history = _merge_history(payload.history, stored_history)
+
+    async def event_stream():
+        final_answer_parts: list[str] = []
+        try:
+            tool_result, fallback_answer = _build_public_admission_response(
+                payload=payload,
+                history=merged_history,
+            )
+
+            if llm_client.is_configured:
+                context_entries = build_context_entries(tool_result)
+                prompt = agent_router.aggregator._render_prompt(
+                    user_payload={
+                        **payload.model_dump(),
+                        "history": merged_history,
+                    },
+                    intents={"intents": ["admission"]},
+                    answers=[fallback_answer],
+                    context=context_entries,
+                    citations=[],
+                )
+                messages = [
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ]
+                for chunk in llm_client.chat_stream(messages):
+                    final_answer_parts.append(chunk)
+                    yield _sse("delta", {"delta": chunk})
+                    await asyncio.sleep(0)
+
+            llm_answer = "".join(final_answer_parts).strip()
+            if llm_answer:
+                response = _assemble_public_admission_response(
+                    payload=payload,
+                    tool_result=tool_result,
+                    final_answer=llm_answer,
+                    llm_info={
+                        "used": True,
+                        "model": getattr(llm_client, "model", None),
+                        "error": getattr(llm_client, "last_error", None),
+                        "raw_request": None,
+                    },
+                )
+            else:
+                response = _assemble_public_admission_response(
+                    payload=payload,
+                    tool_result=tool_result,
+                    final_answer=fallback_answer,
+                    llm_info={
+                        "used": False,
+                        "model": getattr(llm_client, "model", None),
+                        "error": getattr(llm_client, "last_error", None),
+                        "raw_request": {
+                            "intents": ["admission"],
+                            "plan": ["admission"],
+                        },
+                    },
+                )
+
+            _save_public_admission_analytics(
+                response=response,
+                metadata=metadata,
+                session_id=session_id,
+                channel=channel,
+            )
+            yield _sse("done", {"result": response})
+        except Exception as exc:
+            logger.exception("Public admission streaming failed: %s", exc)
+            yield _sse("error", {"error": str(exc)})
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 def _sse(event: str, payload: dict) -> str:

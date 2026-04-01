@@ -20,14 +20,16 @@ type StreamHandlers = {
   onError?: (error: string) => void;
 };
 
-export async function streamChatMessage(
+async function streamChatRequest(
+  endpoint: string,
   payload: ChatRequestPayload,
   handlers: StreamHandlers = {},
   signal?: AbortSignal,
+  requireAuth = true,
 ): Promise<ChatResponse> {
   const refreshToken = authStorage.getRefreshToken();
   const tryRefresh = async () => {
-    if (!refreshToken) return false;
+    if (!refreshToken || !requireAuth) return false;
     const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -51,11 +53,11 @@ export async function streamChatMessage(
   };
 
   const doFetch = () =>
-    fetch(`${API_BASE_URL}/chat/stream`, {
+    fetch(`${API_BASE_URL}${endpoint}`, {
       method: "POST",
       headers: {
         ...headers,
-        ...(authStorage.getAccessToken()
+        ...(requireAuth && authStorage.getAccessToken()
           ? { Authorization: `Bearer ${authStorage.getAccessToken()}` }
           : {}),
       },
@@ -127,4 +129,20 @@ export async function streamChatMessage(
     throw new Error("Stream ended without a final response.");
   }
   return donePayload;
+}
+
+export async function streamChatMessage(
+  payload: ChatRequestPayload,
+  handlers: StreamHandlers = {},
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
+  return streamChatRequest("/chat/stream", payload, handlers, signal, true);
+}
+
+export async function streamPublicAdmissionMessage(
+  payload: ChatRequestPayload,
+  handlers: StreamHandlers = {},
+  signal?: AbortSignal,
+): Promise<ChatResponse> {
+  return streamChatRequest("/chat/public/admission/stream", payload, handlers, signal, false);
 }
