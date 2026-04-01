@@ -121,7 +121,54 @@ def _build_public_admission_overview(*, program: str | None, level: str | None) 
     }
 
 
-def _run_public_admission_chat(payload: ChatPayload) -> dict[str, Any]:
+def _synthesize_public_admission_answer(
+    *,
+    payload: ChatPayload,
+    tool_result: dict[str, Any],
+    fallback_answer: str,
+    history: list[dict[str, Any]] | None = None,
+) -> tuple[str, dict[str, Any]]:
+    context_entries = build_context_entries(tool_result)
+    if not llm_client.is_configured:
+        return fallback_answer, {"used": False, "model": None, "error": None, "raw_request": None}
+
+    prompt = agent_router.aggregator._render_prompt(
+        user_payload={
+            **payload.model_dump(),
+            "history": history or payload.history or [],
+        },
+        intents={"intents": ["admission"]},
+        answers=[fallback_answer],
+        context=context_entries,
+        citations=[],
+    )
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": prompt},
+    ]
+    llm_answer = llm_client.chat(messages)
+    if llm_answer:
+        return llm_answer, {
+            "used": True,
+            "model": getattr(llm_client, "model", None),
+            "error": getattr(llm_client, "last_error", None),
+            "raw_request": None,
+        }
+    return fallback_answer, {
+        "used": False,
+        "model": getattr(llm_client, "model", None),
+        "error": getattr(llm_client, "last_error", None),
+        "raw_request": {
+            "intents": ["admission"],
+            "plan": ["admission"],
+        },
+    }
+
+
+def _run_public_admission_chat(
+    payload: ChatPayload,
+    history: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     query = payload.message.strip()
     data = load_admission_data()
     level = extract_level(query)
@@ -143,7 +190,13 @@ def _run_public_admission_chat(payload: ChatPayload) -> dict[str, Any]:
     else:
         tool_result = _build_public_admission_overview(program=program, level=level)
 
-    final_answer = format_admission_tool_result(tool_result)
+    fallback_answer = format_admission_tool_result(tool_result)
+    final_answer, llm_info = _synthesize_public_admission_answer(
+        payload=payload,
+        tool_result=tool_result,
+        fallback_answer=fallback_answer,
+        history=history,
+    )
     return {
         "query": query,
         "intents": ["admission"],
@@ -160,7 +213,7 @@ def _run_public_admission_chat(payload: ChatPayload) -> dict[str, Any]:
             }
         ],
         "context": build_context_entries(tool_result),
-        "llm": {"used": False, "model": None, "error": None},
+        "llm": llm_info,
         "final_answer": final_answer,
         "tool_data": tool_result,
     }
@@ -211,10 +264,14 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
 
 @router.post("/public/admission")
 async def handle_public_admission_chat(payload: ChatPayload) -> dict:
-    response = _run_public_admission_chat(payload)
     metadata = payload.metadata or {}
     session_id = metadata.get("session_id") or metadata.get("session") or None
     channel = metadata.get("channel") or "public_web"
+    stored_history: list[dict[str, Any]] = []
+    if session_id:
+        stored_history = chat_analytics.fetch_session_history(session_id)
+    merged_history = _merge_history(payload.history, stored_history)
+    response = _run_public_admission_chat(payload, history=merged_history)
 
     try:
         chat_analytics.save_chat_event(
