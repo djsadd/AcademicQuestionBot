@@ -273,6 +273,24 @@ def _save_public_admission_analytics(
         logger.exception("Public admission analytics failed: %s", exc)
 
 
+def _prepare_public_router_payload(payload: ChatPayload) -> tuple[dict[str, Any], dict[str, Any], str | None, str]:
+    metadata = payload.metadata or {}
+    session_id = metadata.get("session_id") or metadata.get("session") or None
+    channel = metadata.get("channel") or "public_web"
+    stored_history: list[dict[str, Any]] = []
+    if session_id:
+        stored_history = chat_analytics.fetch_session_history(session_id)
+
+    router_payload = payload.model_dump()
+    router_payload["history"] = _merge_history(payload.history, stored_history)
+    metadata["channel"] = channel
+    if router_payload.get("metadata") is None:
+        router_payload["metadata"] = metadata
+    else:
+        router_payload["metadata"]["channel"] = channel
+    return router_payload, metadata, session_id, str(channel)
+
+
 @router.post("/")
 async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) -> dict:
     telegram_id = user["telegram_id"]
@@ -318,14 +336,8 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
 
 @router.post("/public/admission")
 async def handle_public_admission_chat(payload: ChatPayload) -> dict:
-    metadata = payload.metadata or {}
-    session_id = metadata.get("session_id") or metadata.get("session") or None
-    channel = metadata.get("channel") or "public_web"
-    stored_history: list[dict[str, Any]] = []
-    if session_id:
-        stored_history = chat_analytics.fetch_session_history(session_id)
-    merged_history = _merge_history(payload.history, stored_history)
-    response = _run_public_admission_chat(payload, history=merged_history)
+    router_payload, metadata, session_id, channel = _prepare_public_router_payload(payload)
+    response = await agent_router.route(router_payload)
     _save_public_admission_analytics(
         response=response,
         metadata=metadata,
@@ -336,33 +348,77 @@ async def handle_public_admission_chat(payload: ChatPayload) -> dict:
 
 @router.post("/public/admission/stream")
 async def handle_public_admission_chat_stream(payload: ChatPayload) -> StreamingResponse:
-    metadata = payload.metadata or {}
-    session_id = metadata.get("session_id") or metadata.get("session") or None
-    channel = metadata.get("channel") or "public_web"
-    stored_history: list[dict[str, Any]] = []
-    if session_id:
-        stored_history = chat_analytics.fetch_session_history(session_id)
-    merged_history = _merge_history(payload.history, stored_history)
+    router_payload, metadata, session_id, channel = _prepare_public_router_payload(payload)
 
     async def event_stream():
         final_answer_parts: list[str] = []
         try:
-            tool_result, fallback_answer = _build_public_admission_response(
-                payload=payload,
-                history=merged_history,
-            )
+            intents = await agent_router.intent_agent.run(router_payload)
+            plan_steps = agent_router.graph.plan(intents)
+            full_plan = [agent_router.intent_step, *plan_steps]
 
-            if llm_client.is_configured:
-                context_entries = build_context_entries(tool_result)
+            shared_context: dict[str, Any] = {
+                **router_payload,
+                "intents": intents.get("intents", []),
+            }
+            execution_trace: list[dict[str, Any]] = [
+                {
+                    "key": "intent",
+                    "name": agent_router.intent_agent.name,
+                    "description": agent_router.intent_step.description,
+                    "output": intents,
+                }
+            ]
+
+            for step in plan_steps:
+                agent = agent_router.agent_registry.get(step.key)
+                if not agent:
+                    execution_trace.append(
+                        {
+                            "key": step.key,
+                            "name": "unregistered",
+                            "description": step.description,
+                            "output": {"error": "agent is not registered"},
+                        }
+                    )
+                    continue
+
+                agent_payload = {
+                    **shared_context,
+                    "agent_history": execution_trace,
+                }
+                result = await agent.run(agent_payload)
+                shared_context.update(result)
+                execution_trace.append(
+                    {
+                        "key": step.key,
+                        "name": agent.name,
+                        "description": step.description,
+                        "output": result,
+                    }
+                )
+                if result.get("direct_response"):
+                    break
+
+            artifacts = agent_router.aggregator._collect_artifacts(execution_trace)
+            fallback_answer = agent_router.aggregator._fallback_answer(artifacts.answers)
+            llm_answer = ""
+
+            if artifacts.direct_response:
+                for idx in range(0, len(artifacts.direct_response), 140):
+                    chunk = artifacts.direct_response[idx: idx + 140]
+                    if not chunk:
+                        continue
+                    final_answer_parts.append(chunk)
+                    yield _sse("delta", {"delta": chunk})
+                    await asyncio.sleep(0)
+            elif llm_client.is_configured and artifacts.answers:
                 prompt = agent_router.aggregator._render_prompt(
-                    user_payload={
-                        **payload.model_dump(),
-                        "history": merged_history,
-                    },
-                    intents={"intents": ["admission"]},
-                    answers=[fallback_answer],
-                    context=context_entries,
-                    citations=[],
+                    user_payload=router_payload,
+                    intents=intents,
+                    answers=artifacts.answers,
+                    context=artifacts.context,
+                    citations=artifacts.citations,
                 )
                 messages = [
                     {"role": "system", "content": SYSTEM_PROMPT},
@@ -372,35 +428,38 @@ async def handle_public_admission_chat_stream(payload: ChatPayload) -> Streaming
                     final_answer_parts.append(chunk)
                     yield _sse("delta", {"delta": chunk})
                     await asyncio.sleep(0)
-
-            llm_answer = "".join(final_answer_parts).strip()
-            if llm_answer:
-                response = _assemble_public_admission_response(
-                    payload=payload,
-                    tool_result=tool_result,
-                    final_answer=llm_answer,
-                    llm_info={
-                        "used": True,
-                        "model": getattr(llm_client, "model", None),
-                        "error": getattr(llm_client, "last_error", None),
-                        "raw_request": None,
-                    },
-                )
+                llm_answer = "".join(final_answer_parts).strip()
             else:
-                response = _assemble_public_admission_response(
-                    payload=payload,
-                    tool_result=tool_result,
-                    final_answer=fallback_answer,
-                    llm_info={
-                        "used": False,
-                        "model": getattr(llm_client, "model", None),
-                        "error": getattr(llm_client, "last_error", None),
-                        "raw_request": {
-                            "intents": ["admission"],
-                            "plan": ["admission"],
-                        },
-                    },
-                )
+                for idx in range(0, len(fallback_answer), 140):
+                    chunk = fallback_answer[idx: idx + 140]
+                    if not chunk:
+                        continue
+                    final_answer_parts.append(chunk)
+                    yield _sse("delta", {"delta": chunk})
+                    await asyncio.sleep(0)
+
+            final_answer = llm_answer or "".join(final_answer_parts).strip() or fallback_answer
+            plan_view = [{"agent": step.key, "description": step.description} for step in full_plan]
+            response = {
+                "query": router_payload.get("message"),
+                "intents": intents.get("intents", []),
+                "priority": intents.get("priority"),
+                "plan": plan_view,
+                "trace": execution_trace,
+                "final_answer": final_answer,
+                "validation": artifacts.validator,
+                "citations": artifacts.citations,
+                "supporting_context": artifacts.context,
+                "llm": {
+                    "model": getattr(llm_client, "model", None),
+                    "used": bool(llm_answer),
+                    "error": getattr(llm_client, "last_error", None),
+                    "raw_request": {
+                        "intents": intents.get("intents", []),
+                        "plan": [step.key for step in full_plan],
+                    } if not llm_answer else None,
+                },
+            }
 
             _save_public_admission_analytics(
                 response=response,

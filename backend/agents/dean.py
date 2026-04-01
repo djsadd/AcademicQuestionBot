@@ -16,6 +16,21 @@ class DeanCalendarAgent(BaseAgent):
 
     async def run(self, payload: Dict[str, Any]) -> AgentResult:
         intents = payload.get("intents") or []
+        telegram_id = payload.get("telegram_id") or payload.get("user_id")
+        if not telegram_id:
+            answer = (
+                "Для этого запроса нужен авторизованный доступ. "
+                "Войдите через Telegram, чтобы получить персональный календарь, "
+                "статусы и другие данные из внутренних систем."
+            )
+            return AgentResult(
+                answer=answer,
+                intent="calendar",
+                tool_data={"status": "auth_required"},
+                context=[{"content": answer, "metadata": {"source_path": "auth_guard"}}],
+                direct_response=True,
+            )
+
         if "password_reset" in intents:
             login = str(
                 payload.get("login")
@@ -27,7 +42,6 @@ class DeanCalendarAgent(BaseAgent):
             answer = _format_password_reset(reset_data)
             return AgentResult(answer=answer, intent="password_reset", tool_data=reset_data)
 
-        telegram_id = payload.get("telegram_id") or payload.get("user_id")
         logger.info("DeanCalendarAgent calendar request for telegram_id=%s", telegram_id)
         calendar = get_academic_calendar(telegram_id)
         logger.info("DeanCalendarAgent calendar status=%s", calendar.get("status"))
