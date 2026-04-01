@@ -2,6 +2,12 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localho
 
 const ACCESS_TOKEN_KEY = "aqb_access_token";
 const REFRESH_TOKEN_KEY = "aqb_refresh_token";
+const AUTH_STORAGE_EVENT = "aqb-auth-changed";
+
+function emitAuthStorageChange() {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(AUTH_STORAGE_EVENT));
+}
 
 export const authStorage = {
   getAccessToken: () => localStorage.getItem(ACCESS_TOKEN_KEY),
@@ -9,12 +15,16 @@ export const authStorage = {
   setTokens: (accessToken: string, refreshToken: string) => {
     localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
     localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
+    emitAuthStorageChange();
   },
   clearTokens: () => {
     localStorage.removeItem(ACCESS_TOKEN_KEY);
     localStorage.removeItem(REFRESH_TOKEN_KEY);
+    emitAuthStorageChange();
   },
 };
+
+export { AUTH_STORAGE_EVENT };
 
 async function refreshTokens(): Promise<void> {
   const refreshToken = authStorage.getRefreshToken();

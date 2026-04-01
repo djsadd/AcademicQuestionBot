@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiClient } from "../api/client";
-import { getChatHistory, streamChatMessage } from "../api/chat";
+import { getChatHistory, sendPublicAdmissionMessage, streamChatMessage } from "../api/chat";
 import type {
   ChatHistoryEntry,
   ChatHistorySession,
@@ -18,6 +18,18 @@ const DEFAULT_PROFILE = {
   },
 } as const;
 
+const PUBLIC_ADMISSION_PROFILE = {
+  language: "ru",
+  context: {
+    university: "TAU",
+    program: "admission",
+    year: 0,
+    itp: "admissions-public",
+  },
+} as const;
+
+type FakeChatMode = "private" | "publicAdmission";
+
 type ChatMessage = {
   id: string;
   role: "user" | "bot";
@@ -27,7 +39,42 @@ type ChatMessage = {
 };
 
 const BOT_PLACEHOLDER = "Preparing response...";
-const INTRO_MESSAGE = `Ask your question about ${DEFAULT_PROFILE.context.university} and ${DEFAULT_PROFILE.context.itp}.`;
+const CHAT_VARIANTS = {
+  private: {
+    introMessage: `Ask your question about ${DEFAULT_PROFILE.context.university} and ${DEFAULT_PROFILE.context.itp}.`,
+    title: "Academic Assistant",
+    badge: "Chat",
+    brand: "Academic Question Bot",
+    searchPlaceholder: "Поиск в чатах",
+    newChatLabel: "Новый чат",
+    emptyTitle: "Задайте вопрос",
+    composerPlaceholder: "Спросите Academic Assistant...",
+    footnote: "Academic Question Bot может допускать ошибки. Проверяйте важную информацию.",
+    quickActions: [
+      { title: "Сбросить пароль", prompt: "Помоги сбросить пароль и восстановить доступ к аккаунту." },
+      { title: "Когда сессия?", prompt: "Узнай, когда у меня сессия и какие даты экзаменов и зачетов." },
+      { title: "Справка", prompt: "Сформируй текст заявления или запроса справки для деканата." },
+      { title: "Статус заявки", prompt: "Проверь статус моей заявки и что еще нужно предоставить." },
+    ],
+  },
+  publicAdmission: {
+    introMessage: "Спросите про поступление в TAU: программы, стоимость, документы, проходные баллы или контакты приемной комиссии.",
+    title: "Приемная комиссия TAU",
+    badge: "Public",
+    brand: "TAU Admissions AI",
+    searchPlaceholder: "Поиск по диалогам",
+    newChatLabel: "Новый диалог",
+    emptyTitle: "Чат приемной комиссии",
+    composerPlaceholder: "Напишите вопрос о поступлении...",
+    footnote: "Ответы формируются по данным приемной комиссии TAU. Для критичных решений сверяйте информацию дополнительно.",
+    quickActions: [
+      { title: "Стоимость обучения", prompt: "Сколько стоит обучение в TAU и какие есть программы?" },
+      { title: "Документы", prompt: "Какие документы нужны для поступления на бакалавриат?" },
+      { title: "Проходные баллы", prompt: "Какие проходные баллы и требования для поступления?" },
+      { title: "Контакты", prompt: "Как связаться с приемной комиссией и в какое время она работает?" },
+    ],
+  },
+} as const;
 
 type AuthProfile = {
   telegram_id: number;
@@ -61,8 +108,8 @@ const createSessionId = () =>
 
 const createMessageId = (prefix: string) => createId(prefix);
 
-const buildStorageKey = (telegramId?: number | null) =>
-  `${CHAT_STORAGE_PREFIX}_${CHAT_STORAGE_VERSION}_${telegramId ?? "guest"}`;
+const buildStorageKey = (mode: FakeChatMode, telegramId?: number | null) =>
+  `${CHAT_STORAGE_PREFIX}_${CHAT_STORAGE_VERSION}_${mode}_${telegramId ?? "guest"}`;
 
 const escapeHtml = (value: string) =>
   value
@@ -137,10 +184,16 @@ const buildChatTitle = (message: string) => {
 const createIntroMessage = (): ChatMessage => ({
   id: createMessageId("intro"),
   role: "bot",
-  content: INTRO_MESSAGE,
+  content: CHAT_VARIANTS.private.introMessage,
 });
 
-const createInitialChat = (): ChatSession => {
+const createModeIntroMessage = (mode: FakeChatMode): ChatMessage => ({
+  id: createMessageId("intro"),
+  role: "bot",
+  content: CHAT_VARIANTS[mode].introMessage,
+});
+
+const createInitialChat = (mode: FakeChatMode): ChatSession => {
   const now = new Date().toISOString();
   return {
     id: createId("chat"),
@@ -148,15 +201,15 @@ const createInitialChat = (): ChatSession => {
     createdAt: now,
     updatedAt: now,
     sessionId: createSessionId(),
-    messages: [createIntroMessage()],
+    messages: [createModeIntroMessage(mode)],
   };
 };
 
-const normalizeChatState = (state: ChatHistoryState): ChatHistoryState => {
+const normalizeChatState = (state: ChatHistoryState, mode: FakeChatMode): ChatHistoryState => {
   const chats = (state.chats ?? []).map((chat) => {
     const messages: ChatMessage[] = chat.messages?.length
       ? chat.messages
-      : [createIntroMessage()];
+      : [createModeIntroMessage(mode)];
     return {
       ...chat,
       title: chat.title || DEFAULT_CHAT_TITLE,
@@ -183,15 +236,19 @@ const mapHistorySession = (session: ChatHistorySession): ChatSession => {
     createdAt: session.created_at,
     updatedAt: session.updated_at,
     sessionId: session.session_id,
-    messages: messages.length ? messages : [createIntroMessage()],
+    messages: messages.length ? messages : [createModeIntroMessage("private")],
   };
 };
 
-const buildRequestHistory = (messages: ChatMessage[], pendingMessage?: ChatMessage): ChatHistoryEntry[] => {
+const buildRequestHistory = (
+  messages: ChatMessage[],
+  introMessage: string,
+  pendingMessage?: ChatMessage,
+): ChatHistoryEntry[] => {
   const source = pendingMessage ? [...messages, pendingMessage] : messages;
   return source
     .filter((message) => {
-      if (message.content === INTRO_MESSAGE) return false;
+      if (message.content === introMessage) return false;
       if (message.status === "pending") return false;
       return true;
     })
@@ -207,7 +264,7 @@ const loadChatState = (key: string): ChatHistoryState | null => {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as ChatHistoryState;
     if (!parsed || !Array.isArray(parsed.chats)) return null;
-    return normalizeChatState(parsed);
+    return parsed;
   } catch {
     return null;
   }
@@ -239,13 +296,16 @@ const QUICK_ACTIONS = [
   { title: "Статус заявки", prompt: "Проверь статус моей заявки и что ещё нужно предоставить." },
 ] as const;
 
-export function FakeChat() {
+export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
+  const config = CHAT_VARIANTS[mode];
+  const isPublicAdmission = mode === "publicAdmission";
+  const profileConfig = isPublicAdmission ? PUBLIC_ADMISSION_PROFILE : DEFAULT_PROFILE;
   const [inputValue, setInputValue] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [storageKey, setStorageKey] = useState(() => buildStorageKey(null));
+  const [storageKey, setStorageKey] = useState(() => buildStorageKey(mode, null));
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [highlightedChatId, setHighlightedChatId] = useState<string | null>(null);
   const [searchValue, setSearchValue] = useState("");
@@ -259,8 +319,8 @@ export function FakeChat() {
   const [chatState, setChatState] = useState<ChatHistoryState>(() => {
     const empty: ChatHistoryState = { activeChatId: null, chats: [] };
     if (typeof window === "undefined") return empty;
-    const stored = loadChatState(buildStorageKey(null));
-    return stored ?? empty;
+    const stored = loadChatState(buildStorageKey(mode, null));
+    return stored ? normalizeChatState(stored, mode) : empty;
   });
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -274,9 +334,9 @@ export function FakeChat() {
   const visibleMessages = useMemo(() => {
     const messages = activeChat?.messages ?? [];
     return messages.filter(
-      (message) => !(message.role === "bot" && message.content === INTRO_MESSAGE),
+      (message) => !(message.role === "bot" && message.content === config.introMessage),
     );
-  }, [activeChat?.messages]);
+  }, [activeChat?.messages, config.introMessage]);
 
   const hasUserMessages = useMemo(() => {
     return visibleMessages.some((message) => message.role === "user");
@@ -302,14 +362,14 @@ export function FakeChat() {
 
   const requestMeta = useMemo(() => {
     return {
-      language: DEFAULT_PROFILE.language,
-      channel: "web",
+      language: profileConfig.language,
+      channel: isPublicAdmission ? "public_web" : "web",
       session: activeChat?.sessionId ?? draftSessionIdRef.current,
-      university: DEFAULT_PROFILE.context.university,
-      program: DEFAULT_PROFILE.context.program,
-      itp: DEFAULT_PROFILE.context.itp,
+      university: profileConfig.context.university,
+      program: profileConfig.context.program,
+      itp: profileConfig.context.itp,
     };
-  }, [activeChat?.sessionId]);
+  }, [activeChat?.sessionId, isPublicAdmission, profileConfig]);
 
   const propertiesChat = useMemo(() => {
     if (!propertiesChatId) return null;
@@ -317,12 +377,17 @@ export function FakeChat() {
   }, [chatState.chats, propertiesChatId]);
 
   useEffect(() => {
-    if (profile?.telegram_id) {
-      setStorageKey(buildStorageKey(profile.telegram_id));
+    if (isPublicAdmission) {
+      setStorageKey(buildStorageKey(mode, null));
+      return;
     }
-  }, [profile?.telegram_id]);
+    if (profile?.telegram_id) {
+      setStorageKey(buildStorageKey(mode, profile.telegram_id));
+    }
+  }, [isPublicAdmission, mode, profile?.telegram_id]);
 
   useEffect(() => {
+    if (isPublicAdmission) return;
     if (!profile?.telegram_id) return;
     let active = true;
     getChatHistory()
@@ -332,7 +397,7 @@ export function FakeChat() {
         const nextState = normalizeChatState({
           activeChatId: sessions[0].id,
           chats: sessions,
-        });
+        }, mode);
         setChatState(nextState);
       })
       .catch(() => {
@@ -341,34 +406,39 @@ export function FakeChat() {
     return () => {
       active = false;
     };
-  }, [profile?.telegram_id]);
+  }, [isPublicAdmission, mode, profile?.telegram_id]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
     const stored = loadChatState(storageKey);
     if (stored) {
-      setChatState(stored);
+      setChatState(normalizeChatState(stored, mode));
       return;
     }
-    const guestKey = buildStorageKey(null);
+    const guestKey = buildStorageKey(mode, null);
     if (storageKey !== guestKey) {
       const guestState = loadChatState(guestKey);
       if (guestState) {
         saveChatState(storageKey, guestState);
-        setChatState(guestState);
+        setChatState(normalizeChatState(guestState, mode));
         return;
       }
     }
     const nextState: ChatHistoryState = { activeChatId: null, chats: [] };
     saveChatState(storageKey, nextState);
     setChatState(nextState);
-  }, [storageKey]);
+  }, [mode, storageKey]);
 
   useEffect(() => {
-    saveChatState(storageKey, normalizeChatState(chatState));
-  }, [chatState, storageKey]);
+    saveChatState(storageKey, normalizeChatState(chatState, mode));
+  }, [chatState, mode, storageKey]);
 
   useEffect(() => {
+    if (isPublicAdmission) {
+      setProfile(null);
+      setProfileError(null);
+      return;
+    }
     let active = true;
     apiClient
       .get<{ status: string; user: { telegram_id: number; person_id?: string | null } }>(
@@ -392,7 +462,7 @@ export function FakeChat() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [isPublicAdmission]);
 
   useEffect(() => {
     return () => {
@@ -448,7 +518,7 @@ export function FakeChat() {
 
   const replaceMessage = (chatId: string, id: string, data: Partial<ChatMessage>) => {
     setChatState((prev) => {
-      const normalized = normalizeChatState(prev);
+      const normalized = normalizeChatState(prev, mode);
       const chats = normalized.chats.map((chat) => {
         if (chat.id !== chatId) return chat;
         const messages = chat.messages.map((message) =>
@@ -478,7 +548,7 @@ export function FakeChat() {
 
   const handleNewChat = () => {
     abortStream();
-    const chat = createInitialChat();
+    const chat = createInitialChat(mode);
     setChatState((prev) => ({
       activeChatId: chat.id,
       chats: [chat, ...prev.chats],
@@ -508,7 +578,7 @@ export function FakeChat() {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
     if (isStreaming) return;
-    if (!profile?.telegram_id) {
+    if (!isPublicAdmission && !profile?.telegram_id) {
       const chatId = activeChat?.id ?? createId("chat");
       const errorMessage: ChatMessage = {
         id: createMessageId("system"),
@@ -517,7 +587,7 @@ export function FakeChat() {
         status: "error",
       };
       setChatState((prev) => {
-        const normalized = normalizeChatState(prev);
+        const normalized = normalizeChatState(prev, mode);
         const chatExists = normalized.chats.some((chat) => chat.id === chatId);
         const chats = chatExists
           ? normalized.chats.map((chat) =>
@@ -531,9 +601,9 @@ export function FakeChat() {
           )
           : [
             {
-              ...createInitialChat(),
+              ...createInitialChat(mode),
               id: chatId,
-              messages: [createIntroMessage(), errorMessage],
+              messages: [createModeIntroMessage(mode), errorMessage],
             },
             ...normalized.chats,
           ];
@@ -558,7 +628,7 @@ export function FakeChat() {
     const activeChatId = activeChat?.id ?? createId("chat");
     const newChatSessionId = activeChat?.sessionId ?? draftSessionIdRef.current;
     setChatState((prev) => {
-      const normalized = normalizeChatState(prev);
+      const normalized = normalizeChatState(prev, mode);
       const now = new Date().toISOString();
       const chats = normalized.chats.map((chat) => {
         if (chat.id !== activeChatId) return chat;
@@ -579,12 +649,12 @@ export function FakeChat() {
           ? chats
           : [
             {
-              ...createInitialChat(),
+              ...createInitialChat(mode),
               id: activeChatId,
               sessionId: newChatSessionId,
               title: buildChatTitle(trimmed),
               messages: [
-                createIntroMessage(),
+                createModeIntroMessage(mode),
                 userMessage,
                 placeholderMessage,
               ],
@@ -598,23 +668,46 @@ export function FakeChat() {
       draftSessionIdRef.current = createSessionId();
     }
 
+    const payload: ChatRequestPayload = {
+      user_id: isPublicAdmission ? undefined : profile?.telegram_id ?? 0,
+      telegram_id: isPublicAdmission ? undefined : profile?.telegram_id,
+      person_id: isPublicAdmission ? undefined : profile?.person_id ?? undefined,
+      message: trimmed,
+      language: profileConfig.language,
+      context: profileConfig.context,
+      metadata: {
+        channel: requestMeta.channel,
+        session_id: requestMeta.session,
+      },
+      history: buildRequestHistory(activeChat?.messages ?? [], config.introMessage, userMessage),
+    };
+
+    if (isPublicAdmission) {
+      setIsStreaming(true);
+      sendPublicAdmissionMessage(payload)
+        .then((response) => {
+          const result = response.result;
+          replaceMessage(activeChatId, botMessageId, {
+            content: result.final_answer || "No answer from the agent.",
+            status: undefined,
+            details: result,
+          });
+        })
+        .catch((error) => {
+          replaceMessage(activeChatId, botMessageId, {
+            content: error instanceof Error ? error.message : "Request failed.",
+            status: "error",
+          });
+        })
+        .finally(() => {
+          setIsStreaming(false);
+        });
+      return;
+    }
+
     const controller = new AbortController();
     streamAbortRef.current = controller;
     setIsStreaming(true);
-
-    const payload: ChatRequestPayload = {
-      user_id: profile?.telegram_id ?? 0,
-      telegram_id: profile?.telegram_id,
-      person_id: profile?.person_id ?? undefined,
-      message: trimmed,
-      language: DEFAULT_PROFILE.language,
-      context: DEFAULT_PROFILE.context,
-      metadata: {
-        channel: "web",
-        session_id: requestMeta.session,
-      },
-      history: buildRequestHistory(activeChat?.messages ?? [], userMessage),
-    };
 
     let streamedText = "";
     let pendingDelta = "";
@@ -703,7 +796,7 @@ export function FakeChat() {
         <div className="chat-sidebar__content">
           <div className="chat-sidebar__brand">
             <span className="chat-sidebar__logo" aria-hidden="true">AQB</span>
-            <span className="chat-sidebar__brand-text">Academic Question Bot</span>
+            <span className="chat-sidebar__brand-text">{config.brand}</span>
           </div>
           <div className="chat-sidebar__header">
             <button
@@ -745,7 +838,7 @@ export function FakeChat() {
                 type="search"
                 value={searchValue}
                 onChange={(event) => setSearchValue(event.target.value)}
-                placeholder="Поиск в чатах"
+                placeholder={config.searchPlaceholder}
               />
             </label>
           </div>
@@ -864,20 +957,20 @@ export function FakeChat() {
             ) : null}
           </div>
           <div className="chat-topbar__title">
-            <span className="chat-topbar__badge">Chat</span>
-            <span className="chat-topbar__name">Academic Assistant</span>
+            <span className="chat-topbar__badge">{config.badge}</span>
+            <span className="chat-topbar__name">{config.title}</span>
           </div>
         </header>
 
         {!hasUserMessages ? (
           <div className="chat-empty">
-            <h1 className="chat-empty__title">Задайте вопрос</h1>
+            <h1 className="chat-empty__title">{config.emptyTitle}</h1>
             <div className="chat-composer chat-composer--center" role="form" aria-label="Chat composer">
               {profileError ? <p className="error chat-composer__error">{profileError}</p> : null}
               <div className="chat-composer__bar">
                 <textarea
                   className="chat-composer__textarea"
-                  placeholder="Спросите Academic Assistant..."
+                  placeholder={config.composerPlaceholder}
                   value={inputValue}
                   onChange={(event) => setInputValue(event.target.value)}
                   rows={2}
@@ -903,11 +996,11 @@ export function FakeChat() {
                 </button>
               </div>
               <p className="chat-composer__footnote">
-                Academic Question Bot может допускать ошибки. Проверяйте важную информацию.
+                {config.footnote}
               </p>
             </div>
             <div className="chat-suggestions" aria-label="Quick actions">
-              {QUICK_ACTIONS.map((item) => (
+              {config.quickActions.map((item) => (
                 <button
                   key={item.title}
                   type="button"
@@ -982,7 +1075,7 @@ export function FakeChat() {
               <div className="chat-composer__bar">
                 <textarea
                   className="chat-composer__textarea"
-                  placeholder="Спросите Academic Assistant..."
+                  placeholder={config.composerPlaceholder}
                   value={inputValue}
                   onChange={(event) => setInputValue(event.target.value)}
                   rows={2}
@@ -1008,7 +1101,7 @@ export function FakeChat() {
                 </button>
               </div>
               <p className="chat-composer__footnote">
-                Academic Question Bot может допускать ошибки. Проверяйте важную информацию.
+                {config.footnote}
               </p>
             </div>
           </>

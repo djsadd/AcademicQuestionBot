@@ -94,7 +94,7 @@ export type ChatHistoryEntry = {
 };
 
 export type ChatRequestPayload = {
-  user_id: number;
+  user_id?: number;
   telegram_id?: number;
   person_id?: string | null;
   message: string;
@@ -125,10 +125,11 @@ export type ChatResult = {
   plan: ChatPlanStep[];
   trace: ChatTraceItem[];
   final_answer: string;
-  validation: Record<string, unknown>;
-  citations: Record<string, unknown>[];
-  supporting_context: Record<string, unknown>[];
+  validation?: Record<string, unknown>;
+  citations?: Record<string, unknown>[];
+  supporting_context?: Record<string, unknown>[];
   llm: ChatLLMInfo;
+  tool_data?: Record<string, unknown>;
 };
 
 export type ChatResponse = {

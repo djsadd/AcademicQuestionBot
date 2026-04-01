@@ -5,6 +5,12 @@ export async function sendChatMessage(payload: ChatRequestPayload): Promise<Chat
   return apiClient.post<ChatResponse>("/chat/", JSON.stringify(payload));
 }
 
+export async function sendPublicAdmissionMessage(
+  payload: ChatRequestPayload,
+): Promise<ChatResponse> {
+  return apiClient.post<ChatResponse>("/chat/public/admission", JSON.stringify(payload));
+}
+
 export async function getChatHistory(): Promise<ChatHistoryResponse> {
   return apiClient.get<ChatHistoryResponse>("/chat/history");
 }

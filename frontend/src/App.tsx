@@ -9,7 +9,8 @@ import { PlatonusStatus } from "./components/PlatonusStatus";
 import { TelegramLogin } from "./components/TelegramLogin";
 import { Profile } from "./components/Profile";
 import { AdmissionApplications } from "./components/AdmissionApplications";
-import { apiClient, authStorage } from "./api/client";
+import { PublicLanding } from "./components/PublicLanding";
+import { apiClient, AUTH_STORAGE_EVENT, authStorage } from "./api/client";
 
 const NAV_ITEMS = [
   { id: "profile", label: "PROFILE", path: "/profile" },
@@ -87,14 +88,20 @@ const FEATURE_SECTIONS = [
   },
 ] as const;
 
-function SiteHeader({ isAdmin }: { isAdmin: boolean }) {
+function SiteHeader({ isAdmin, isAuthenticated }: { isAdmin: boolean; isAuthenticated: boolean }) {
   const navItems = useMemo(
-    () => NAV_ITEMS.filter((item) => !ADMIN_ONLY_IDS.has(item.id as AdminOnlyId) || isAdmin),
-    [isAdmin],
+    () =>
+      isAuthenticated
+        ? NAV_ITEMS.filter((item) => !ADMIN_ONLY_IDS.has(item.id as AdminOnlyId) || isAdmin)
+        : [
+          { id: "home", label: "HOME", path: "/" },
+          { id: "chat", label: "CHAT", path: "/chat" },
+        ],
+    [isAdmin, isAuthenticated],
   );
   return (
     <header className="site-header">
-      <NavLink to="/chat" className="logo">
+      <NavLink to={isAuthenticated ? "/chat" : "/"} className="logo">
         AcademicQuestionBot
       </NavLink>
       <nav>
@@ -108,9 +115,15 @@ function SiteHeader({ isAdmin }: { isAdmin: boolean }) {
           </NavLink>
         ))}
       </nav>
-      <a className="ghost docs-link" href="README.MD" target="_blank" rel="noreferrer">
-        README
-      </a>
+      {isAuthenticated ? (
+        <a className="ghost docs-link" href="README.MD" target="_blank" rel="noreferrer">
+          README
+        </a>
+      ) : (
+        <NavLink className="ghost docs-link" to="/telegram-login">
+          LOGIN
+        </NavLink>
+      )}
     </header>
   );
 }
@@ -213,12 +226,18 @@ function TelegramLoginPage() {
   );
 }
 
-function MainLayout({ isAdmin }: { isAdmin: boolean }) {
+function MainLayout({
+  isAdmin,
+  isAuthenticated,
+}: {
+  isAdmin: boolean;
+  isAuthenticated: boolean;
+}) {
   const location = useLocation();
   const isChatPage = location.pathname === "/chat";
   return (
     <>
-      {isChatPage ? null : <SiteHeader isAdmin={isAdmin} />}
+      {isChatPage ? null : <SiteHeader isAdmin={isAdmin} isAuthenticated={isAuthenticated} />}
       <main className={`page-main${isChatPage ? " page-main--no-scroll page-main--chat" : ""}`}>
         <Outlet />
       </main>
@@ -242,7 +261,22 @@ function RequireAdmin({ isAdmin, children }: { isAdmin: boolean; children: JSX.E
 }
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(authStorage.getAccessToken()));
   const [isAdmin, setIsAdmin] = useState(false);
+
+  useEffect(() => {
+    const handleAuthChanged = () => {
+      setIsAuthenticated(Boolean(authStorage.getAccessToken()));
+    };
+
+    window.addEventListener(AUTH_STORAGE_EVENT, handleAuthChanged);
+    window.addEventListener("storage", handleAuthChanged);
+
+    return () => {
+      window.removeEventListener(AUTH_STORAGE_EVENT, handleAuthChanged);
+      window.removeEventListener("storage", handleAuthChanged);
+    };
+  }, []);
 
   useEffect(() => {
     const token = authStorage.getAccessToken();
@@ -265,13 +299,22 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [isAuthenticated]);
 
   return (
     <HashRouter>
       <Routes>
-        <Route element={<RequireAuth><MainLayout isAdmin={isAdmin} /></RequireAuth>}>
-          <Route path="/" element={<Navigate to="/profile" replace />} />
+        <Route element={<MainLayout isAdmin={isAdmin} isAuthenticated={isAuthenticated} />}>
+          <Route
+            path="/"
+            element={isAuthenticated ? <Navigate to="/profile" replace /> : <PublicLanding />}
+          />
+          <Route
+            path="/chat"
+            element={isAuthenticated ? <FakeChat /> : <FakeChat mode="publicAdmission" />}
+          />
+        </Route>
+        <Route element={<RequireAuth><MainLayout isAdmin={isAdmin} isAuthenticated={isAuthenticated} /></RequireAuth>}>
           <Route path="/profile" element={<Profile />} />
           <Route
             path="/rag"
@@ -289,7 +332,6 @@ export default function App() {
             path="/llm"
             element={<RequireAdmin isAdmin={isAdmin}><FeaturePage pageId="llm" /></RequireAdmin>}
           />
-          <Route path="/chat" element={<FakeChat />} />
           <Route
             path="/agents"
             element={<RequireAdmin isAdmin={isAdmin}><FeaturePage pageId="agents" /></RequireAdmin>}
@@ -305,7 +347,7 @@ export default function App() {
         </Route>
         <Route path="/mini-app" element={<MiniAppPage />} />
         <Route path="/telegram-login" element={<TelegramLoginPage />} />
-        <Route path="*" element={<Navigate to="/profile" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>
   );
