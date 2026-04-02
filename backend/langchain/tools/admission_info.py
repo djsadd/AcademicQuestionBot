@@ -70,6 +70,28 @@ TOOL_TERMS = {
     "durations": {"срок", "длительность", "сколько уч", "duration", "study period", "how long"},
 }
 
+LEVEL_ALIASES["bachelor"].update({"бакалавриат", "бакалавр", "бакалаврият", "бакалавриатқа", "бакалавриатта"})
+LEVEL_ALIASES["master"].update({"магистратура", "магистратураға", "магистратурада", "магистрлік"})
+LEVEL_ALIASES["doctorate"].update({"докторантура", "докторантураға", "докторантурада", "докторлық"})
+LEVEL_ALIASES["second_higher"].update({"екінші жоғары", "екінші білім", "екінші жоғары білім"})
+
+TOOL_TERMS["programs"].update(
+    {
+        "бағдарлама",
+        "бағдарламалар",
+        "білім беру бағдарламалары",
+        "мамандық",
+        "мамандықтар",
+        "қандай бағдарламалар бар",
+        "қандай мамандықтар бар",
+    }
+)
+TOOL_TERMS["prices"].update({"құны", "бағасы", "оқу ақысы"})
+TOOL_TERMS["passing_scores"].update({"өту балы", "балл", "ұбт", "шекті балл"})
+TOOL_TERMS["documents"].update({"құжат", "құжаттар", "не керек", "қандай құжаттар керек"})
+TOOL_TERMS["contacts"].update({"байланыс", "телефон", "пошта", "мекенжай"})
+TOOL_TERMS["durations"].update({"мерзім", "ұзақтығы", "қанша жыл", "оқу мерзімі"})
+
 
 def load_admission_data() -> Dict[str, Any]:
     """Load structured admission data from JSON."""
@@ -105,7 +127,7 @@ def get_current_prices(
         tuition = item.get("tuition") or {}
         results.append(
             {
-                "program": item.get("name"),
+                "program": _program_display_name(item),
                 "level": item.get("level"),
                 "amount": tuition.get("amount"),
                 "currency": data.get("currency", "KZT"),
@@ -135,7 +157,7 @@ def get_available_programs(*, level: Optional[str] = None) -> Dict[str, Any]:
     for item in matches:
         results.append(
             {
-                "program": item.get("name"),
+                "program": _program_display_name(item),
                 "level": item.get("level"),
                 "duration": item.get("duration"),
                 "gop_code": (item.get("passing_score") or {}).get("gop_code"),
@@ -168,7 +190,7 @@ def get_passing_scores(
         score = item.get("passing_score") or {}
         results.append(
             {
-                "program": item.get("name"),
+                "program": _program_display_name(item),
                 "level": item.get("level"),
                 "gop_code": score.get("gop_code"),
                 "grant": score.get("grant"),
@@ -265,7 +287,7 @@ def get_study_durations(
     for item in matches:
         results.append(
             {
-                "program": item.get("name"),
+                "program": _program_display_name(item),
                 "level": item.get("level"),
                 "duration": item.get("duration"),
             }
@@ -314,14 +336,14 @@ def extract_program(query: str, *, data: Optional[Dict[str, Any]] = None) -> Opt
     source = data if data is not None else load_admission_data()
     best_match: tuple[int, str] | None = None
     for program in source.get("programs") or []:
-        variants = [program.get("name", ""), *(program.get("aliases") or [])]
+        variants = _program_candidates(program)
         for variant in variants:
             if not variant:
                 continue
             normalized_variant = _normalize_text(variant)
             if _term_matches_query(normalized_variant, normalized_query):
                 score = len(normalized_variant)
-                canonical_name = program.get("name")
+                canonical_name = _program_display_name(program)
                 if canonical_name and (best_match is None or score > best_match[0]):
                     best_match = (score, canonical_name)
     return best_match[1] if best_match else None
@@ -539,11 +561,41 @@ def _match_programs(
         if normalized_level and item.get("level") != normalized_level:
             continue
         if normalized_program:
-            candidates = [item.get("name", ""), *(item.get("aliases") or [])]
+            candidates = _program_candidates(item)
             if not any(_program_matches(normalized_program, candidate) for candidate in candidates if candidate):
                 continue
         matches.append(item)
     return matches
+
+
+def _program_candidates(program: Dict[str, Any]) -> List[str]:
+    candidates = [
+        program.get("name"),
+        program.get("name_ru"),
+        program.get("name_kk"),
+        program.get("name_en"),
+        *(program.get("aliases") or []),
+    ]
+    result: List[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = _normalize_text(candidate)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        result.append(str(candidate))
+    return result
+
+
+def _program_display_name(program: Dict[str, Any]) -> str:
+    return str(
+        program.get("name_ru")
+        or program.get("name")
+        or program.get("name_kk")
+        or program.get("name_en")
+        or program.get("id")
+        or ""
+    )
 
 
 def _normalize_level(level: Optional[str]) -> Optional[str]:
@@ -598,7 +650,7 @@ def _not_found(
         "message": "Подходящие данные не найдены по указанным параметрам.",
         "requested_level": _normalize_level(level),
         "requested_program": program,
-        "available_programs": [item.get("name") for item in data.get("programs") or [] if item.get("name")],
+        "available_programs": [_program_display_name(item) for item in data.get("programs") or [] if _program_display_name(item)],
         "available_levels": sorted({item.get("level") for item in data.get("programs") or [] if item.get("level")}),
         "source_path": _source_path(),
     }

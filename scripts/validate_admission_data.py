@@ -10,6 +10,7 @@ from pathlib import Path
 DEFAULT_PATH = Path(__file__).resolve().parents[1] / "backend" / "data" / "admission_info.json"
 REQUIRED_TOP_LEVEL_KEYS = {"contacts", "documents", "programs"}
 REQUIRED_PROGRAM_KEYS = {"name", "level", "duration", "tuition", "passing_score"}
+LOCALIZED_NAME_KEYS = {"name_ru", "name_kk", "name_en"}
 
 
 def main() -> int:
@@ -45,6 +46,20 @@ def main() -> int:
             print(
                 f"[ERROR] Program #{index} ({program.get('name', 'unknown')}) "
                 f"is missing keys: {', '.join(sorted(missing_program_keys))}"
+            )
+            return 1
+        localized_names = [program.get(key) for key in LOCALIZED_NAME_KEYS]
+        if not any(isinstance(value, str) and value.strip() for value in localized_names):
+            print(
+                f"[ERROR] Program #{index} ({program.get('name', 'unknown')}) "
+                "must define at least one localized name: name_ru, name_kk or name_en."
+            )
+            return 1
+        aliases = program.get("aliases")
+        if aliases is not None and not isinstance(aliases, list):
+            print(
+                f"[ERROR] Program #{index} ({program.get('name', 'unknown')}) "
+                "'aliases' must be a list when provided."
             )
             return 1
 
