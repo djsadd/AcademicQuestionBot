@@ -410,6 +410,71 @@ def list_chat_users(*, limit: int = 100) -> dict[str, Any]:
     return {"items": items, "limit": safe_limit}
 
 
+def get_session_events(session_key: str) -> dict[str, Any]:
+    normalized_key = (session_key or "").strip()
+    if not normalized_key:
+        return {"session_key": session_key, "items": []}
+
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            SELECT
+                id,
+                COALESCE(NULLIF(session_id, ''), id) AS session_key,
+                session_id,
+                channel,
+                telegram_id,
+                person_id,
+                {_auth_mode_sql()} AS auth_mode,
+                query,
+                response,
+                llm_model,
+                llm_used,
+                llm_error,
+                intents,
+                agents,
+                trace,
+                metadata,
+                request_payload,
+                response_payload,
+                created_at
+            FROM chat_analytics
+            WHERE COALESCE(NULLIF(session_id, ''), id) = %s
+            ORDER BY created_at DESC;
+            """,
+            (normalized_key,),
+        )
+        rows = cursor.fetchall()
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        items.append(
+            {
+                "id": row[0],
+                "session_key": row[1],
+                "session_id": row[2] or row[1],
+                "channel": row[3],
+                "telegram_id": row[4],
+                "person_id": row[5],
+                "auth_mode": row[6],
+                "query": row[7],
+                "response": row[8],
+                "llm_model": row[9],
+                "llm_used": row[10],
+                "llm_error": row[11],
+                "intents": row[12] or [],
+                "agents": row[13] or [],
+                "trace": row[14] or [],
+                "metadata": row[15] or {},
+                "request_payload": row[16] or {},
+                "response_payload": row[17] or {},
+                "created_at": row[18].isoformat() if row[18] else None,
+            }
+        )
+
+    return {"session_key": normalized_key, "items": items}
+
+
 def fetch_chat_history(telegram_id: int) -> list[dict[str, Any]]:
     with _get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(

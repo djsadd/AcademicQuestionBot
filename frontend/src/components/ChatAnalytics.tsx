@@ -1,11 +1,16 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  fetchChatAnalyticsSessionEvents,
   fetchChatAnalyticsSessions,
   fetchChatAnalyticsSummary,
   fetchChatAnalyticsUsers,
 } from "../api/admin";
-import type { ChatAnalyticsQuestion } from "../types";
+import type {
+  ChatAnalyticsEvent,
+  ChatAnalyticsQuestion,
+  ChatAnalyticsSession,
+} from "../types";
 import { formatDate } from "../utils/format";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
@@ -15,10 +20,47 @@ const AUTH_MODE_OPTIONS = [
   { value: "authenticated", label: "Пользователи" },
 ] as const;
 
-function renderQuestions(questions: ChatAnalyticsQuestion[], emptyLabel: string) {
-  if (!questions.length) {
-    return <span className="muted">{emptyLabel}</span>;
+function JsonBlock({ value }: { value: unknown }) {
+  return (
+    <pre className="analytics-json-block">
+      {JSON.stringify(value ?? null, null, 2)}
+    </pre>
+  );
+}
+
+function SessionQuestions({
+  session,
+  onOpen,
+}: {
+  session: ChatAnalyticsSession;
+  onOpen: (session: ChatAnalyticsSession, question?: string) => void;
+}) {
+  if (!session.questions.length) {
+    return <span className="muted">Вопросов не найдено</span>;
   }
+
+  return (
+    <div className="analytics-question-list">
+      {session.questions.slice(0, 5).map((item, index) => (
+        <button
+          key={`${item.created_at}-${index}`}
+          type="button"
+          className="analytics-question-item analytics-question-item--button"
+          onClick={() => onOpen(session, item.query)}
+        >
+          <strong>{item.query}</strong>
+          <small>{formatDate(item.created_at)}</small>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function UserQuestions({ questions }: { questions: ChatAnalyticsQuestion[] }) {
+  if (!questions.length) {
+    return <span className="muted">Запросов пока нет</span>;
+  }
+
   return (
     <div className="analytics-question-list">
       {questions.slice(0, 5).map((item, index) => (
@@ -31,12 +73,155 @@ function renderQuestions(questions: ChatAnalyticsQuestion[], emptyLabel: string)
   );
 }
 
+function findMatchingEvent(events: ChatAnalyticsEvent[], selectedQuery: string | null) {
+  if (!selectedQuery) return events[0] ?? null;
+  return events.find((item) => item.query === selectedQuery) ?? events[0] ?? null;
+}
+
+function EventLogModal({
+  session,
+  selectedQuery,
+  onClose,
+}: {
+  session: ChatAnalyticsSession;
+  selectedQuery: string | null;
+  onClose: () => void;
+}) {
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+
+  const eventsQuery = useQuery({
+    queryKey: ["chat-analytics-session-events", session.session_key],
+    queryFn: () => fetchChatAnalyticsSessionEvents(session.session_key),
+  });
+
+  const events = eventsQuery.data?.items ?? [];
+  const activeEvent =
+    events.find((item) => item.id === selectedEventId)
+    ?? findMatchingEvent(events, selectedQuery);
+
+  return (
+    <div className="chat-properties-modal__overlay" onClick={onClose} role="presentation">
+      <div
+        className="chat-properties-modal__panel analytics-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Chat event details"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="chat-properties-modal__header">
+          <div>
+            <h3>Детали сессии</h3>
+            <p className="muted">Session ID: {session.session_id}</p>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose} aria-label="Close">
+            x
+          </button>
+        </div>
+
+        {eventsQuery.isLoading ? (
+          <p>Загрузка логов события...</p>
+        ) : eventsQuery.isError ? (
+          <p className="error">Не удалось загрузить детали сессии.</p>
+        ) : !events.length || !activeEvent ? (
+          <p className="muted">Логи по этой сессии пока не найдены.</p>
+        ) : (
+          <div className="analytics-modal__layout">
+            <aside className="analytics-event-list">
+              {events.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`analytics-event-list__item${item.id === activeEvent.id ? " active" : ""}`}
+                  onClick={() => setSelectedEventId(item.id)}
+                >
+                  <strong>{item.query || "Без текста запроса"}</strong>
+                  <small>{item.created_at ? formatDate(item.created_at) : "-"}</small>
+                </button>
+              ))}
+            </aside>
+
+            <div className="analytics-event-detail">
+              <div className="analytics-detail-section">
+                <span className="eyebrow">Question</span>
+                <p className="analytics-answer-block">{activeEvent.query || "-"}</p>
+              </div>
+
+              <div className="analytics-detail-section">
+                <span className="eyebrow">AI Answer</span>
+                <p className="analytics-answer-block">{activeEvent.response || "-"}</p>
+              </div>
+
+              <div className="analytics-detail-grid">
+                <div className="analytics-detail-card">
+                  <span>LLM model</span>
+                  <strong>{activeEvent.llm_model || "-"}</strong>
+                </div>
+                <div className="analytics-detail-card">
+                  <span>LLM used</span>
+                  <strong>{String(activeEvent.llm_used ?? false)}</strong>
+                </div>
+                <div className="analytics-detail-card">
+                  <span>Channel</span>
+                  <strong>{activeEvent.channel || "-"}</strong>
+                </div>
+                <div className="analytics-detail-card">
+                  <span>Created</span>
+                  <strong>{activeEvent.created_at ? formatDate(activeEvent.created_at) : "-"}</strong>
+                </div>
+              </div>
+
+              <div className="analytics-detail-section">
+                <span className="eyebrow">Intents</span>
+                <JsonBlock value={activeEvent.intents} />
+              </div>
+
+              <div className="analytics-detail-section">
+                <span className="eyebrow">Agents / Plan</span>
+                <JsonBlock value={activeEvent.agents} />
+              </div>
+
+              <div className="analytics-detail-section">
+                <span className="eyebrow">Trace / Tools / Context</span>
+                <JsonBlock value={activeEvent.trace} />
+              </div>
+
+              <div className="analytics-detail-section">
+                <span className="eyebrow">Metadata</span>
+                <JsonBlock value={activeEvent.metadata} />
+              </div>
+
+              <div className="analytics-detail-section">
+                <span className="eyebrow">Request payload</span>
+                <JsonBlock value={activeEvent.request_payload} />
+              </div>
+
+              <div className="analytics-detail-section">
+                <span className="eyebrow">Response payload</span>
+                <JsonBlock value={activeEvent.response_payload} />
+              </div>
+
+              {activeEvent.llm_error ? (
+                <div className="analytics-detail-section">
+                  <span className="eyebrow">LLM error</span>
+                  <p className="error">{activeEvent.llm_error}</p>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function ChatAnalytics() {
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<number>(20);
   const [authMode, setAuthMode] = useState("all");
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [selectedSession, setSelectedSession] = useState<ChatAnalyticsSession | null>(null);
+  const [selectedQuery, setSelectedQuery] = useState<string | null>(null);
 
   const summaryQuery = useQuery({
     queryKey: ["chat-analytics-summary"],
@@ -69,6 +254,11 @@ export function ChatAnalytics() {
 
   const sessionItems = sessionsQuery.data?.items ?? [];
   const userItems = usersQuery.data?.items ?? [];
+
+  const openSessionDetails = (session: ChatAnalyticsSession, question?: string) => {
+    setSelectedSession(session);
+    setSelectedQuery(question ?? null);
+  };
 
   return (
     <section className="feature-section">
@@ -145,7 +335,7 @@ export function ChatAnalytics() {
                         <small>Последняя активность: {item.last_seen ? formatDate(item.last_seen) : "-"}</small>
                       </div>
                     </td>
-                    <td>{renderQuestions(item.recent_queries, "Запросов пока нет")}</td>
+                    <td><UserQuestions questions={item.recent_queries} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -244,6 +434,13 @@ export function ChatAnalytics() {
                           <strong>{item.session_id}</strong>
                           <small>Канал: {item.channel || "-"}</small>
                           <small>Событий: {item.event_count}</small>
+                          <button
+                            type="button"
+                            className="ghost analytics-open-button"
+                            onClick={() => openSessionDetails(item)}
+                          >
+                            Открыть логи
+                          </button>
                         </div>
                       </td>
                       <td>
@@ -258,7 +455,9 @@ export function ChatAnalytics() {
                           <small>Person ID: {item.person_id ?? "-"}</small>
                         </div>
                       </td>
-                      <td>{renderQuestions(item.questions, "Вопросов не найдено")}</td>
+                      <td>
+                        <SessionQuestions session={item} onOpen={openSessionDetails} />
+                      </td>
                       <td>
                         <div className="doc-name">
                           <small>Начало: {item.started_at ? formatDate(item.started_at) : "-"}</small>
@@ -295,6 +494,17 @@ export function ChatAnalytics() {
           </>
         )}
       </div>
+
+      {selectedSession ? (
+        <EventLogModal
+          session={selectedSession}
+          selectedQuery={selectedQuery}
+          onClose={() => {
+            setSelectedSession(null);
+            setSelectedQuery(null);
+          }}
+        />
+      ) : null}
     </section>
   );
 }

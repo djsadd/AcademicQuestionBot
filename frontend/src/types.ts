@@ -245,3 +245,30 @@ export type ChatAnalyticsUserListResponse = {
   items: ChatAnalyticsUser[];
   limit: number;
 };
+
+export type ChatAnalyticsEvent = {
+  id: string;
+  session_key: string;
+  session_id: string;
+  channel: string | null;
+  telegram_id: number | null;
+  person_id: string | null;
+  auth_mode: "anonymous" | "authenticated";
+  query: string | null;
+  response: string | null;
+  llm_model: string | null;
+  llm_used: boolean | null;
+  llm_error: string | null;
+  intents: unknown[];
+  agents: unknown[];
+  trace: unknown[];
+  metadata: Record<string, unknown>;
+  request_payload: Record<string, unknown>;
+  response_payload: Record<string, unknown>;
+  created_at: string | null;
+};
+
+export type ChatAnalyticsEventListResponse = {
+  session_key: string;
+  items: ChatAnalyticsEvent[];
+};

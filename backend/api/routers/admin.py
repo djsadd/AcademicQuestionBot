@@ -57,3 +57,8 @@ async def get_chat_analytics_sessions(
 @router.get("/chat-analytics/users")
 async def get_chat_analytics_users(limit: int = 100) -> dict[str, Any]:
     return chat_analytics.list_chat_users(limit=limit)
+
+
+@router.get("/chat-analytics/sessions/{session_key}")
+async def get_chat_analytics_session_events(session_key: str) -> dict[str, Any]:
+    return chat_analytics.get_session_events(session_key)

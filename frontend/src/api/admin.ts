@@ -1,6 +1,7 @@
 import { apiClient } from "./client";
 import type {
   AdmissionApplicationListResponse,
+  ChatAnalyticsEventListResponse,
   ChatAnalyticsSessionListResponse,
   ChatAnalyticsSummary,
   ChatAnalyticsUserListResponse,
@@ -39,4 +40,8 @@ export function fetchChatAnalyticsSessions(
 export function fetchChatAnalyticsUsers(limit = 100): Promise<ChatAnalyticsUserListResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
   return apiClient.get<ChatAnalyticsUserListResponse>(`/admin/chat-analytics/users?${params.toString()}`);
+}
+
+export function fetchChatAnalyticsSessionEvents(sessionKey: string): Promise<ChatAnalyticsEventListResponse> {
+  return apiClient.get<ChatAnalyticsEventListResponse>(`/admin/chat-analytics/sessions/${encodeURIComponent(sessionKey)}`);
 }
