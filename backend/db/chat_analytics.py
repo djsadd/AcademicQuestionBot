@@ -267,8 +267,8 @@ def list_chat_sessions(
                     COUNT(*) AS event_count,
                     MIN(created_at) AS started_at,
                     MAX(created_at) AS updated_at,
-                    ARRAY_REMOVE(ARRAY_AGG(query ORDER BY created_at DESC), NULL)[1] AS last_query,
-                    ARRAY_REMOVE(ARRAY_AGG(response ORDER BY created_at DESC), NULL)[1] AS last_response,
+                    (ARRAY_REMOVE(ARRAY_AGG(query ORDER BY created_at DESC), NULL))[1] AS last_query,
+                    (ARRAY_REMOVE(ARRAY_AGG(response ORDER BY created_at DESC), NULL))[1] AS last_response,
                     COALESCE(
                         JSON_AGG(
                             JSON_BUILD_OBJECT(
@@ -367,7 +367,7 @@ def list_chat_users(*, limit: int = 100) -> dict[str, Any]:
                 COUNT(DISTINCT COALESCE(NULLIF(session_id, ''), id)) AS session_count,
                 MIN(created_at) AS first_seen,
                 MAX(created_at) AS last_seen,
-                ARRAY_REMOVE(ARRAY_AGG(query ORDER BY created_at DESC), NULL)[1] AS last_query,
+                (ARRAY_REMOVE(ARRAY_AGG(query ORDER BY created_at DESC), NULL))[1] AS last_query,
                 COALESCE(
                     JSON_AGG(
                         JSON_BUILD_OBJECT(
