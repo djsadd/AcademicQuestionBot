@@ -79,6 +79,11 @@ const CHAT_VARIANTS = {
 type AuthProfile = {
   telegram_id: number;
   person_id?: string | null;
+  platonus_auth?: boolean;
+  role?: string | null;
+  fullname?: string | null;
+  statusName?: string | null;
+  email?: string | null;
 };
 
 type ChatSession = {
@@ -289,6 +294,99 @@ const formatChatDate = (value: string) => {
   });
 };
 
+const buildChatAnalyticsMetadata = ({
+  profile,
+  isPublicAdmission,
+  mode,
+  message,
+  sessionId,
+  channel,
+  context,
+  historyLength,
+}: {
+  profile: AuthProfile | null;
+  isPublicAdmission: boolean;
+  mode: FakeChatMode;
+  message: string;
+  sessionId: string;
+  channel: string;
+  context: {
+    university: string;
+    program: string;
+    year: number;
+    itp?: string;
+  };
+  historyLength: number;
+}) => {
+  const now = new Date().toISOString();
+  const endpoint = isPublicAdmission ? "/chat/public/admission/stream" : "/chat/stream";
+  const path = typeof window !== "undefined" ? window.location.pathname : null;
+  const href = typeof window !== "undefined" ? window.location.href : null;
+  const referrer = typeof document !== "undefined" ? document.referrer || null : null;
+  const title = typeof document !== "undefined" ? document.title || null : null;
+  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+  const locale = typeof navigator !== "undefined" ? navigator.language || null : null;
+  const languages = typeof navigator !== "undefined" ? [...navigator.languages] : [];
+  const userAgent = typeof navigator !== "undefined" ? navigator.userAgent || null : null;
+  const platform = typeof navigator !== "undefined" ? navigator.platform || null : null;
+  const viewport = typeof window !== "undefined"
+    ? { width: window.innerWidth, height: window.innerHeight }
+    : null;
+  const screenSize = typeof window !== "undefined"
+    ? { width: window.screen.width, height: window.screen.height }
+    : null;
+
+  return {
+    channel,
+    session_id: sessionId,
+    request: {
+      source: "academiq-question-web",
+      origin: "website",
+      endpoint,
+      transport: "sse",
+      chat_mode: mode,
+      auth_mode: isPublicAdmission ? "anonymous" : "authenticated",
+      is_authenticated: !isPublicAdmission,
+      sent_at: now,
+      message_length: message.length,
+      history_length: historyLength,
+    },
+    context_snapshot: {
+      university: context.university,
+      program: context.program,
+      year: context.year,
+      itp: context.itp,
+    },
+    user: isPublicAdmission
+      ? { kind: "anonymous" }
+      : {
+        kind: "authenticated",
+        telegram_id: profile?.telegram_id ?? null,
+        person_id: profile?.person_id ?? null,
+        role: profile?.role ?? null,
+        platonus_auth: Boolean(profile?.platonus_auth),
+        fullname: profile?.fullname ?? null,
+        status_name: profile?.statusName ?? null,
+        email: profile?.email ?? null,
+      },
+    page: {
+      path,
+      url: href,
+      title,
+      referrer,
+    },
+    client: {
+      timezone,
+      locale,
+      languages,
+      user_agent: userAgent,
+      platform,
+      viewport,
+      screen: screenSize,
+    },
+  };
+};
+
 const QUICK_ACTIONS = [
   { title: "Сбросить пароль", prompt: "Помоги сбросить пароль и восстановить доступ к аккаунту." },
   { title: "Когда сессия?", prompt: "Узнай, когда у меня сессия и какие даты экзаменов/зачётов." },
@@ -441,7 +539,18 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
     }
     let active = true;
     apiClient
-      .get<{ status: string; user: { telegram_id: number; person_id?: string | null } }>(
+      .get<{
+        status: string;
+        user: {
+          telegram_id: number;
+          person_id?: string | null;
+          platonus_auth?: boolean;
+          role?: string | null;
+          fullname?: string | null;
+          statusName?: string | null;
+          email?: string | null;
+        };
+      }>(
         "/auth/me",
       )
       .then((response) => {
@@ -449,6 +558,11 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
           setProfile({
             telegram_id: response.user.telegram_id,
             person_id: response.user.person_id ?? null,
+            platonus_auth: response.user.platonus_auth ?? false,
+            role: response.user.role ?? null,
+            fullname: response.user.fullname ?? null,
+            statusName: response.user.statusName ?? null,
+            email: response.user.email ?? null,
           });
         }
       })
@@ -668,6 +782,12 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
       draftSessionIdRef.current = createSessionId();
     }
 
+    const requestHistory = buildRequestHistory(
+      activeChat?.messages ?? [],
+      config.introMessage,
+      userMessage,
+    );
+
     const payload: ChatRequestPayload = {
       user_id: isPublicAdmission ? undefined : profile?.telegram_id ?? 0,
       telegram_id: isPublicAdmission ? undefined : profile?.telegram_id,
@@ -675,11 +795,17 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
       message: trimmed,
       language: profileConfig.language,
       context: profileConfig.context,
-      metadata: {
+      metadata: buildChatAnalyticsMetadata({
+        profile,
+        isPublicAdmission,
+        mode,
+        message: trimmed,
+        sessionId: requestMeta.session,
         channel: requestMeta.channel,
-        session_id: requestMeta.session,
-      },
-      history: buildRequestHistory(activeChat?.messages ?? [], config.introMessage, userMessage),
+        context: profileConfig.context,
+        historyLength: requestHistory.length,
+      }),
+      history: requestHistory,
     };
 
     const controller = new AbortController();

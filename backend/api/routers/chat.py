@@ -227,6 +227,95 @@ def _apply_detected_language(payload: ChatPayload) -> ChatPayload:
     return payload.model_copy(update={"language": _resolve_response_language(payload)})
 
 
+def _compact_metadata(value: Any) -> Any:
+    if isinstance(value, dict):
+        result: dict[str, Any] = {}
+        for key, item in value.items():
+            compacted = _compact_metadata(item)
+            if compacted is None:
+                continue
+            if isinstance(compacted, (dict, list)) and not compacted:
+                continue
+            result[str(key)] = compacted
+        return result
+    if isinstance(value, list):
+        result_list = []
+        for item in value:
+            compacted = _compact_metadata(item)
+            if compacted is None:
+                continue
+            if isinstance(compacted, (dict, list)) and not compacted:
+                continue
+            result_list.append(compacted)
+        return result_list
+    if value is None:
+        return None
+    return value
+
+
+def _build_analytics_metadata(
+    *,
+    payload: ChatPayload,
+    channel: str,
+    endpoint: str,
+    chat_mode: str,
+    auth_mode: str,
+    user: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], str | None]:
+    metadata = dict(payload.metadata or {})
+    session_id_raw = metadata.get("session_id") or metadata.get("session")
+    session_id = str(session_id_raw).strip() if session_id_raw else None
+
+    request_meta = metadata.get("request")
+    if not isinstance(request_meta, dict):
+        request_meta = {}
+    request_meta.update(
+        {
+            "source": request_meta.get("source") or "academiq-question-web",
+            "origin": request_meta.get("origin") or "website",
+            "endpoint": endpoint,
+            "transport": "sse" if endpoint.endswith("/stream") else "http",
+            "chat_mode": chat_mode,
+            "auth_mode": auth_mode,
+            "is_authenticated": auth_mode == "authenticated",
+        }
+    )
+
+    metadata["session_id"] = session_id
+    metadata["channel"] = channel
+    metadata["request"] = request_meta
+
+    context_snapshot = metadata.get("context_snapshot")
+    if not isinstance(context_snapshot, dict):
+        context_snapshot = {}
+    context_snapshot.update(payload.context or {})
+    if context_snapshot:
+        metadata["context_snapshot"] = context_snapshot
+
+    user_meta = metadata.get("user")
+    if not isinstance(user_meta, dict):
+        user_meta = {}
+
+    if user:
+        user_meta.update(
+            {
+                "kind": "authenticated",
+                "telegram_id": user.get("telegram_id"),
+                "person_id": payload.person_id or user.get("platonus_person_id"),
+                "role": user.get("platonus_role"),
+                "platonus_auth": user.get("platonus_auth"),
+                "fullname": user.get("platonus_fullname"),
+                "status_name": user.get("platonus_status_name"),
+                "email": user.get("platonus_email"),
+            }
+        )
+    else:
+        user_meta.setdefault("kind", "anonymous")
+
+    metadata["user"] = user_meta
+    return _compact_metadata(metadata) or {}, session_id
+
+
 def _build_public_admission_overview(*, program: str | None, level: str | None) -> dict[str, Any]:
     programs = get_available_programs(level=level)
     prices = get_current_prices(program=program, level=level)
@@ -406,38 +495,53 @@ def _save_public_admission_analytics(
         logger.exception("Public admission analytics failed: %s", exc)
 
 
-def _prepare_public_router_payload(payload: ChatPayload) -> tuple[dict[str, Any], dict[str, Any], str | None, str]:
-    metadata = payload.metadata or {}
-    session_id = metadata.get("session_id") or metadata.get("session") or None
-    channel = metadata.get("channel") or "public_web"
+def _prepare_public_router_payload(
+    payload: ChatPayload,
+    *,
+    endpoint: str,
+) -> tuple[dict[str, Any], dict[str, Any], str | None, str]:
+    metadata, session_id = _build_analytics_metadata(
+        payload=payload,
+        channel=str((payload.metadata or {}).get("channel") or "public_web"),
+        endpoint=endpoint,
+        chat_mode="public_admission",
+        auth_mode="anonymous",
+        user=None,
+    )
+    channel = str(metadata.get("channel") or "public_web")
     stored_history: list[dict[str, Any]] = []
     if session_id:
         stored_history = chat_analytics.fetch_session_history(session_id)
 
     router_payload = payload.model_dump()
     router_payload["history"] = _merge_history(payload.history, stored_history)
-    metadata["channel"] = channel
     if router_payload.get("metadata") is None:
         router_payload["metadata"] = metadata
     else:
-        router_payload["metadata"]["channel"] = channel
-    return router_payload, metadata, session_id, str(channel)
+        router_payload["metadata"] = metadata
+    return router_payload, metadata, session_id, channel
 
 
 @router.post("/")
 async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) -> dict:
     telegram_id = user["telegram_id"]
     person_id = payload.person_id or user.get("platonus_person_id")
-
-    metadata = payload.metadata or {}
-    session_id = metadata.get("session_id") or metadata.get("session") or None
-    channel = metadata.get("channel") or "web"
+    metadata, session_id = _build_analytics_metadata(
+        payload=payload,
+        channel=str((payload.metadata or {}).get("channel") or "web"),
+        endpoint="/chat/",
+        chat_mode="private",
+        auth_mode="authenticated",
+        user=user,
+    )
+    channel = str(metadata.get("channel") or "web")
 
     router_payload = payload.model_dump()
     router_payload["telegram_id"] = telegram_id
     router_payload["user_id"] = telegram_id
     if person_id:
         router_payload["person_id"] = person_id
+    router_payload["metadata"] = metadata
     stored_history: list[dict[str, Any]] = []
     if session_id:
         stored_history = chat_analytics.fetch_session_history(session_id)
@@ -470,7 +574,10 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
 @router.post("/public/admission")
 async def handle_public_admission_chat(payload: ChatPayload) -> dict:
     payload = _apply_detected_language(payload)
-    router_payload, metadata, session_id, channel = _prepare_public_router_payload(payload)
+    router_payload, metadata, session_id, channel = _prepare_public_router_payload(
+        payload,
+        endpoint="/chat/public/admission",
+    )
     response = await agent_router.route(router_payload)
     _save_public_admission_analytics(
         response=response,
@@ -483,7 +590,10 @@ async def handle_public_admission_chat(payload: ChatPayload) -> dict:
 @router.post("/public/admission/stream")
 async def handle_public_admission_chat_stream(payload: ChatPayload) -> StreamingResponse:
     payload = _apply_detected_language(payload)
-    router_payload, metadata, session_id, channel = _prepare_public_router_payload(payload)
+    router_payload, metadata, session_id, channel = _prepare_public_router_payload(
+        payload,
+        endpoint="/chat/public/admission/stream",
+    )
 
     async def event_stream():
         final_answer_parts: list[str] = []
@@ -627,16 +737,22 @@ def _sse(event: str, payload: dict) -> str:
 async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_user)) -> StreamingResponse:
     telegram_id = user["telegram_id"]
     person_id = payload.person_id or user.get("platonus_person_id")
-
-    metadata = payload.metadata or {}
-    session_id = metadata.get("session_id") or metadata.get("session") or None
-    channel = metadata.get("channel") or "web"
+    metadata, session_id = _build_analytics_metadata(
+        payload=payload,
+        channel=str((payload.metadata or {}).get("channel") or "web"),
+        endpoint="/chat/stream",
+        chat_mode="private",
+        auth_mode="authenticated",
+        user=user,
+    )
+    channel = str(metadata.get("channel") or "web")
 
     router_payload = payload.model_dump()
     router_payload["telegram_id"] = telegram_id
     router_payload["user_id"] = telegram_id
     if person_id:
         router_payload["person_id"] = person_id
+    router_payload["metadata"] = metadata
     stored_history: list[dict[str, Any]] = []
     if session_id:
         stored_history = chat_analytics.fetch_session_history(session_id)
