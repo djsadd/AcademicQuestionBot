@@ -13,8 +13,7 @@ PROMPT_PATH = Path(__file__).resolve().parents[1] / "langchain" / "prompts" / "f
 SYSTEM_PROMPT = (
     "Ты академический ассистент университета Туран-Астана. "
     "Отвечай только по доступному контексту. "
-    "Если в истории чата есть предыдущие сообщения, используй их для понимания продолжения диалога, "
-    "но не подменяй ими факты из документов."
+    "Не выходи за пределы доступных данных и не подменяй факты догадками."
 )
 
 
@@ -33,7 +32,6 @@ def _load_prompt_template() -> str:
     except FileNotFoundError:  # pragma: no cover - fallback for deployments
         return (
             "Вопрос: {question}\n"
-            "История чата: {history}\n"
             "Ответы агентов: {agent_answers}\n"
             "Контекст: {context}\n"
             "Сформулируй итоговый ответ на языке {language}."
@@ -107,7 +105,9 @@ class ResponseAggregator:
                 "raw_request": {
                     "intents": intents.get("intents", []),
                     "plan": [step.key for step in plan],
-                } if not llm_answer else None,
+                }
+                if not llm_answer
+                else None,
             },
         }
 
@@ -142,9 +142,7 @@ class ResponseAggregator:
             citation_items = output.get("citations")
             if isinstance(citation_items, list):
                 citations.extend(
-                    entry
-                    for entry in citation_items
-                    if isinstance(entry, dict)
+                    entry for entry in citation_items if isinstance(entry, dict)
                 )
 
         return AggregationArtifacts(
@@ -199,7 +197,6 @@ class ResponseAggregator:
         citations_text = self._format_citations(citations)
         answers_text = "\n---\n".join(answers) or "нет промежуточных ответов"
         intents_text = ", ".join(intents.get("intents", []) or ["general"])
-        history_text = self._format_history(user_payload.get("history"))
 
         return self.prompt_template.format(
             question=user_payload.get("message", ""),
@@ -208,7 +205,6 @@ class ResponseAggregator:
             context=context_text,
             agent_answers=answers_text,
             citations=citations_text,
-            history=history_text,
         )
 
     def _format_context(self, context: List[Dict[str, Any]]) -> str:
@@ -225,20 +221,6 @@ class ResponseAggregator:
                 prefix += f" (score={float(score):.2f})"
             lines.append(f"{prefix} {content[:400].strip()}")
         return "\n".join(lines)
-
-    def _format_history(self, history: Any) -> str:
-        if not history:
-            return "- история текущего чата пуста"
-        lines: List[str] = []
-        for idx, item in enumerate(history, 1):
-            if not isinstance(item, dict):
-                continue
-            role = item.get("role") or "unknown"
-            content = item.get("content") or ""
-            if not content:
-                continue
-            lines.append(f"{idx}. {role}: {content}")
-        return "\n".join(lines) if lines else "- история текущего чата пуста"
 
     def _format_citations(self, citations: List[Dict[str, Any]]) -> str:
         if not citations:

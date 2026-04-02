@@ -19,6 +19,36 @@ LEVEL_ALIASES = {
     "second_higher": {"second higher", "second degree", "второе высшее", "высшее образование"},
 }
 
+ADMISSION_CONTACTS = {
+    "department": "Приёмная комиссия",
+    "postal_address": [
+        "010000",
+        "г. Астана",
+        "Республика Казахстан",
+        "ул. Ы. Дукенулы, 29 (по 2ГИС: 29а)",
+        "Корпус А",
+        "Университет «Туран-Астана»",
+        "Приёмная комиссия",
+    ],
+    "address": (
+        "010000, г. Астана, Республика Казахстан, ул. Ы. Дукенулы, 29 "
+        "(по 2ГИС: 29а), Корпус А, Университет «Туран-Астана», Приёмная комиссия"
+    ),
+    "bachelor_contacts": [
+        {"phone": "+7 700 139 51 10", "label": "Приемная комиссия"},
+        {"phone": "+7 702 912 39 97", "label": "Сауле Сенбековна"},
+        {"phone": "+7 747 911 55 28", "label": "Татьяна Юрьевна"},
+        {"phone": "+7 777 038 21 52", "label": "Талгат Амирханович"},
+        {"phone": "+7 701 158 89 24", "label": "Алмаз Шаирбекович"},
+    ],
+    "graduate_contacts": [
+        {"phone": "+7 702 912 39 97", "label": "Сауле Сенбековна"},
+        {"phone": "+7 701 677 99 94", "label": "Алмас Маратбекович"},
+    ],
+    "working_hours": "Понедельник – Пятница: с 09:00 до 18:00. Обеденный перерыв: с 13:00 до 14:00.",
+    "note": "Обращайтесь по любым вопросам — мы всегда готовы помочь!",
+}
+
 TOOL_TERMS = {
     "programs": {
         "специальност",
@@ -194,19 +224,10 @@ def get_admission_contacts() -> Dict[str, Any]:
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    contacts = data.get("contacts") or {}
-    if not contacts:
-        return {
-            "status": "not_found",
-            "tool": "contacts",
-            "message": "Admission contacts are not configured.",
-            "source_path": _source_path(),
-        }
-
     return {
         "status": "ok",
         "tool": "contacts",
-        "contacts": contacts,
+        "contacts": ADMISSION_CONTACTS,
         "data_updated_at": data.get("last_updated"),
         "source_path": _source_path(),
     }
@@ -306,11 +327,49 @@ def extract_program(query: str, *, data: Optional[Dict[str, Any]] = None) -> Opt
     return best_match[1] if best_match else None
 
 
+def _format_structured_contacts(contacts: Dict[str, Any]) -> str:
+    lines = [contacts.get("department") or "Приёмная комиссия"]
+
+    postal_address = contacts.get("postal_address") or []
+    if postal_address:
+        lines.append("Почтовый адрес:")
+        for item in postal_address:
+            lines.append(f"- {item}")
+    elif contacts.get("address"):
+        lines.append(f"Адрес: {contacts.get('address')}")
+
+    bachelor_contacts = contacts.get("bachelor_contacts") or []
+    if bachelor_contacts:
+        lines.append("Бакалавриат:")
+        for entry in bachelor_contacts:
+            phone = entry.get("phone") or "не указан"
+            label = entry.get("label") or "Контакт"
+            lines.append(f"- {phone} — {label}")
+
+    graduate_contacts = contacts.get("graduate_contacts") or []
+    if graduate_contacts:
+        lines.append("Магистратура и докторантура:")
+        for entry in graduate_contacts:
+            phone = entry.get("phone") or "не указан"
+            label = entry.get("label") or "Контакт"
+            lines.append(f"- {phone} — {label}")
+
+    if contacts.get("working_hours"):
+        lines.append(f"График работы: {contacts.get('working_hours')}")
+    if contacts.get("note"):
+        lines.append(str(contacts.get("note")))
+    return "\n".join(lines)
+
+
 def format_admission_tool_result(result: Dict[str, Any]) -> str:
     if result.get("tool") == "overview" and result.get("answer"):
         return str(result["answer"])
     if result.get("tool") == "application_form" and result.get("answer"):
         return str(result["answer"])
+    if result.get("tool") == "contacts":
+        contacts = result.get("contacts") or {}
+        if contacts.get("postal_address") or contacts.get("bachelor_contacts") or contacts.get("graduate_contacts"):
+            return _format_structured_contacts(contacts)
 
     status = result.get("status")
     if status == "missing_data_file":
