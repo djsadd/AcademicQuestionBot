@@ -316,6 +316,26 @@ def _build_analytics_metadata(
     return _compact_metadata(metadata) or {}, session_id
 
 
+def _build_request_log_payload(
+    *,
+    payload: ChatPayload,
+    router_payload: dict[str, Any],
+    metadata: dict[str, Any],
+    user: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "message": payload.message,
+        "language": payload.language,
+        "context": payload.context or {},
+        "history": router_payload.get("history") or [],
+        "metadata": metadata,
+        "telegram_id": router_payload.get("telegram_id"),
+        "user_id": router_payload.get("user_id"),
+        "person_id": router_payload.get("person_id"),
+        "user": user or None,
+    }
+
+
 def _build_public_admission_overview(*, program: str | None, level: str | None) -> dict[str, Any]:
     programs = get_available_programs(level=level)
     prices = get_current_prices(program=program, level=level)
@@ -474,6 +494,7 @@ def _save_public_admission_analytics(
     metadata: dict[str, Any],
     session_id: str | None,
     channel: str | None,
+    request_payload: dict[str, Any] | None = None,
 ) -> None:
     try:
         chat_analytics.save_chat_event(
@@ -490,6 +511,8 @@ def _save_public_admission_analytics(
             agents=response.get("plan"),
             trace=response.get("trace"),
             metadata=metadata,
+            request_payload=request_payload,
+            response_payload=response,
         )
     except Exception as exc:
         logger.exception("Public admission analytics failed: %s", exc)
@@ -548,6 +571,12 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
     router_payload["history"] = _merge_history(payload.history, stored_history)
 
     response = await agent_router.route(router_payload)
+    request_payload = _build_request_log_payload(
+        payload=payload,
+        router_payload=router_payload,
+        metadata=metadata,
+        user=user,
+    )
 
     try:
         chat_analytics.save_chat_event(
@@ -564,6 +593,8 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
             agents=response.get("plan"),
             trace=response.get("trace"),
             metadata=metadata,
+            request_payload=request_payload,
+            response_payload=response,
         )
     except Exception as exc:
         logger.exception("Chat analytics failed: %s", exc)
@@ -579,11 +610,17 @@ async def handle_public_admission_chat(payload: ChatPayload) -> dict:
         endpoint="/chat/public/admission",
     )
     response = await agent_router.route(router_payload)
+    request_payload = _build_request_log_payload(
+        payload=payload,
+        router_payload=router_payload,
+        metadata=metadata,
+    )
     _save_public_admission_analytics(
         response=response,
         metadata=metadata,
         session_id=session_id,
         channel=channel,
+        request_payload=request_payload,
     )
     return {"result": response}
 
@@ -593,6 +630,11 @@ async def handle_public_admission_chat_stream(payload: ChatPayload) -> Streaming
     router_payload, metadata, session_id, channel = _prepare_public_router_payload(
         payload,
         endpoint="/chat/public/admission/stream",
+    )
+    request_payload = _build_request_log_payload(
+        payload=payload,
+        router_payload=router_payload,
+        metadata=metadata,
     )
 
     async def event_stream():
@@ -712,6 +754,7 @@ async def handle_public_admission_chat_stream(payload: ChatPayload) -> Streaming
                 metadata=metadata,
                 session_id=session_id,
                 channel=channel,
+                request_payload=request_payload,
             )
             yield _sse("done", {"result": response})
         except Exception as exc:
@@ -757,6 +800,12 @@ async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_
     if session_id:
         stored_history = chat_analytics.fetch_session_history(session_id)
     router_payload["history"] = _merge_history(payload.history, stored_history)
+    request_payload = _build_request_log_payload(
+        payload=payload,
+        router_payload=router_payload,
+        metadata=metadata,
+        user=user,
+    )
 
     async def event_stream():
         final_answer_parts: list[str] = []
@@ -885,6 +934,8 @@ async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_
                     agents=response_obj.get("plan"),
                     trace=response_obj.get("trace"),
                     metadata=metadata,
+                    request_payload=request_payload,
+                    response_payload=response_obj,
                 )
             except Exception as exc:
                 logger.exception("Chat analytics failed: %s", exc)

@@ -184,3 +184,64 @@ export type AdmissionApplicationListResponse = {
   total: number;
   pages: number;
 };
+
+export type ChatAnalyticsSummary = {
+  total_events: number;
+  total_sessions: number;
+  anonymous_events: number;
+  authenticated_events: number;
+  anonymous_sessions: number;
+  authenticated_sessions: number;
+  unique_users: number;
+  last_event_at: string | null;
+};
+
+export type ChatAnalyticsQuestion = {
+  query: string;
+  created_at: string;
+};
+
+export type ChatAnalyticsSession = {
+  session_key: string;
+  session_id: string;
+  channel: string | null;
+  telegram_id: number | null;
+  person_id: string | null;
+  full_name: string | null;
+  email: string | null;
+  auth_mode: "anonymous" | "authenticated";
+  event_count: number;
+  started_at: string | null;
+  updated_at: string | null;
+  last_query: string | null;
+  last_response: string | null;
+  questions: ChatAnalyticsQuestion[];
+};
+
+export type ChatAnalyticsSessionListResponse = {
+  items: ChatAnalyticsSession[];
+  page: number;
+  per_page: number;
+  total: number;
+  pages: number;
+};
+
+export type ChatAnalyticsUser = {
+  user_key: string;
+  telegram_id: number | null;
+  person_id: string | null;
+  full_name: string | null;
+  email: string | null;
+  role: string | null;
+  event_count: number;
+  session_count: number;
+  first_seen: string | null;
+  last_seen: string | null;
+  last_query: string | null;
+  recent_queries: ChatAnalyticsQuestion[];
+};
+
+export type ChatAnalyticsUserListResponse = {
+  items: ChatAnalyticsUser[];
+  limit: number;
+};
