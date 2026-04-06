@@ -355,6 +355,10 @@ def get_passing_scores(
 
     lang = normalize_language(language)
     matches = _match_programs(data, program=program, level=level)
+    if not level:
+        meaningful_matches = [item for item in matches if _has_meaningful_passing_score(item)]
+        if meaningful_matches:
+            matches = meaningful_matches
     if not matches:
         return _not_found("passing_scores", data, level=level, program=program, language=lang)
 
@@ -383,6 +387,14 @@ def get_passing_scores(
         "data_updated_at": data.get("last_updated"),
         "source_path": _source_path(),
     }
+
+
+def _has_meaningful_passing_score(program_item: Dict[str, Any]) -> bool:
+    score = program_item.get("passing_score") or {}
+    return any(
+        score.get(field) not in (None, "", [], {})
+        for field in ("grant", "grant_full", "grant_short", "paid", "exam", "gop_code")
+    )
 
 
 def get_required_documents(*, level: Optional[str] = None, language: Optional[str] = None) -> Dict[str, Any]:
