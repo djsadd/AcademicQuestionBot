@@ -13,6 +13,19 @@ REQUIRED_PROGRAM_KEYS = {"name", "level", "duration", "tuition", "passing_score"
 LOCALIZED_NAME_KEYS = {"name_ru", "name_kk", "name_en"}
 
 
+def _is_localized_mapping(value: object) -> bool:
+    if not isinstance(value, dict):
+        return False
+    return any(key in {"ru", "kk", "en"} for key in value.keys())
+
+
+def _is_text_or_localized(value: object) -> bool:
+    return (
+        (isinstance(value, str) and bool(value.strip()))
+        or _is_localized_mapping(value)
+    )
+
+
 def main() -> int:
     configured_path = os.getenv("ADMISSION_DATA_PATH")
     data_path = Path(configured_path) if configured_path else DEFAULT_PATH
@@ -60,6 +73,32 @@ def main() -> int:
             print(
                 f"[ERROR] Program #{index} ({program.get('name', 'unknown')}) "
                 "'aliases' must be a list when provided."
+            )
+            return 1
+        if not _is_text_or_localized(program.get("duration")):
+            print(
+                f"[ERROR] Program #{index} ({program.get('name', 'unknown')}) "
+                "'duration' must be a non-empty string or a localized object."
+            )
+            return 1
+        tuition = program.get("tuition")
+        if not isinstance(tuition, dict):
+            print(f"[ERROR] Program #{index} ({program.get('name', 'unknown')}) 'tuition' must be an object.")
+            return 1
+        if "period" in tuition and tuition.get("period") not in (None, "") and not _is_text_or_localized(tuition.get("period")):
+            print(
+                f"[ERROR] Program #{index} ({program.get('name', 'unknown')}) "
+                "'tuition.period' must be a string or a localized object."
+            )
+            return 1
+        passing_score = program.get("passing_score")
+        if not isinstance(passing_score, dict):
+            print(f"[ERROR] Program #{index} ({program.get('name', 'unknown')}) 'passing_score' must be an object.")
+            return 1
+        if "exam" in passing_score and passing_score.get("exam") not in (None, "") and not _is_text_or_localized(passing_score.get("exam")):
+            print(
+                f"[ERROR] Program #{index} ({program.get('name', 'unknown')}) "
+                "'passing_score.exam' must be a string or a localized object."
             )
             return 1
 

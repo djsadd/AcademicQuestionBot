@@ -108,6 +108,7 @@ def _build_ai_payload(
     message: str,
     telegram_id: int | None,
     *,
+    language: str = "ru",
     session_id: str | None = None,
     person_id: str | None = None,
 ) -> dict:
@@ -115,7 +116,7 @@ def _build_ai_payload(
     history = chat_analytics.fetch_session_history(session_id) if session_id else []
     return {
         "message": message,
-        "language": "ru",
+        "language": language,
         "topic": None,
         "policy": None,
         "program": None,
@@ -140,16 +141,29 @@ def _run_ai_chat(
     message: str,
     telegram_id: int | None,
     *,
+    language: str = "ru",
     session_id: str | None = None,
     person_id: str | None = None,
 ) -> dict:
     payload = _build_ai_payload(
         message,
         telegram_id,
+        language=language,
         session_id=session_id,
         person_id=person_id,
     )
     return asyncio.run(agent_router.route(payload)) or {}
+
+
+def _extract_language_code(from_user: dict | None) -> str:
+    if not isinstance(from_user, dict):
+        return "ru"
+    language_code = str(from_user.get("language_code") or "").strip().lower()
+    if not language_code:
+        return "ru"
+    if "-" in language_code:
+        language_code = language_code.split("-", 1)[0]
+    return language_code if language_code in {"ru", "kk", "en"} else "ru"
 
 
 def run() -> None:
@@ -198,6 +212,7 @@ def run() -> None:
                         telegram_id = from_id
                 if telegram_id is None:
                     telegram_id = chat_id
+                language = _extract_language_code(from_user)
 
                 session_id = get_or_create_session(
                     telegram_id=telegram_id,
@@ -290,6 +305,7 @@ def run() -> None:
                         agent_router,
                         text,
                         telegram_id,
+                        language=language,
                         session_id=session_id,
                         person_id=user.get("platonus_person_id"),
                     )

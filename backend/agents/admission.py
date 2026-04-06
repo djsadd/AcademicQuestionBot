@@ -18,6 +18,7 @@ from ..langchain.tools.admission_info import (
     get_required_documents,
     get_study_durations,
     load_admission_data,
+    normalize_language,
 )
 from .base import AgentResult, BaseAgent
 
@@ -27,7 +28,8 @@ class AdmissionAgent(BaseAgent):
 
     async def run(self, payload: Dict[str, Any]) -> AgentResult:
         query = str(payload.get("message") or payload.get("question") or "").strip()
-        application_result = _maybe_handle_application_flow(payload, query)
+        language = normalize_language(payload.get("language"))
+        application_result = _maybe_handle_application_flow(payload, query, language)
         if application_result is not None:
             return application_result
 
@@ -37,68 +39,161 @@ class AdmissionAgent(BaseAgent):
         requested_tool = detect_requested_tool(query)
 
         if requested_tool == "programs":
-            result = get_available_programs(level=level)
+            result = get_available_programs(level=level, language=language)
         elif requested_tool == "prices":
-            result = get_current_prices(program=program, level=level)
+            result = get_current_prices(program=program, level=level, language=language)
         elif requested_tool == "passing_scores":
-            result = get_passing_scores(program=program, level=level)
+            result = get_passing_scores(program=program, level=level, language=language)
         elif requested_tool == "documents":
-            result = get_required_documents(level=level)
+            result = get_required_documents(level=level, language=language)
         elif requested_tool == "contacts":
-            result = get_admission_contacts()
+            result = get_admission_contacts(language=language)
         elif requested_tool == "durations":
-            result = get_study_durations(program=program, level=level)
+            result = get_study_durations(program=program, level=level, language=language)
         else:
-            result = _build_overview(program=program, level=level)
+            result = _build_overview(program=program, level=level, language=language)
 
         return AgentResult(
-            answer=format_admission_tool_result(result),
+            answer=format_admission_tool_result(result, language=language),
             intent="admission",
             tool_data=result,
-            context=build_context_entries(result),
+            context=build_context_entries(result, language=language),
         )
 
 
-def _build_overview(*, program: str | None, level: str | None) -> Dict[str, Any]:
-    programs = get_available_programs(level=level)
-    prices = get_current_prices(program=program, level=level)
-    scores = get_passing_scores(program=program, level=level)
-    durations = get_study_durations(program=program, level=level)
-    contacts = get_admission_contacts()
+def _build_overview(*, program: str | None, level: str | None, language: str) -> Dict[str, Any]:
+    programs = get_available_programs(level=level, language=language)
+    prices = get_current_prices(program=program, level=level, language=language)
+    scores = get_passing_scores(program=program, level=level, language=language)
+    durations = get_study_durations(program=program, level=level, language=language)
+    contacts = get_admission_contacts(language=language)
 
     answer = "\n\n".join(
         [
-            "Информация приемной комиссии:",
-            format_admission_tool_result(programs),
-            format_admission_tool_result(prices),
-            format_admission_tool_result(scores),
-            format_admission_tool_result(durations),
-            format_admission_tool_result(contacts),
+            _app_text(language, "overview_title"),
+            format_admission_tool_result(programs, language=language),
+            format_admission_tool_result(prices, language=language),
+            format_admission_tool_result(scores, language=language),
+            format_admission_tool_result(durations, language=language),
+            format_admission_tool_result(contacts, language=language),
         ]
     )
     return {
         "status": "ok",
         "tool": "overview",
+        "language": language,
         "answer": answer,
         "source_path": prices.get("source_path") or contacts.get("source_path"),
         "data_updated_at": prices.get("data_updated_at") or contacts.get("data_updated_at"),
     }
 
 
-APPLICATION_FIELDS: list[dict[str, str]] = [
-    {"key": "full_name", "label": "ФИО", "question": "Укажите ФИО полностью."},
-    {"key": "iin", "label": "ИИН", "question": "Укажите ИИН (12 цифр)."},
-    {"key": "birth_date", "label": "Дата рождения", "question": "Укажите дату рождения в формате ДД.ММ.ГГГГ."},
-    {"key": "phone", "label": "Телефон", "question": "Укажите номер телефона для связи."},
-    {"key": "email", "label": "Email", "question": "Укажите email."},
-    {"key": "education_level", "label": "Уровень обучения", "question": "На какой уровень хотите поступать: бакалавриат, магистратура, докторантура или второе высшее?"},
-    {"key": "program", "label": "Образовательная программа", "question": "На какую образовательную программу хотите подать заявку?"},
-    {"key": "study_language", "label": "Язык обучения", "question": "Укажите предпочитаемый язык обучения."},
-    {"key": "study_format", "label": "Форма обучения", "question": "Укажите форму обучения, если знаете: очная, дистанционная и т.д."},
-    {"key": "comment", "label": "Комментарий", "question": "Если есть комментарий или вопрос для приемной комиссии, напишите его. Если нет, напишите \"нет\"."},
+APP_TEXTS: dict[str, dict[str, str]] = {
+    "ru": {
+        "overview_title": "Информация приемной комиссии:",
+        "already_saved": "Заявка уже была сформирована в этом диалоге. Если нужна новая, начните новый чат и напишите, что хотите подать заявку на поступление.",
+        "collecting_prefix": "Принято. Продолжим оформление заявки.",
+        "draft_ready": "Черновик заявки готов.",
+        "draft_confirm": 'Если всё верно, напишите "да". Если хотите отменить, напишите "нет".',
+        "cancelled": "Оформление заявки отменено. Если захотите начать заново, напишите, что хотите подать заявку на поступление.",
+        "confirm_required": 'Проверьте данные и напишите "да" для сохранения заявки или "нет" для отмены.',
+        "saved": "Заявка сохранена в базе.",
+        "application_number": "Номер заявки: {value}",
+        "summary_title": "Данные заявки:",
+    },
+    "kk": {
+        "overview_title": "Қабылдау комиссиясы туралы ақпарат:",
+        "already_saved": "Бұл диалогта өтініш бұрыннан жасалған. Егер жаңа өтініш керек болса, жаңа чат бастап, оқуға түсуге өтініш бергіңіз келетінін жазыңыз.",
+        "collecting_prefix": "Қабылданды. Өтінішті рәсімдеуді жалғастырамыз.",
+        "draft_ready": "Өтініштің қара жобасы дайын.",
+        "draft_confirm": 'Барлығы дұрыс болса, "да" деп жазыңыз. Болдырмау үшін "нет" деп жазыңыз.',
+        "cancelled": "Өтінішті рәсімдеу тоқтатылды. Қайта бастау үшін оқуға түсуге өтініш бергіңіз келетінін жазыңыз.",
+        "confirm_required": 'Өтінішті сақтау үшін "да", болдырмау үшін "нет" деп жазыңыз.',
+        "saved": "Өтініш базаға сақталды.",
+        "application_number": "Өтініш нөмірі: {value}",
+        "summary_title": "Өтініш деректері:",
+    },
+    "en": {
+        "overview_title": "Admissions information:",
+        "already_saved": "An application has already been created in this dialog. If you need a new one, start a new chat and say that you want to submit an admission application.",
+        "collecting_prefix": "Accepted. Let's continue the application.",
+        "draft_ready": "The application draft is ready.",
+        "draft_confirm": 'If everything is correct, reply "yes". If you want to cancel, reply "no".',
+        "cancelled": "The application flow has been cancelled. If you want to start over, say that you want to submit an admission application.",
+        "confirm_required": 'Check the data and reply "yes" to save the application or "no" to cancel.',
+        "saved": "The application has been saved.",
+        "application_number": "Application number: {value}",
+        "summary_title": "Application data:",
+    },
+}
+
+APPLICATION_FIELD_ORDER = [
+    "full_name",
+    "iin",
+    "birth_date",
+    "phone",
+    "email",
+    "education_level",
+    "program",
+    "study_language",
+    "study_format",
+    "comment",
 ]
 
-APPLICATION_TRIGGER_TERMS = (
+APPLICATION_FIELD_TEXTS: dict[str, dict[str, dict[str, str]]] = {
+    "full_name": {
+        "ru": {"label": "ФИО", "question": "Укажите ФИО полностью."},
+        "kk": {"label": "Аты-жөні", "question": "Толық аты-жөніңізді көрсетіңіз."},
+        "en": {"label": "Full name", "question": "Please provide your full name."},
+    },
+    "iin": {
+        "ru": {"label": "ИИН", "question": "Укажите ИИН (12 цифр)."},
+        "kk": {"label": "ЖСН", "question": "ЖСН-ді көрсетіңіз (12 сан)."},
+        "en": {"label": "IIN", "question": "Please provide your IIN (12 digits)."},
+    },
+    "birth_date": {
+        "ru": {"label": "Дата рождения", "question": "Укажите дату рождения в формате ДД.ММ.ГГГГ."},
+        "kk": {"label": "Туған күні", "question": "Туған күніңізді КК.АА.ЖЖЖЖ форматында көрсетіңіз."},
+        "en": {"label": "Birth date", "question": "Please provide your birth date in DD.MM.YYYY format."},
+    },
+    "phone": {
+        "ru": {"label": "Телефон", "question": "Укажите номер телефона для связи."},
+        "kk": {"label": "Телефон", "question": "Байланыс телефон нөмірін көрсетіңіз."},
+        "en": {"label": "Phone", "question": "Please provide your phone number."},
+    },
+    "email": {
+        "ru": {"label": "Email", "question": "Укажите email."},
+        "kk": {"label": "Email", "question": "Email көрсетіңіз."},
+        "en": {"label": "Email", "question": "Please provide your email."},
+    },
+    "education_level": {
+        "ru": {"label": "Уровень обучения", "question": "На какой уровень хотите поступать: бакалавриат, магистратура, докторантура или второе высшее?"},
+        "kk": {"label": "Оқу деңгейі", "question": "Қай деңгейге түскіңіз келеді: бакалавриат, магистратура, докторантура немесе екінші жоғары?"},
+        "en": {"label": "Study level", "question": "Which level are you applying for: bachelor, master, doctorate, or second higher education?"},
+    },
+    "program": {
+        "ru": {"label": "Образовательная программа", "question": "На какую образовательную программу хотите подать заявку?"},
+        "kk": {"label": "Білім беру бағдарламасы", "question": "Қай білім беру бағдарламасына өтініш бергіңіз келеді?"},
+        "en": {"label": "Program", "question": "Which academic program would you like to apply for?"},
+    },
+    "study_language": {
+        "ru": {"label": "Язык обучения", "question": "Укажите предпочитаемый язык обучения."},
+        "kk": {"label": "Оқу тілі", "question": "Қалаған оқу тілін көрсетіңіз."},
+        "en": {"label": "Study language", "question": "Please provide your preferred study language."},
+    },
+    "study_format": {
+        "ru": {"label": "Форма обучения", "question": "Укажите форму обучения, если знаете: очная, дистанционная и т.д."},
+        "kk": {"label": "Оқу форматы", "question": "Білсеңіз, оқу форматын көрсетіңіз: күндізгі, қашықтан және т.б."},
+        "en": {"label": "Study format", "question": "If you know it, please specify the study format: full-time, online, etc."},
+    },
+    "comment": {
+        "ru": {"label": "Комментарий", "question": 'Если есть комментарий или вопрос для приемной комиссии, напишите его. Если нет, напишите "нет".'},
+        "kk": {"label": "Түсініктеме", "question": 'Егер қабылдау комиссиясына арналған түсініктеме немесе сұрақ болса, жазыңыз. Егер жоқ болса, "жоқ" деп жазыңыз.'},
+        "en": {"label": "Comment", "question": 'If you have a comment or question for the admissions office, write it. If not, write "no".'},
+    },
+}
+
+APPLICATION_TRIGGER_TERMS = {
     "подать заявку",
     "оставить заявку",
     "создать заявку",
@@ -108,13 +203,21 @@ APPLICATION_TRIGGER_TERMS = (
     "хочу подать документы",
     "хочу подать заявку",
     "поступить к вам",
-)
+    "өтініш беру",
+    "өтініш қалдыру",
+    "оқуға түскім келеді",
+    "құжат тапсырғым келеді",
+    "submit application",
+    "apply for admission",
+    "i want to apply",
+    "i want to enroll",
+}
 
-CONFIRM_TERMS = {"да", "подтверждаю", "подтвердить", "верно", "согласен", "ок", "ok", "yes"}
-CANCEL_TERMS = {"нет", "отмена", "отменить", "не подтверждаю", "stop", "cancel"}
+CONFIRM_TERMS = {"да", "подтверждаю", "подтвердить", "верно", "согласен", "ок", "ok", "yes", "иә", "ия", "растау"}
+CANCEL_TERMS = {"нет", "отмена", "отменить", "не подтверждаю", "stop", "cancel", "no", "жоқ"}
 
 
-def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> AgentResult | None:
+def _maybe_handle_application_flow(payload: Dict[str, Any], query: str, language: str) -> AgentResult | None:
     history = payload.get("history")
     if not _should_run_application_flow(query, history):
         return None
@@ -125,26 +228,28 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
         result = {
             "status": "already_saved",
             "tool": "application_form",
-            "answer": "Заявка уже была сформирована в этом диалоге. Если нужна новая, начните новый чат и напишите, что хотите подать заявку на поступление.",
+            "language": language,
+            "answer": _app_text(language, "already_saved"),
         }
         return AgentResult(
             answer=result["answer"],
             intent="admission",
             tool_data=result,
-            context=build_context_entries(result),
+            context=build_context_entries(result, language=language),
             direct_response=True,
         )
 
     pending_key = state["pending_field"]
     if pending_key:
-        field_config = _field_config(pending_key)
+        field_config = _field_config(pending_key, language)
         answer = (
-            "Принято. Продолжим оформление заявки.\n"
+            f"{_app_text(language, 'collecting_prefix')}\n"
             f"{field_config['question']}"
         )
         result = {
             "status": "collecting",
             "tool": "application_form",
+            "language": language,
             "stage": pending_key,
             "collected_fields": state["collected"],
             "answer": answer,
@@ -153,20 +258,21 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
             answer=answer,
             intent="admission",
             tool_data=result,
-            context=build_context_entries(result),
+            context=build_context_entries(result, language=language),
             direct_response=True,
         )
 
     if not state["awaiting_confirmation"]:
-        summary = _format_application_summary(state["collected"])
+        summary = _format_application_summary(state["collected"], language)
         answer = (
-            "Черновик заявки готов.\n"
+            f"{_app_text(language, 'draft_ready')}\n"
             f"{summary}\n\n"
-            "Если всё верно, напишите \"да\". Если хотите отменить, напишите \"нет\"."
+            f"{_app_text(language, 'draft_confirm')}"
         )
         result = {
             "status": "awaiting_confirmation",
             "tool": "application_form",
+            "language": language,
             "collected_fields": state["collected"],
             "answer": answer,
         }
@@ -174,16 +280,17 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
             answer=answer,
             intent="admission",
             tool_data=result,
-            context=build_context_entries(result),
+            context=build_context_entries(result, language=language),
             direct_response=True,
         )
 
     normalized_query = _normalize_text(query)
     if normalized_query in CANCEL_TERMS:
-        answer = "Оформление заявки отменено. Если захотите начать заново, напишите, что хотите подать заявку на поступление."
+        answer = _app_text(language, "cancelled")
         result = {
             "status": "cancelled",
             "tool": "application_form",
+            "language": language,
             "collected_fields": state["collected"],
             "answer": answer,
         }
@@ -191,15 +298,16 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
             answer=answer,
             intent="admission",
             tool_data=result,
-            context=build_context_entries(result),
+            context=build_context_entries(result, language=language),
             direct_response=True,
         )
 
     if normalized_query not in CONFIRM_TERMS:
-        answer = "Проверьте данные и напишите \"да\" для сохранения заявки или \"нет\" для отмены."
+        answer = _app_text(language, "confirm_required")
         result = {
             "status": "awaiting_confirmation",
             "tool": "application_form",
+            "language": language,
             "collected_fields": state["collected"],
             "answer": answer,
         }
@@ -207,7 +315,7 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
             answer=answer,
             intent="admission",
             tool_data=result,
-            context=build_context_entries(result),
+            context=build_context_entries(result, language=language),
             direct_response=True,
         )
 
@@ -232,13 +340,14 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
         },
     )
     answer = (
-        "Заявка сохранена в базе.\n"
-        f"Номер заявки: {created['id']}\n"
-        f"{_format_application_summary(state['collected'])}"
+        f"{_app_text(language, 'saved')}\n"
+        f"{_app_text(language, 'application_number', value=created['id'])}\n"
+        f"{_format_application_summary(state['collected'], language)}"
     )
     result = {
         "status": "saved",
         "tool": "application_form",
+        "language": language,
         "application_id": created["id"],
         "created_at": created.get("created_at"),
         "collected_fields": state["collected"],
@@ -248,7 +357,7 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str) -> Agent
         answer=answer,
         intent="admission",
         tool_data=result,
-        context=build_context_entries(result),
+        context=build_context_entries(result, language=language),
         direct_response=True,
     )
 
@@ -267,9 +376,9 @@ def _should_run_application_flow(query: str, history: Any) -> bool:
         role = str(item.get("role") or "").lower()
         content = str(item.get("content") or "")
         normalized_content = _normalize_text(content)
-        if role == "assistant" and "оформление заявки" in normalized_content:
+        if role == "assistant" and any(marker in normalized_content for marker in _application_history_markers("collecting")):
             return True
-        if role == "assistant" and "черновик заявки готов" in normalized_content:
+        if role == "assistant" and any(marker in normalized_content for marker in _application_history_markers("draft_ready")):
             return True
     return False
 
@@ -298,9 +407,9 @@ def _reconstruct_application_state(history: Any, current_query: str) -> dict[str
         normalized = _normalize_text(content)
 
         if role == "assistant":
-            if "заявка сохранена в базе" in normalized:
+            if any(marker in normalized for marker in _application_history_markers("saved")):
                 saved = True
-            if "черновик заявки готов" in normalized:
+            if any(marker in normalized for marker in _application_history_markers("draft_ready")):
                 awaiting_confirmation = True
             continue
 
@@ -310,10 +419,10 @@ def _reconstruct_application_state(history: Any, current_query: str) -> dict[str
         if awaiting_confirmation:
             continue
 
-        if current_field_index >= len(APPLICATION_FIELDS):
+        if current_field_index >= len(APPLICATION_FIELD_ORDER):
             continue
 
-        field_key = APPLICATION_FIELDS[current_field_index]["key"]
+        field_key = APPLICATION_FIELD_ORDER[current_field_index]
         value = _extract_field_value(field_key, content)
         if value is None:
             continue
@@ -321,8 +430,8 @@ def _reconstruct_application_state(history: Any, current_query: str) -> dict[str
         current_field_index += 1
 
     pending_field = None
-    if not awaiting_confirmation and current_field_index < len(APPLICATION_FIELDS):
-        pending_field = APPLICATION_FIELDS[current_field_index]["key"]
+    if not awaiting_confirmation and current_field_index < len(APPLICATION_FIELD_ORDER):
+        pending_field = APPLICATION_FIELD_ORDER[current_field_index]
 
     return {
         "collected": collected,
@@ -372,33 +481,63 @@ def _extract_field_value(field_key: str, content: str) -> str | None:
     if field_key == "study_format":
         return text if len(text) >= 2 else None
     if field_key == "comment":
-        return "" if normalized in {"нет", "без комментария", "none", "-"} else text
+        return "" if normalized in {"нет", "без комментария", "none", "no", "жоқ", "-"} else text
     return text
 
 
-def _format_application_summary(collected: dict[str, str]) -> str:
+def _format_application_summary(collected: dict[str, str], language: str) -> str:
     level_map = {
-        "bachelor": "бакалавриат",
-        "master": "магистратура",
-        "doctorate": "докторантура",
-        "second_higher": "второе высшее",
+        "ru": {
+            "bachelor": "бакалавриат",
+            "master": "магистратура",
+            "doctorate": "докторантура",
+            "second_higher": "второе высшее",
+        },
+        "kk": {
+            "bachelor": "бакалавриат",
+            "master": "магистратура",
+            "doctorate": "докторантура",
+            "second_higher": "екінші жоғары",
+        },
+        "en": {
+            "bachelor": "bachelor",
+            "master": "master",
+            "doctorate": "doctorate",
+            "second_higher": "second higher education",
+        },
     }
-    lines = ["Данные заявки:"]
-    for field in APPLICATION_FIELDS:
-        key = field["key"]
+    lines = [_app_text(language, "summary_title")]
+    for key in APPLICATION_FIELD_ORDER:
+        field = _field_config(key, language)
         value = collected.get(key)
         if value is None or value == "":
             continue
-        display_value = level_map.get(value, value) if key == "education_level" else value
+        display_value = level_map.get(language, level_map["ru"]).get(value, value) if key == "education_level" else value
         lines.append(f"- {field['label']}: {display_value}")
     return "\n".join(lines)
 
 
-def _field_config(field_key: str) -> dict[str, str]:
-    for field in APPLICATION_FIELDS:
-        if field["key"] == field_key:
-            return field
-    raise KeyError(field_key)
+def _field_config(field_key: str, language: str) -> dict[str, str]:
+    localized = APPLICATION_FIELD_TEXTS.get(field_key, {})
+    return localized.get(language) or localized.get("ru") or {"label": field_key, "question": field_key}
+
+
+def _app_text(language: str, key: str, **kwargs: Any) -> str:
+    template = (APP_TEXTS.get(language) or APP_TEXTS["ru"]).get(key) or APP_TEXTS["ru"][key]
+    return template.format(**kwargs)
+
+
+def _application_history_markers(kind: str) -> set[str]:
+    keys = {
+        "collecting": {"collecting_prefix"},
+        "draft_ready": {"draft_ready"},
+        "saved": {"saved"},
+    }.get(kind, set())
+    values: set[str] = set()
+    for language in APP_TEXTS:
+        for key in keys:
+            values.add(_normalize_text(_app_text(language, key)))
+    return values
 
 
 def _normalize_text(text: str) -> str:

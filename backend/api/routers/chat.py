@@ -25,6 +25,7 @@ from ...langchain.tools.admission_info import (
     get_required_documents,
     get_study_durations,
     load_admission_data,
+    normalize_language,
 )
 from ...services.permissions import require_user
 
@@ -50,6 +51,12 @@ class ChatPayload(BaseModel):
 PUBLIC_ADMISSION_PLAN = [
     {"agent": "admission", "description": "Admission Agent"},
 ]
+
+PUBLIC_OVERVIEW_TITLES = {
+    "ru": "Информация приемной комиссии:",
+    "kk": "Қабылдау комиссиясы туралы ақпарат:",
+    "en": "Admissions information:",
+}
 
 
 def _normalize_history_item(item: Any) -> dict[str, str] | None:
@@ -204,26 +211,27 @@ def _build_request_log_payload(
     }
 
 
-def _build_public_admission_overview(*, program: str | None, level: str | None) -> dict[str, Any]:
-    programs = get_available_programs(level=level)
-    prices = get_current_prices(program=program, level=level)
-    scores = get_passing_scores(program=program, level=level)
-    durations = get_study_durations(program=program, level=level)
-    contacts = get_admission_contacts()
+def _build_public_admission_overview(*, program: str | None, level: str | None, language: str) -> dict[str, Any]:
+    programs = get_available_programs(level=level, language=language)
+    prices = get_current_prices(program=program, level=level, language=language)
+    scores = get_passing_scores(program=program, level=level, language=language)
+    durations = get_study_durations(program=program, level=level, language=language)
+    contacts = get_admission_contacts(language=language)
 
     answer = "\n\n".join(
         [
-            "Информация приемной комиссии:",
-            format_admission_tool_result(programs),
-            format_admission_tool_result(prices),
-            format_admission_tool_result(scores),
-            format_admission_tool_result(durations),
-            format_admission_tool_result(contacts),
+            PUBLIC_OVERVIEW_TITLES.get(language, PUBLIC_OVERVIEW_TITLES["ru"]),
+            format_admission_tool_result(programs, language=language),
+            format_admission_tool_result(prices, language=language),
+            format_admission_tool_result(scores, language=language),
+            format_admission_tool_result(durations, language=language),
+            format_admission_tool_result(contacts, language=language),
         ]
     )
     return {
         "status": "ok",
         "tool": "overview",
+        "language": language,
         "answer": answer,
         "source_path": prices.get("source_path") or contacts.get("source_path"),
         "data_updated_at": prices.get("data_updated_at") or contacts.get("data_updated_at"),
@@ -237,7 +245,8 @@ def _synthesize_public_admission_answer(
     fallback_answer: str,
     history: list[dict[str, Any]] | None = None,
 ) -> tuple[str, dict[str, Any]]:
-    context_entries = build_context_entries(tool_result)
+    language = normalize_language(payload.language)
+    context_entries = build_context_entries(tool_result, language=language)
     if not llm_client.is_configured:
         return fallback_answer, {"used": False, "model": None, "error": None, "raw_request": None}
 
@@ -280,27 +289,28 @@ def _build_public_admission_response(
     history: list[dict[str, Any]] | None = None,
 ) -> tuple[dict[str, Any], str]:
     query = payload.message.strip()
+    language = normalize_language(payload.language)
     data = load_admission_data()
     level = extract_level(query)
     program = extract_program(query, data=data)
     requested_tool = detect_requested_tool(query)
 
     if requested_tool == "programs":
-        tool_result = get_available_programs(level=level)
+        tool_result = get_available_programs(level=level, language=language)
     elif requested_tool == "prices":
-        tool_result = get_current_prices(program=program, level=level)
+        tool_result = get_current_prices(program=program, level=level, language=language)
     elif requested_tool == "passing_scores":
-        tool_result = get_passing_scores(program=program, level=level)
+        tool_result = get_passing_scores(program=program, level=level, language=language)
     elif requested_tool == "documents":
-        tool_result = get_required_documents(level=level)
+        tool_result = get_required_documents(level=level, language=language)
     elif requested_tool == "contacts":
-        tool_result = get_admission_contacts()
+        tool_result = get_admission_contacts(language=language)
     elif requested_tool == "durations":
-        tool_result = get_study_durations(program=program, level=level)
+        tool_result = get_study_durations(program=program, level=level, language=language)
     else:
-        tool_result = _build_public_admission_overview(program=program, level=level)
+        tool_result = _build_public_admission_overview(program=program, level=level, language=language)
 
-    fallback_answer = format_admission_tool_result(tool_result)
+    fallback_answer = format_admission_tool_result(tool_result, language=language)
     return tool_result, fallback_answer
 
 
@@ -327,7 +337,7 @@ def _assemble_public_admission_response(
                 },
             }
         ],
-        "context": build_context_entries(tool_result),
+        "context": build_context_entries(tool_result, language=normalize_language(payload.language)),
         "llm": llm_info,
         "final_answer": final_answer,
         "tool_data": tool_result,
