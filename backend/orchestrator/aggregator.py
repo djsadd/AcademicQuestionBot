@@ -34,7 +34,7 @@ def _load_prompt_template() -> str:
             "Вопрос: {question}\n"
             "Ответы агентов: {agent_answers}\n"
             "Контекст: {context}\n"
-            "Сформулируй итоговый ответ на языке {language}."
+            "Сформулируй итоговый ответ на том же языке, на котором задан вопрос."
         )
 
 
@@ -192,7 +192,6 @@ class ResponseAggregator:
         context: List[Dict[str, Any]],
         citations: List[Dict[str, Any]],
     ) -> str:
-        language = user_payload.get("language") or "ru"
         context_text = self._format_context(context)
         citations_text = self._format_citations(citations)
         answers_text = "\n---\n".join(answers) or "нет промежуточных ответов"
@@ -200,7 +199,6 @@ class ResponseAggregator:
 
         return self.prompt_template.format(
             question=user_payload.get("message", ""),
-            language=language,
             intents=intents_text,
             context=context_text,
             agent_answers=answers_text,

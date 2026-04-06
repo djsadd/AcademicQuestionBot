@@ -4,7 +4,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -52,43 +51,6 @@ PUBLIC_ADMISSION_PLAN = [
     {"agent": "admission", "description": "Admission Agent"},
 ]
 
-SUPPORTED_RESPONSE_LANGUAGES = {"ru", "kk", "en"}
-KAZAKH_UNIQUE_CHARS = set(
-    "\u04d9\u0493\u049b\u04a3\u04e9\u04b1\u04af\u04bb\u0456"
-)
-CYRILLIC_RE = re.compile(
-    r"[\u0430-\u044f\u0451\u04d9\u0493\u049b\u04a3\u04e9\u04b1\u04af\u04bb\u0456]",
-    re.IGNORECASE,
-)
-LATIN_RE = re.compile(r"[a-z]", re.IGNORECASE)
-KAZAKH_LATIN_HINTS = {
-    "shyqty",
-    "gran",
-    "mamandyq",
-    "kabyl",
-    "qysh",
-    "oqy",
-    "oku",
-    "stipend",
-    "univer",
-}
-ENGLISH_HINTS = {
-    "admission",
-    "tuition",
-    "program",
-    "programs",
-    "document",
-    "documents",
-    "deadline",
-    "price",
-    "cost",
-    "grant",
-    "university",
-    "bachelor",
-    "master",
-    "phd",
-}
-
 
 def _normalize_history_item(item: Any) -> dict[str, str] | None:
     if not isinstance(item, dict):
@@ -131,100 +93,6 @@ def _merge_history(
         merged.append(item)
 
     return merged[-limit:]
-
-
-def _normalize_response_language(language: Any) -> str | None:
-    if not language:
-        return None
-    normalized = str(language).strip().lower()
-    if not normalized:
-        return None
-    if normalized in {"kz", "kaz", "qaz", "kk"}:
-        return "kk"
-    if normalized.startswith("kk-"):
-        return "kk"
-    if normalized in {"ru", "rus"} or normalized.startswith("ru-"):
-        return "ru"
-    if normalized in {"en", "eng"} or normalized.startswith("en-"):
-        return "en"
-    if normalized in SUPPORTED_RESPONSE_LANGUAGES:
-        return normalized
-    return None
-
-
-def _detect_question_language(text: str) -> str | None:
-    normalized = " ".join(text.strip().lower().split())
-    if not normalized:
-        return None
-
-    if any(char in KAZAKH_UNIQUE_CHARS for char in normalized):
-        return "kk"
-
-    latin_count = len(LATIN_RE.findall(normalized))
-    cyrillic_count = len(CYRILLIC_RE.findall(normalized))
-    words = [
-        word
-        for word in re.split(
-            r"[^a-zA-Z\u0430-\u044f\u0410-\u042f\u0451\u0401\u04d9\u0493\u049b\u04a3\u04e9\u04b1\u04af\u04bb\u0456]+",
-            normalized,
-        )
-        if word
-    ]
-
-    if latin_count and not cyrillic_count:
-        if any(hint in normalized for hint in KAZAKH_LATIN_HINTS):
-            return "kk"
-        return "en"
-
-    if cyrillic_count and not latin_count:
-        kazakh_words = {
-            "\u049b\u0430\u043d\u0434\u0430\u0439",
-            "\u049b\u0430\u043b\u0430\u0439",
-            "\u049b\u0430\u0439\u0434\u0430",
-            "\u049b\u04b1\u0436\u0430\u0442",
-            "\u049b\u04b1\u043d\u044b",
-            "\u043e\u049b\u0443",
-            "\u0442\u04af\u0441\u0443",
-            "\u043c\u0430\u043c\u0430\u043d\u0434\u044b\u049b",
-            "\u049b\u0430\u0431\u044b\u043b\u0434\u0430\u0443",
-            "\u0433\u0440\u0430\u043d\u0442",
-            "\u043c\u0435\u0440\u0437\u0456\u043c\u0456",
-        }
-        if any(word in kazakh_words for word in words):
-            return "kk"
-        return "ru"
-
-    if any(word in ENGLISH_HINTS for word in words):
-        return "en"
-
-    if any(
-        word.endswith(
-            (
-                "\u04a3\u044b\u0437",
-                "\u04a3\u0456\u0437",
-                "\u0434\u044b\u04a3",
-                "\u0434\u0456\u04a3",
-                "\u0442\u044b\u04a3",
-                "\u0442\u0456\u04a3",
-            )
-        )
-        for word in words
-    ):
-        return "kk"
-
-    return None
-
-
-def _resolve_response_language(payload: ChatPayload) -> str:
-    return (
-        _detect_question_language(payload.message)
-        or _normalize_response_language(payload.language)
-        or "ru"
-    )
-
-
-def _apply_detected_language(payload: ChatPayload) -> ChatPayload:
-    return payload.model_copy(update={"language": _resolve_response_language(payload)})
 
 
 def _compact_metadata(value: Any) -> Any:
@@ -604,7 +472,6 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
 
 @router.post("/public/admission")
 async def handle_public_admission_chat(payload: ChatPayload) -> dict:
-    payload = _apply_detected_language(payload)
     router_payload, metadata, session_id, channel = _prepare_public_router_payload(
         payload,
         endpoint="/chat/public/admission",
@@ -626,7 +493,6 @@ async def handle_public_admission_chat(payload: ChatPayload) -> dict:
 
 @router.post("/public/admission/stream")
 async def handle_public_admission_chat_stream(payload: ChatPayload) -> StreamingResponse:
-    payload = _apply_detected_language(payload)
     router_payload, metadata, session_id, channel = _prepare_public_router_payload(
         payload,
         endpoint="/chat/public/admission/stream",
