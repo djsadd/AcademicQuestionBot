@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { NavLink, Navigate, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAdmissionInfo, updateAdmissionInfo } from "../api/admin";
 import { AdmissionApplications } from "./AdmissionApplications";
@@ -11,7 +12,16 @@ const LEVEL_OPTIONS = [
   { value: "second_higher", label: "Второе высшее" },
 ] as const;
 
-type AdmissionTab = "editor" | "applications";
+const ADMISSION_SECTIONS = [
+  { key: "general", label: "Общее" },
+  { key: "contacts", label: "Контакты" },
+  { key: "programs", label: "Специальности" },
+  { key: "durations", label: "Сроки" },
+  { key: "documents", label: "Документы" },
+  { key: "applications", label: "Заявки" },
+] as const;
+
+type AdmissionSectionKey = (typeof ADMISSION_SECTIONS)[number]["key"];
 
 function clonePayload(payload: AdmissionInfoPayload): AdmissionInfoPayload {
   return JSON.parse(JSON.stringify(payload)) as AdmissionInfoPayload;
@@ -114,7 +124,7 @@ function ProgramCard({
       <div className="admission-editor__program-header">
         <div>
           <strong>{program.name || `Программа ${index + 1}`}</strong>
-          <p className="muted">Редактирование карточки программы</p>
+          <p className="muted">Карточка специальности</p>
         </div>
         <button type="button" className="ghost" onClick={() => onRemove(index)}>
           Удалить
@@ -211,7 +221,7 @@ function ProgramCard({
           />
         </label>
         <label>
-          <span>Грант сокращённый курс</span>
+          <span>Грант сокращенный курс</span>
           <input
             type="number"
             value={program.passing_score.grant_short ?? ""}
@@ -287,8 +297,212 @@ function TechnicalContactCard({
   );
 }
 
+function SectionShell({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="feature-section">
+      <div className="feature-section__header">
+        <div>
+          <p className="eyebrow">Admissions</p>
+          <h2>{title}</h2>
+          <p className="muted">{description}</p>
+        </div>
+      </div>
+      <div className="panel admission-editor">{children}</div>
+    </section>
+  );
+}
+
+function GeneralSection({
+  formState,
+  setFormState,
+}: {
+  formState: AdmissionInfoPayload;
+  setFormState: Dispatch<SetStateAction<AdmissionInfoPayload | null>>;
+}) {
+  return (
+    <SectionShell
+      title="Общие данные"
+      description="Базовая информация о вузе и служебные поля admission_info.json."
+    >
+      <div className="admission-editor__grid">
+        <label>
+          <span>Учреждение</span>
+          <input
+            value={formState.institution}
+            onChange={(event) => setFormState((current) => current ? { ...current, institution: event.target.value } : current)}
+          />
+        </label>
+        <label>
+          <span>Валюта</span>
+          <input
+            value={formState.currency}
+            onChange={(event) => setFormState((current) => current ? { ...current, currency: event.target.value } : current)}
+          />
+        </label>
+        <label>
+          <span>Последнее обновление</span>
+          <input value={formState.last_updated ?? ""} readOnly />
+        </label>
+      </div>
+    </SectionShell>
+  );
+}
+
+function ContactsSection({
+  formState,
+  updateContacts,
+  updateTechnicalContact,
+  removeTechnicalContact,
+}: {
+  formState: AdmissionInfoPayload;
+  updateContacts: (field: string, value: unknown) => void;
+  updateTechnicalContact: (index: number, nextValue: AdmissionTechnicalContact) => void;
+  removeTechnicalContact: (index: number) => void;
+}) {
+  return (
+    <SectionShell
+      title="Контакты"
+      description="Отдельная страница для контактов приемной комиссии и технических контактов."
+    >
+      <div className="admission-editor__grid">
+        <label>
+          <span>Отдел</span>
+          <input value={formState.contacts.department ?? ""} onChange={(event) => updateContacts("department", event.target.value)} />
+        </label>
+        <label>
+          <span>Сайт</span>
+          <input value={String(formState.contacts.website ?? "")} onChange={(event) => updateContacts("website", event.target.value)} />
+        </label>
+      </div>
+
+      <label>
+        <span>Адрес</span>
+        <textarea rows={3} value={formState.contacts.address ?? ""} onChange={(event) => updateContacts("address", event.target.value)} />
+      </label>
+
+      <label>
+        <span>Часы работы</span>
+        <textarea rows={2} value={formState.contacts.working_hours ?? ""} onChange={(event) => updateContacts("working_hours", event.target.value)} />
+      </label>
+
+      <div className="admission-editor__grid">
+        <label>
+          <span>Телефоны, по одному на строку</span>
+          <textarea
+            rows={4}
+            value={arrayToLines(formState.contacts.phone)}
+            onChange={(event) => updateContacts("phone", linesToArray(event.target.value))}
+          />
+        </label>
+        <label>
+          <span>Email, по одному на строку</span>
+          <textarea
+            rows={4}
+            value={arrayToLines(formState.contacts.email)}
+            onChange={(event) => updateContacts("email", linesToArray(event.target.value))}
+          />
+        </label>
+      </div>
+
+      <div className="admission-editor__section-header">
+        <strong>Технические контакты</strong>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => updateContacts("technical_contacts", [...(formState.contacts.technical_contacts ?? []), createEmptyTechnicalContact()])}
+        >
+          Добавить контакт
+        </button>
+      </div>
+
+      <div className="admission-editor__stack">
+        {(formState.contacts.technical_contacts ?? []).map((contact, index) => (
+          <TechnicalContactCard
+            key={`${contact.name}-${index}`}
+            contact={contact}
+            index={index}
+            onChange={updateTechnicalContact}
+            onRemove={removeTechnicalContact}
+          />
+        ))}
+      </div>
+    </SectionShell>
+  );
+}
+
+function ProgramsSection({
+  programs,
+  updateProgram,
+  removeProgram,
+  addProgram,
+}: {
+  programs: AdmissionProgram[];
+  updateProgram: (index: number, nextValue: AdmissionProgram) => void;
+  removeProgram: (index: number) => void;
+  addProgram: () => void;
+}) {
+  return (
+    <SectionShell
+      title="Специальности"
+      description="Каждая образовательная программа редактируется отдельно."
+    >
+      <div className="admission-editor__section-header">
+        <div>
+          <strong>Программы</strong>
+          <p className="muted">Стоимость и проходные баллы редактируются прямо в карточке программы.</p>
+        </div>
+        <button type="button" className="ghost" onClick={addProgram}>
+          Добавить программу
+        </button>
+      </div>
+
+      <div className="admission-editor__stack">
+        {programs.map((program, index) => (
+          <ProgramCard
+            key={`${program.id ?? program.name}-${index}`}
+            program={program}
+            index={index}
+            onChange={updateProgram}
+            onRemove={removeProgram}
+          />
+        ))}
+      </div>
+    </SectionShell>
+  );
+}
+
+function JsonSection({
+  title,
+  description,
+  value,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <SectionShell title={title} description={description}>
+      <label>
+        <span>JSON</span>
+        <textarea rows={20} value={value} onChange={(event) => onChange(event.target.value)} />
+      </label>
+    </SectionShell>
+  );
+}
+
 function AdmissionInfoEditor() {
   const queryClient = useQueryClient();
+  const location = useLocation();
   const [formState, setFormState] = useState<AdmissionInfoPayload | null>(null);
   const [durationRulesText, setDurationRulesText] = useState("{}");
   const [documentsText, setDocumentsText] = useState("{}");
@@ -322,35 +536,19 @@ function AdmissionInfoEditor() {
     },
   });
 
-  const programCount = useMemo(() => formState?.programs.length ?? 0, [formState?.programs.length]);
-
   if (admissionInfoQuery.isLoading || !formState) {
-    return (
-      <section className="feature-section">
-        <div className="feature-section__header">
-          <div>
-            <p className="eyebrow">Admissions</p>
-            <h2>Редактор admission_info.json</h2>
-          </div>
-        </div>
-        <p>Загрузка admission-данных...</p>
-      </section>
-    );
+    return <SectionShell title="Admissions" description="Загрузка admission-данных..."><p>Загрузка...</p></SectionShell>;
   }
 
   if (admissionInfoQuery.isError) {
-    return (
-      <section className="feature-section">
-        <div className="feature-section__header">
-          <div>
-            <p className="eyebrow">Admissions</p>
-            <h2>Редактор admission_info.json</h2>
-          </div>
-        </div>
-        <p className="error">Не удалось загрузить admission-данные.</p>
-      </section>
-    );
+    return <SectionShell title="Admissions" description="Не удалось загрузить данные."><p className="error">Ошибка загрузки.</p></SectionShell>;
   }
+
+  const pathname = location.pathname.replace(/\/+$/, "");
+  const lastSegment = pathname.split("/").pop() || "general";
+  const section = ADMISSION_SECTIONS.some((item) => item.key === lastSegment)
+    ? (lastSegment as AdmissionSectionKey)
+    : "general";
 
   const sourcePath = admissionInfoQuery.data?.source_path ?? "";
 
@@ -461,201 +659,106 @@ function AdmissionInfoEditor() {
     }
   };
 
-  return (
-    <section className="feature-section">
-      <div className="feature-section__header">
-        <div>
-          <p className="eyebrow">Admissions</p>
-          <h2>Редактор admission_info.json</h2>
-          <p className="muted">
-            Основные поля вынесены в форму, сложные блоки `documents` и `duration_rules` можно править отдельно.
-          </p>
-        </div>
-        <span className="feature-section__status">{programCount} programs</span>
-      </div>
+  let content: ReactNode = null;
+  if (section === "general") {
+    content = <GeneralSection formState={formState} setFormState={setFormState} />;
+  } else if (section === "contacts") {
+    content = (
+      <ContactsSection
+        formState={formState}
+        updateContacts={updateContacts}
+        updateTechnicalContact={updateTechnicalContact}
+        removeTechnicalContact={removeTechnicalContact}
+      />
+    );
+  } else if (section === "programs") {
+    content = (
+      <ProgramsSection
+        programs={formState.programs}
+        updateProgram={updateProgram}
+        removeProgram={removeProgram}
+        addProgram={() => setFormState((current) => current ? { ...current, programs: [...current.programs, createEmptyProgram()] } : current)}
+      />
+    );
+  } else if (section === "durations") {
+    content = (
+      <JsonSection
+        title="Сроки обучения"
+        description="Отдельная страница для блока duration_rules."
+        value={durationRulesText}
+        onChange={setDurationRulesText}
+      />
+    );
+  } else if (section === "documents") {
+    content = (
+      <JsonSection
+        title="Документы"
+        description="Отдельная страница для блока documents."
+        value={documentsText}
+        onChange={setDocumentsText}
+      />
+    );
+  } else if (section === "applications") {
+    content = <AdmissionApplications />;
+  }
 
-      <div className="panel admission-editor">
+  return (
+    <div className="admissions-admin-page">
+      <div className="feature-section admissions-admin-shell">
+        <div className="feature-section__header">
+          <div>
+            <p className="eyebrow">Admissions</p>
+            <h2>Управление admission_info.json</h2>
+            <p className="muted">Каждый блок вынесен на отдельную страницу внутри раздела admissions.</p>
+          </div>
+          <span className="feature-section__status">{formState.programs.length} programs</span>
+        </div>
+
         <div className="admin-toolbar">
           <div className="admin-toolbar__summary">
             <strong>Файл: {sourcePath}</strong>
             <span className="muted">Последнее обновление: {formState.last_updated || "не указано"}</span>
           </div>
-          <div className="admission-editor__actions">
-            <button type="button" className="ghost" onClick={handleReset} disabled={saveMutation.isPending}>
-              Сбросить
-            </button>
-            <button type="button" className="primary" onClick={handleSave} disabled={saveMutation.isPending}>
-              {saveMutation.isPending ? "Сохранение..." : "Сохранить"}
-            </button>
-          </div>
+          {section !== "applications" ? (
+            <div className="admission-editor__actions">
+              <button type="button" className="ghost" onClick={handleReset} disabled={saveMutation.isPending}>
+                Сбросить
+              </button>
+              <button type="button" className="primary" onClick={handleSave} disabled={saveMutation.isPending}>
+                {saveMutation.isPending ? "Сохранение..." : "Сохранить"}
+              </button>
+            </div>
+          ) : null}
         </div>
 
         {errorMessage ? <p className="error">{errorMessage}</p> : null}
         {successMessage ? <p className="success-text">{successMessage}</p> : null}
 
-        <div className="admission-editor__grid">
-          <label>
-            <span>Учреждение</span>
-            <input
-              value={formState.institution}
-              onChange={(event) => setFormState((current) => current ? { ...current, institution: event.target.value } : current)}
-            />
-          </label>
-          <label>
-            <span>Валюта</span>
-            <input
-              value={formState.currency}
-              onChange={(event) => setFormState((current) => current ? { ...current, currency: event.target.value } : current)}
-            />
-          </label>
+        <div className="admissions-admin-layout">
+          <aside className="admissions-admin-sidebar">
+            {ADMISSION_SECTIONS.map((item) => (
+              <NavLink
+                key={item.key}
+                to={`/admissions/${item.key}`}
+                className={({ isActive }) => `admissions-admin-sidebar__link${isActive ? " active" : ""}`}
+              >
+                {item.label}
+              </NavLink>
+            ))}
+          </aside>
+          <div className="admissions-admin-content">
+            {content}
+          </div>
         </div>
-
-        <section className="admission-editor__section">
-          <div className="feature-section__header">
-            <div>
-              <h3>Контакты</h3>
-              <p className="muted">Быстрое редактирование контактного блока.</p>
-            </div>
-          </div>
-
-          <div className="admission-editor__grid">
-            <label>
-              <span>Отдел</span>
-              <input value={formState.contacts.department ?? ""} onChange={(event) => updateContacts("department", event.target.value)} />
-            </label>
-            <label>
-              <span>Сайт</span>
-              <input value={String(formState.contacts.website ?? "")} onChange={(event) => updateContacts("website", event.target.value)} />
-            </label>
-          </div>
-
-          <label>
-            <span>Адрес</span>
-            <textarea rows={3} value={formState.contacts.address ?? ""} onChange={(event) => updateContacts("address", event.target.value)} />
-          </label>
-
-          <label>
-            <span>Часы работы</span>
-            <textarea rows={2} value={formState.contacts.working_hours ?? ""} onChange={(event) => updateContacts("working_hours", event.target.value)} />
-          </label>
-
-          <div className="admission-editor__grid">
-            <label>
-              <span>Телефоны, по одному на строку</span>
-              <textarea
-                rows={4}
-                value={arrayToLines(formState.contacts.phone)}
-                onChange={(event) => updateContacts("phone", linesToArray(event.target.value))}
-              />
-            </label>
-            <label>
-              <span>Email, по одному на строку</span>
-              <textarea
-                rows={4}
-                value={arrayToLines(formState.contacts.email)}
-                onChange={(event) => updateContacts("email", linesToArray(event.target.value))}
-              />
-            </label>
-          </div>
-
-          <div className="admission-editor__section-header">
-            <strong>Технические контакты</strong>
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => updateContacts("technical_contacts", [...(formState.contacts.technical_contacts ?? []), createEmptyTechnicalContact()])}
-            >
-              Добавить контакт
-            </button>
-          </div>
-
-          <div className="admission-editor__stack">
-            {(formState.contacts.technical_contacts ?? []).map((contact, index) => (
-              <TechnicalContactCard
-                key={`${contact.name}-${index}`}
-                contact={contact}
-                index={index}
-                onChange={updateTechnicalContact}
-                onRemove={removeTechnicalContact}
-              />
-            ))}
-          </div>
-        </section>
-
-        <section className="admission-editor__section">
-          <div className="admission-editor__section-header">
-            <div>
-              <h3>Программы</h3>
-              <p className="muted">Основные поля программ редактируются без открытия JSON.</p>
-            </div>
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => setFormState((current) => current ? { ...current, programs: [...current.programs, createEmptyProgram()] } : current)}
-            >
-              Добавить программу
-            </button>
-          </div>
-
-          <div className="admission-editor__stack">
-            {formState.programs.map((program, index) => (
-              <ProgramCard
-                key={`${program.id ?? program.name}-${index}`}
-                program={program}
-                index={index}
-                onChange={updateProgram}
-                onRemove={removeProgram}
-              />
-            ))}
-          </div>
-        </section>
-
-        <section className="admission-editor__section">
-          <div className="feature-section__header">
-            <div>
-              <h3>Сложные блоки</h3>
-              <p className="muted">Для `documents` и `duration_rules` пока оставлен JSON-режим, чтобы не ломать вложенные структуры.</p>
-            </div>
-          </div>
-
-          <label>
-            <span>duration_rules</span>
-            <textarea rows={12} value={durationRulesText} onChange={(event) => setDurationRulesText(event.target.value)} />
-          </label>
-
-          <label>
-            <span>documents</span>
-            <textarea rows={16} value={documentsText} onChange={(event) => setDocumentsText(event.target.value)} />
-          </label>
-        </section>
       </div>
-    </section>
+    </div>
   );
 }
 
 export function AdmissionsAdmin() {
-  const [activeTab, setActiveTab] = useState<AdmissionTab>("editor");
-
-  return (
-    <div className="admissions-admin-page">
-      <div className="admissions-admin-tabs">
-        <button
-          type="button"
-          className={activeTab === "editor" ? "primary" : "ghost"}
-          onClick={() => setActiveTab("editor")}
-        >
-          Редактор данных
-        </button>
-        <button
-          type="button"
-          className={activeTab === "applications" ? "primary" : "ghost"}
-          onClick={() => setActiveTab("applications")}
-        >
-          Заявки
-        </button>
-      </div>
-
-      {activeTab === "editor" ? <AdmissionInfoEditor /> : <AdmissionApplications />}
-    </div>
-  );
+  const location = useLocation();
+  if (location.pathname === "/admissions" || location.pathname === "/admissions/") {
+    return <Navigate to="/admissions/general" replace />;
+  }
+  return <AdmissionInfoEditor />;
 }

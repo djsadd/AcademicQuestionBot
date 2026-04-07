@@ -344,7 +344,7 @@ export default function App() {
             element={<RequireAdmin isAdmin={isAdmin}><PlatonusStatus /></RequireAdmin>}
           />
           <Route
-            path="/admissions"
+            path="/admissions/*"
             element={<RequireAdmin isAdmin={isAdmin}><AdmissionsAdmin /></RequireAdmin>}
           />
           <Route
