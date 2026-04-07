@@ -444,7 +444,7 @@ def get_admission_contacts(*, language: Optional[str] = None) -> Dict[str, Any]:
         return data
 
     lang = normalize_language(language)
-    contacts = _resolve_localized_value(data.get("contacts") or ADMISSION_CONTACTS, lang)
+    contacts = _resolve_localized_value(data.get("contacts") or {}, lang)
     return {
         "status": "ok",
         "tool": "contacts",
@@ -553,41 +553,6 @@ def extract_program(query: str, *, data: Optional[Dict[str, Any]] = None) -> Opt
     return best_match[1] if best_match else None
 
 
-def _format_structured_contacts(contacts: Dict[str, Any], language: Optional[str]) -> str:
-    lang = normalize_language(language)
-    lines = [contacts.get("department") or _text(lang, "contacts_department_fallback")]
-
-    postal_address = contacts.get("postal_address") or []
-    if postal_address:
-        lines.append(_text(lang, "contacts_postal_address"))
-        for item in postal_address:
-            lines.append(f"- {item}")
-    elif contacts.get("address"):
-        lines.append(_text(lang, "contacts_address", value=contacts.get("address")))
-
-    bachelor_contacts = contacts.get("bachelor_contacts") or []
-    if bachelor_contacts:
-        lines.append(_text(lang, "contacts_bachelor"))
-        for entry in bachelor_contacts:
-            phone = entry.get("phone") or _text(lang, "contacts_phone_missing")
-            label = entry.get("label") or _text(lang, "contacts_label_fallback")
-            lines.append(f"- {phone} - {label}")
-
-    graduate_contacts = contacts.get("graduate_contacts") or []
-    if graduate_contacts:
-        lines.append(_text(lang, "contacts_graduate"))
-        for entry in graduate_contacts:
-            phone = entry.get("phone") or _text(lang, "contacts_phone_missing")
-            label = entry.get("label") or _text(lang, "contacts_label_fallback")
-            lines.append(f"- {phone} - {label}")
-
-    if contacts.get("working_hours"):
-        lines.append(_text(lang, "contacts_schedule", value=contacts.get("working_hours")))
-    if contacts.get("note"):
-        lines.append(str(contacts.get("note")))
-    return "\n".join(lines)
-
-
 def format_admission_tool_result(result: Dict[str, Any], language: Optional[str] = None) -> str:
     lang = normalize_language(language or result.get("language"))
     if result.get("tool") == "overview" and result.get("answer"):
@@ -598,8 +563,6 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
         contacts = result.get("contacts")
         if not isinstance(contacts, dict):
             return str(contacts or _text(lang, "not_specified"))
-        if contacts.get("postal_address") or contacts.get("bachelor_contacts") or contacts.get("graduate_contacts"):
-            return _format_structured_contacts(contacts, lang)
 
     status = result.get("status")
     if status == "missing_data_file":
