@@ -8,7 +8,7 @@ import { MiniApp } from "./components/MiniApp";
 import { PlatonusStatus } from "./components/PlatonusStatus";
 import { TelegramLogin } from "./components/TelegramLogin";
 import { Profile } from "./components/Profile";
-import { AdmissionApplications } from "./components/AdmissionApplications";
+import { AdmissionsAdmin } from "./components/AdmissionsAdmin";
 import { ChatAnalytics } from "./components/ChatAnalytics";
 import { PublicLanding } from "./components/PublicLanding";
 import { apiClient, AUTH_STORAGE_EVENT, authStorage } from "./api/client";
@@ -345,7 +345,7 @@ export default function App() {
           />
           <Route
             path="/admissions"
-            element={<RequireAdmin isAdmin={isAdmin}><AdmissionApplications /></RequireAdmin>}
+            element={<RequireAdmin isAdmin={isAdmin}><AdmissionsAdmin /></RequireAdmin>}
           />
           <Route
             path="/chat-analytics"

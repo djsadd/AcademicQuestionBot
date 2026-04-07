@@ -1,6 +1,8 @@
 import { apiClient } from "./client";
 import type {
   AdmissionApplicationListResponse,
+  AdmissionInfoPayload,
+  AdmissionInfoResponse,
   ChatAnalyticsEventListResponse,
   ChatAnalyticsSessionListResponse,
   ChatAnalyticsSummary,
@@ -16,6 +18,14 @@ export function fetchAdmissionApplications(
     per_page: String(perPage),
   });
   return apiClient.get<AdmissionApplicationListResponse>(`/admin/admission-applications?${params.toString()}`);
+}
+
+export function fetchAdmissionInfo(): Promise<AdmissionInfoResponse> {
+  return apiClient.get<AdmissionInfoResponse>("/admin/admission-info");
+}
+
+export function updateAdmissionInfo(payload: AdmissionInfoPayload): Promise<AdmissionInfoResponse> {
+  return apiClient.put<AdmissionInfoResponse>("/admin/admission-info", JSON.stringify(payload));
 }
 
 export function fetchChatAnalyticsSummary(): Promise<ChatAnalyticsSummary> {

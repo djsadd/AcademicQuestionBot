@@ -87,6 +87,11 @@ export const apiClient = {
       method: "POST",
       body,
     }),
+  put: <T>(url: string, body?: BodyInit | null) =>
+    request<T>(url, {
+      method: "PUT",
+      body,
+    }),
   delete: <T>(url: string) =>
     request<T>(url, {
       method: "DELETE",

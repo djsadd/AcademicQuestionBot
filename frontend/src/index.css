@@ -2157,3 +2157,120 @@ td {
     font-size: 0.9rem;
   }
 }
+
+.admissions-admin-page {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admissions-admin-tabs {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.admission-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.admission-editor__section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.admission-editor__section:first-of-type {
+  padding-top: 0;
+  border-top: 0;
+}
+
+.admission-editor__section h3 {
+  margin: 0;
+}
+
+.admission-editor__section-header,
+.admission-editor__program-header,
+.admission-editor__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.admission-editor__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1rem;
+}
+
+.admission-editor__stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.admission-editor label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  color: #334155;
+  font-size: 0.92rem;
+}
+
+.admission-editor label span {
+  font-weight: 600;
+}
+
+.admission-editor input,
+.admission-editor select,
+.admission-editor textarea {
+  width: 100%;
+  padding: 0.75rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid #dbe4f0;
+  background: #fff;
+  color: #0f172a;
+  font: inherit;
+}
+
+.admission-editor textarea {
+  resize: vertical;
+  min-height: 96px;
+}
+
+.admission-editor__program-card,
+.admission-editor__tech-card {
+  padding: 1rem;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.success-text {
+  color: #047857;
+  font-weight: 600;
+}
+
+@media (max-width: 720px) {
+  .admission-editor__actions,
+  .admission-editor__section-header,
+  .admission-editor__program-header {
+    align-items: stretch;
+  }
+
+  .admissions-admin-tabs button,
+  .admission-editor__actions button,
+  .admission-editor__section-header button,
+  .admission-editor__program-header button {
+    width: 100%;
+  }
+}

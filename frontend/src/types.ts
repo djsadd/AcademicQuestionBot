@@ -185,6 +185,69 @@ export type AdmissionApplicationListResponse = {
   pages: number;
 };
 
+export type AdmissionTechnicalContact = {
+  name: string;
+  phone: string;
+  note?: string | null;
+};
+
+export type AdmissionContactSection = {
+  department: string;
+  phone: string[];
+  email: string[];
+  address: string;
+  working_hours: string;
+  website?: string | null;
+  technical_contacts: AdmissionTechnicalContact[];
+  updated_at?: string | null;
+  [key: string]: unknown;
+};
+
+export type AdmissionProgram = {
+  id?: string | null;
+  name: string;
+  name_ru?: string | null;
+  name_kk?: string | null;
+  name_en?: string | null;
+  aliases?: string[];
+  level: string;
+  duration: string;
+  tuition: {
+    amount: number | null;
+    period?: string | null;
+    updated_at?: string | null;
+    [key: string]: unknown;
+  };
+  passing_score: {
+    gop_code?: string | null;
+    grant_full?: number | null;
+    grant_short?: number | null;
+    paid?: number | null;
+    exam?: string | null;
+    notes?: string[];
+    updated_at?: string | null;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+};
+
+export type AdmissionInfoPayload = {
+  institution: string;
+  currency: string;
+  last_updated?: string | null;
+  duration_rules: Record<string, unknown>;
+  contacts: AdmissionContactSection;
+  documents: Record<string, unknown>;
+  programs: AdmissionProgram[];
+  [key: string]: unknown;
+};
+
+export type AdmissionInfoResponse = {
+  status: string;
+  source_path: string;
+  data: AdmissionInfoPayload;
+};
+
 export type ChatAnalyticsSummary = {
   total_events: number;
   total_sessions: number;
