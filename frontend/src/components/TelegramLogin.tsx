@@ -64,16 +64,10 @@ export function TelegramLogin() {
     <section className="telegram-login login-screen">
       <div className="mini-app__card telegram-login__card login-form-card">
         <div className="login-form-card__hero">
-          <p className="eyebrow">Platonus Access</p>
           <h2>Вход в аккаунт</h2>
           <p className="muted">
             Войдите в систему, чтобы открыть персональный доступ к сервисам AcademicQuestionBot.
           </p>
-          <div className="login-form-card__chips">
-            <span>Личный кабинет</span>
-            <span>Защищенная сессия</span>
-            <span>Быстрый вход</span>
-          </div>
         </div>
         <form className="mini-app__form" onSubmit={handleSubmit}>
           <label className="mini-app__field">

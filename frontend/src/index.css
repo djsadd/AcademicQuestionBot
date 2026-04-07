@@ -1975,7 +1975,7 @@ td {
   left: -42px;
   width: 220px;
   height: 220px;
-  background: radial-gradient(circle, rgba(251, 191, 36, 0.28) 0%, rgba(251, 191, 36, 0) 72%);
+  background: radial-gradient(circle, rgba(127, 29, 29, 0.28) 0%, rgba(127, 29, 29, 0) 72%);
 }
 
 .login-screen::after {
@@ -1983,7 +1983,7 @@ td {
   bottom: -42px;
   width: 260px;
   height: 260px;
-  background: radial-gradient(circle, rgba(14, 165, 233, 0.22) 0%, rgba(14, 165, 233, 0) 72%);
+  background: radial-gradient(circle, rgba(136, 19, 55, 0.2) 0%, rgba(136, 19, 55, 0) 72%);
 }
 
 .login-form-card {
@@ -1991,17 +1991,17 @@ td {
   overflow: hidden;
   width: min(560px, 100%);
   padding: 0;
-  border: 1px solid rgba(255, 255, 255, 0.75);
-  background: linear-gradient(145deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 250, 252, 0.94) 100%);
-  box-shadow: 0 28px 80px rgba(15, 23, 42, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  background: linear-gradient(145deg, rgba(255, 250, 251, 0.98) 0%, rgba(252, 242, 245, 0.95) 100%);
+  box-shadow: 0 28px 80px rgba(80, 7, 36, 0.18);
 }
 
 .login-form-card__hero {
   padding: 2rem 2rem 1.2rem;
   background:
-    radial-gradient(circle at top right, rgba(59, 130, 246, 0.18), transparent 34%),
-    radial-gradient(circle at left center, rgba(245, 158, 11, 0.16), transparent 28%),
-    linear-gradient(180deg, rgba(255, 251, 235, 0.92) 0%, rgba(255, 255, 255, 0.86) 100%);
+    radial-gradient(circle at top right, rgba(159, 18, 57, 0.18), transparent 34%),
+    radial-gradient(circle at left center, rgba(127, 29, 29, 0.14), transparent 30%),
+    linear-gradient(180deg, rgba(136, 19, 55, 0.08) 0%, rgba(255, 252, 253, 0.92) 100%);
 }
 
 .login-form-card__hero h2 {
@@ -2009,6 +2009,7 @@ td {
   font-size: clamp(1.8rem, 3.8vw, 2.4rem);
   line-height: 0.98;
   letter-spacing: -0.04em;
+  color: #4a1025;
 }
 
 .login-form-card .mini-app__form,
@@ -2022,45 +2023,25 @@ td {
   padding-bottom: 0.4rem;
 }
 
-.login-form-card__chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.55rem;
-  margin-top: 1rem;
-}
-
-.login-form-card__chips span {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.45rem 0.8rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.78);
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  color: #334155;
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-}
-
 .login-form-card .mini-app__field span {
-  color: #0f172a;
+  color: #4a1025;
 }
 
 .login-form-card .mini-app__field input {
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  border: 1px solid #dbe4f0;
-  box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.03);
+  background: linear-gradient(180deg, #ffffff 0%, #fff7f9 100%);
+  border: 1px solid #ead1d9;
+  box-shadow: inset 0 1px 2px rgba(80, 7, 36, 0.04);
 }
 
 .login-form-card .mini-app__field input:focus {
-  outline: 2px solid rgba(14, 165, 233, 0.16);
-  border-color: #38bdf8;
+  outline: 2px solid rgba(136, 19, 55, 0.12);
+  border-color: #9f1239;
 }
 
 .login-form-card .mini-app__form button.primary {
   margin-top: 0.25rem;
-  background: linear-gradient(135deg, #0f766e 0%, #0284c7 100%);
-  box-shadow: 0 18px 36px rgba(2, 132, 199, 0.24);
+  background: linear-gradient(135deg, #7f1d1d 0%, #9f1239 52%, #881337 100%);
+  box-shadow: 0 18px 36px rgba(136, 19, 55, 0.28);
 }
 
 .login-form-card .status-card {
@@ -2070,9 +2051,9 @@ td {
 .mini-app-page {
   min-height: 100vh;
   background:
-    radial-gradient(circle at top left, rgba(251, 191, 36, 0.2), transparent 22%),
-    radial-gradient(circle at right 20%, rgba(14, 165, 233, 0.18), transparent 24%),
-    linear-gradient(180deg, #f8fafc 0%, #eef6ff 50%, #ecfeff 100%);
+    radial-gradient(circle at top left, rgba(127, 29, 29, 0.18), transparent 22%),
+    radial-gradient(circle at right 20%, rgba(136, 19, 55, 0.16), transparent 24%),
+    linear-gradient(180deg, #fff8f8 0%, #fdf2f8 52%, #fff1f2 100%);
   display: flex;
   flex-direction: column;
 }
@@ -2280,11 +2261,6 @@ td {
 
   .mini-app__subtitle {
     font-size: 0.9rem;
-  }
-
-  .login-form-card__chips span {
-    width: 100%;
-    justify-content: center;
   }
 }
 
