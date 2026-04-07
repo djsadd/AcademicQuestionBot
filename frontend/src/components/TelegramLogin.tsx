@@ -61,22 +61,27 @@ export function TelegramLogin() {
   }
 
   return (
-    <section className="telegram-login">
+    <section className="telegram-login login-screen">
       <div className="mini-app__card telegram-login__card login-form-card">
-        <p className="eyebrow">Platonus</p>
-        <h2>Вход в аккаунт</h2>
-        <p className="muted">
-          Логин и пароль отправляются на ваш бэкенд, затем бэкенд проверяет их через{" "}
-          <code>https://platonus.tau-edu.kz/rest/api/login</code>. В браузер возвращаются только
-          локальные токены приложения.
-        </p>
+        <div className="login-form-card__hero">
+          <p className="eyebrow">Platonus Access</p>
+          <h2>Вход в аккаунт</h2>
+          <p className="muted">
+            Войдите в систему, чтобы открыть персональный доступ к сервисам AcademicQuestionBot.
+          </p>
+          <div className="login-form-card__chips">
+            <span>Личный кабинет</span>
+            <span>Защищенная сессия</span>
+            <span>Быстрый вход</span>
+          </div>
+        </div>
         <form className="mini-app__form" onSubmit={handleSubmit}>
           <label className="mini-app__field">
             <span>Логин</span>
             <input
               name="login"
               autoComplete="username"
-              placeholder="Бахытжанулы_Ерасыл_1"
+              placeholder="Введите логин"
               value={login}
               onChange={(event) => setLogin(event.target.value)}
               disabled={busy}
@@ -107,7 +112,7 @@ export function TelegramLogin() {
             </div>
             <p className="muted">Логин: {profile.user.username ?? "—"}</p>
             <p className="muted">Внутренний ID: {profile.user.telegram_id}</p>
-            <p className="muted">Platonus доступ подтвержден.</p>
+            <p className="muted">Доступ подтвержден.</p>
           </div>
         ) : null}
       </div>
