@@ -5,8 +5,12 @@ type ProfileResponse = {
   status: string;
   user: {
     telegram_id: number;
+    username?: string | null;
+    first_name?: string | null;
+    last_name?: string | null;
     person_id?: string | null;
     platonus_auth?: boolean;
+    role?: string | null;
   };
 };
 
@@ -41,13 +45,13 @@ export function Profile() {
       {profile ? (
         <div className="status-card">
           <div className="status-card__header">
-            <strong>Telegram</strong>
+            <strong>Аккаунт</strong>
             <span className="status-pill status-success">OK</span>
           </div>
-          <p className="muted">Telegram ID: {profile.user.telegram_id}</p>
-          <p className="muted">
-            Person ID: {profile.user.person_id ?? "—"}
-          </p>
+          <p className="muted">ID: {profile.user.telegram_id}</p>
+          <p className="muted">Логин: {profile.user.username ?? "—"}</p>
+          <p className="muted">Person ID: {profile.user.person_id ?? "—"}</p>
+          <p className="muted">Роль: {profile.user.role ?? "—"}</p>
         </div>
       ) : (
         <p className="muted">Загрузка...</p>

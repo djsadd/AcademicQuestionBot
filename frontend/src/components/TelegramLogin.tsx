@@ -1,18 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { FormEvent, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiClient, authStorage } from "../api/client";
 
-type TelegramAuthPayload = {
-  id: number;
-  first_name?: string;
-  last_name?: string;
-  username?: string;
-  photo_url?: string;
-  auth_date: number;
-  hash: string;
-};
-
-type TelegramLoginResponse = {
+type PasswordLoginResponse = {
   status: string;
   access_token: string;
   refresh_token: string;
@@ -28,86 +18,86 @@ type TelegramLoginResponse = {
     role?: string | null;
     person_id?: string | null;
     iin?: string | null;
+    fullname?: string | null;
+    statusName?: string | null;
+    email?: string | null;
   };
 };
 
-declare global {
-  interface Window {
-    handleTelegramAuth?: (user: TelegramAuthPayload) => void;
-  }
-}
-
-const BOT_USERNAME = import.meta.env.VITE_TELEGRAM_BOT_USERNAME ?? "";
-
 export function TelegramLogin() {
-  const widgetRef = useRef<HTMLDivElement>(null);
+  const [login, setLogin] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [profile, setProfile] = useState<TelegramLoginResponse | null>(null);
+  const [profile, setProfile] = useState<PasswordLoginResponse | null>(null);
   const navigate = useNavigate();
 
-  useEffect(() => {
-    if (!BOT_USERNAME) {
-      setError(
-        "VITE_TELEGRAM_BOT_USERNAME is not configured (Vite reads env at build/dev-server start; restart `npm run dev` or rebuild the Docker image).",
-      );
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!login.trim() || !password.trim()) {
+      setError("Введите логин и пароль.");
       return;
     }
 
-    window.handleTelegramAuth = async (user: TelegramAuthPayload) => {
-      setBusy(true);
-      setError(null);
-      try {
-        const response = await apiClient.post<TelegramLoginResponse>(
-          "/auth/telegram",
-          JSON.stringify(user),
-        );
-        authStorage.setTokens(response.access_token, response.refresh_token);
-        setProfile(response);
-        navigate("/profile", { replace: true });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Telegram login failed.";
-        setError(message);
-      } finally {
-        setBusy(false);
-      }
-    };
-
-    const container = widgetRef.current;
-    if (!container) {
-      return () => undefined;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await apiClient.post<PasswordLoginResponse>(
+        "/auth/login",
+        JSON.stringify({
+          login: login.trim(),
+          password,
+        }),
+      );
+      authStorage.setTokens(response.access_token, response.refresh_token);
+      setProfile(response);
+      navigate("/profile", { replace: true });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Login failed.";
+      setError(message);
+    } finally {
+      setBusy(false);
     }
-
-    container.innerHTML = "";
-    const script = document.createElement("script");
-    script.src = "https://telegram.org/js/telegram-widget.js?22";
-    script.async = true;
-    script.setAttribute("data-telegram-login", BOT_USERNAME);
-    script.setAttribute("data-size", "large");
-    script.setAttribute("data-userpic", "false");
-    script.setAttribute("data-radius", "12");
-    script.setAttribute("data-onauth", "handleTelegramAuth(user)");
-    container.appendChild(script);
-
-    return () => {
-      if (widgetRef.current) {
-        widgetRef.current.innerHTML = "";
-      }
-      delete window.handleTelegramAuth;
-    };
-  }, []);
+  }
 
   return (
     <section className="telegram-login">
-      <div className="mini-app__card telegram-login__card">
-        <p className="eyebrow">Telegram</p>
-        <h2>Вход через Telegram</h2>
+      <div className="mini-app__card telegram-login__card login-form-card">
+        <p className="eyebrow">Platonus</p>
+        <h2>Вход в аккаунт</h2>
         <p className="muted">
-          Авторизация через виджет Telegram выдаст доступ к веб-интерфейсу. Мы проверяем
-          подпись через токен бота.
+          Логин и пароль отправляются на ваш бэкенд, затем бэкенд проверяет их через{" "}
+          <code>https://platonus.tau-edu.kz/rest/api/login</code>. В браузер возвращаются только
+          локальные токены приложения.
         </p>
-        <div ref={widgetRef} className="telegram-login__widget" />
-        {busy ? <p className="mini-app__status">Проверяем...</p> : null}
+        <form className="mini-app__form" onSubmit={handleSubmit}>
+          <label className="mini-app__field">
+            <span>Логин</span>
+            <input
+              name="login"
+              autoComplete="username"
+              placeholder="Бахытжанулы_Ерасыл_1"
+              value={login}
+              onChange={(event) => setLogin(event.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <label className="mini-app__field">
+            <span>Пароль</span>
+            <input
+              type="password"
+              name="password"
+              autoComplete="current-password"
+              placeholder="Введите пароль"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <button className="primary" type="submit" disabled={busy}>
+            {busy ? "Проверяем..." : "Войти"}
+          </button>
+        </form>
         {error ? <p className="mini-app__status error">{error}</p> : null}
         {profile ? (
           <div className="status-card">
@@ -115,15 +105,9 @@ export function TelegramLogin() {
               <strong>Профиль</strong>
               <span className="status-pill status-success">OK</span>
             </div>
-            <p className="muted">
-              Telegram ID: {profile.user.telegram_id}
-              {profile.user.username ? `, @${profile.user.username}` : ""}
-            </p>
-            {profile.user.platonus_auth ? (
-              <p className="muted">Platonus доступ подтвержден.</p>
-            ) : (
-              <p className="muted">Platonus еще не привязан.</p>
-            )}
+            <p className="muted">Логин: {profile.user.username ?? "—"}</p>
+            <p className="muted">Внутренний ID: {profile.user.telegram_id}</p>
+            <p className="muted">Platonus доступ подтвержден.</p>
           </div>
         ) : null}
       </div>

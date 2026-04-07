@@ -4,15 +4,17 @@ from __future__ import annotations
 import os
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from ...db import auth_tokens
-from ...db.telegram_users import upsert_user_profile
+from ...db.telegram_users import upsert_login_user, upsert_user_profile
 from ...services.auth_tokens import (
     build_access_token,
     build_refresh_ttl_seconds,
 )
 from ...services.permissions import get_current_user
+from ...services.platonus_client import verify_platonus_credentials
 from ...services.telegram_login import verify_login_payload
 
 router = APIRouter(prefix="/auth", tags=["auth"])
@@ -30,6 +32,11 @@ class TelegramLoginPayload(BaseModel):
 
 class RefreshPayload(BaseModel):
     refresh_token: str
+
+
+class PasswordLoginPayload(BaseModel):
+    login: str
+    password: str
 
 
 def _get_bot_token() -> str:
@@ -96,6 +103,57 @@ async def telegram_login(payload: TelegramLoginPayload) -> dict:
     }
 
 
+@router.post("/login")
+async def password_login(payload: PasswordLoginPayload) -> dict:
+    if not payload.login.strip() or not payload.password.strip():
+        raise HTTPException(status_code=400, detail="Login and password required.")
+
+    try:
+        await run_in_threadpool(
+            verify_platonus_credentials,
+            payload.login,
+            payload.password,
+        )
+        user = upsert_login_user(payload.login)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail="Login failed.") from exc
+
+    access_payload = build_access_token(
+        str(user["telegram_id"]),
+        {
+            "username": user.get("username"),
+            "auth_source": "platonus_login",
+        },
+    )
+    refresh_ttl = build_refresh_ttl_seconds()
+    refresh_payload = auth_tokens.issue_refresh_token(user["telegram_id"], refresh_ttl)
+
+    return {
+        "status": "ok",
+        "access_token": access_payload["token"],
+        "refresh_token": refresh_payload["token"],
+        "token_type": "bearer",
+        "expires_in": access_payload["expires_in"],
+        "refresh_expires_in": refresh_ttl,
+        "user": {
+            "telegram_id": user["telegram_id"],
+            "username": user.get("username"),
+            "first_name": user.get("first_name"),
+            "last_name": user.get("last_name"),
+            "platonus_auth": user["platonus_auth"],
+            "role": user["platonus_role"],
+            "person_id": user["platonus_person_id"],
+            "iin": user["platonus_iin"],
+            "fullname": user.get("platonus_fullname"),
+            "statusName": user.get("platonus_status_name"),
+            "email": user.get("platonus_email"),
+            "birthDate": user.get("platonus_birth_date"),
+        },
+    }
+
+
 @router.post("/refresh")
 async def refresh_token(payload: RefreshPayload) -> dict:
     if not payload.refresh_token.strip():
@@ -134,6 +192,9 @@ async def auth_me(user: dict = Depends(get_current_user)) -> dict:
         "status": "ok",
         "user": {
             "telegram_id": user["telegram_id"],
+            "username": user.get("username"),
+            "first_name": user.get("first_name"),
+            "last_name": user.get("last_name"),
             "platonus_auth": user["platonus_auth"],
             "role": user["platonus_role"],
             "person_id": user["platonus_person_id"],

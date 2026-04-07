@@ -45,6 +45,43 @@ def authenticate_platonus_user(login: str, password: str) -> Dict[str, Any]:
     return payload
 
 
+def verify_platonus_credentials(login: str, password: str) -> Dict[str, Any]:
+    normalized_login = login.strip()
+    normalized_password = password.strip()
+    if not normalized_login or not normalized_password:
+        raise RuntimeError("Login and password required.")
+
+    try:
+        response = requests.post(
+            "https://platonus.tau-edu.kz/rest/api/login",
+            json={
+                "login": normalized_login,
+                "password": normalized_password,
+                "iin": None,
+                "icNumber": None,
+                "authForDeductedStudentsAndGraduates": "false",
+            },
+            timeout=30,
+        )
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Platonus login request failed: {exc}") from exc
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise RuntimeError("Platonus login returned invalid JSON.") from exc
+
+    if response.status_code >= 400:
+        detail = payload.get("message") or payload.get("detail") or "Platonus authorization failed."
+        raise RuntimeError(str(detail))
+
+    if str(payload.get("login_status") or "").strip().lower() != "success":
+        detail = payload.get("message") or payload.get("detail") or "Platonus authorization failed."
+        raise RuntimeError(str(detail))
+
+    return payload
+
+
 def fetch_student_academic_calendar(person_id: str, lang: str = "ru") -> Dict[str, Any]:
     base_url = _get_platonus_api_url()
     if not base_url:

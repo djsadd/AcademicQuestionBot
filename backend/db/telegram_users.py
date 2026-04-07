@@ -1,6 +1,7 @@
 """Minimal Postgres access for Telegram users."""
 from __future__ import annotations
 
+import hashlib
 import os
 from contextlib import contextmanager
 from typing import Iterator
@@ -55,6 +56,13 @@ def ensure_table() -> None:
             """
         )
         conn.commit()
+
+
+def _login_to_internal_id(login: str) -> int:
+    normalized = login.strip().lower()
+    digest = hashlib.sha256(normalized.encode("utf-8")).digest()
+    value = int.from_bytes(digest[:8], "big") & ((1 << 62) - 1)
+    return -(value or 1)
 
 
 def get_or_create_user(
@@ -136,6 +144,7 @@ def upsert_user_profile(
         conn.commit()
         return {
             "telegram_id": row[0],
+            "username": username,
             "platonus_auth": row[1],
             "platonus_role": row[2],
             "platonus_person_id": row[3],
@@ -147,12 +156,54 @@ def upsert_user_profile(
         }
 
 
+def upsert_login_user(login: str) -> dict:
+    normalized_login = login.strip()
+    if not normalized_login:
+        raise ValueError("Login is required.")
+
+    internal_id = _login_to_internal_id(normalized_login)
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            INSERT INTO telegram_users (
+                telegram_id,
+                username,
+                platonus_auth,
+                updated_at
+            )
+            VALUES (%s, %s, TRUE, NOW())
+            ON CONFLICT (telegram_id) DO UPDATE
+            SET username = EXCLUDED.username,
+                platonus_auth = TRUE,
+                updated_at = NOW()
+            RETURNING telegram_id, username, platonus_auth, platonus_role, platonus_person_id, platonus_iin,
+                      platonus_fullname, platonus_status_name, platonus_email, platonus_birth_date;
+            """,
+            (internal_id, normalized_login),
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        return {
+            "telegram_id": row[0],
+            "username": row[1],
+            "platonus_auth": row[2],
+            "platonus_role": row[3],
+            "platonus_person_id": row[4],
+            "platonus_iin": row[5],
+            "platonus_fullname": row[6],
+            "platonus_status_name": row[7],
+            "platonus_email": row[8],
+            "platonus_birth_date": row[9],
+        }
+
+
 def get_user(telegram_id: int) -> dict | None:
     with _get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             """
-            SELECT telegram_id, platonus_auth, platonus_role, platonus_person_id, platonus_iin,
-                   platonus_fullname, platonus_status_name, platonus_email, platonus_birth_date
+            SELECT telegram_id, username, first_name, last_name, platonus_auth, platonus_role,
+                   platonus_person_id, platonus_iin, platonus_fullname, platonus_status_name,
+                   platonus_email, platonus_birth_date
             FROM telegram_users
             WHERE telegram_id = %s;
             """,
@@ -163,14 +214,17 @@ def get_user(telegram_id: int) -> dict | None:
             return None
         return {
             "telegram_id": row[0],
-            "platonus_auth": row[1],
-            "platonus_role": row[2],
-            "platonus_person_id": row[3],
-            "platonus_iin": row[4],
-            "platonus_fullname": row[5],
-            "platonus_status_name": row[6],
-            "platonus_email": row[7],
-            "platonus_birth_date": row[8],
+            "username": row[1],
+            "first_name": row[2],
+            "last_name": row[3],
+            "platonus_auth": row[4],
+            "platonus_role": row[5],
+            "platonus_person_id": row[6],
+            "platonus_iin": row[7],
+            "platonus_fullname": row[8],
+            "platonus_status_name": row[9],
+            "platonus_email": row[10],
+            "platonus_birth_date": row[11],
         }
 
 
