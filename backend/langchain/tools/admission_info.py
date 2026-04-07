@@ -253,7 +253,15 @@ def _text(language: Optional[str], key: str, **kwargs: Any) -> str:
 def _resolve_localized_value(value: Any, language: Optional[str]) -> Any:
     lang = normalize_language(language)
     if isinstance(value, dict):
-        localized_keys = [key for key in value.keys() if isinstance(key, str) and normalize_language(key) in SUPPORTED_LANGUAGES]
+        localized_keys = []
+        for key in value.keys():
+            if not isinstance(key, str):
+                continue
+            normalized_key = key.strip().lower()
+            if "-" in normalized_key:
+                normalized_key = normalized_key.split("-", 1)[0]
+            if normalized_key in SUPPORTED_LANGUAGES:
+                localized_keys.append(key)
         if localized_keys:
             for key in (lang, DEFAULT_LANGUAGE, "kk", "en"):
                 if key in value and value.get(key) not in (None, "", [], {}):
@@ -587,7 +595,9 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
     if result.get("tool") == "application_form" and result.get("answer"):
         return str(result["answer"])
     if result.get("tool") == "contacts":
-        contacts = result.get("contacts") or {}
+        contacts = result.get("contacts")
+        if not isinstance(contacts, dict):
+            return str(contacts or _text(lang, "not_specified"))
         if contacts.get("postal_address") or contacts.get("bachelor_contacts") or contacts.get("graduate_contacts"):
             return _format_structured_contacts(contacts, lang)
 
