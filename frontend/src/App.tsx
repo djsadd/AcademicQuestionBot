@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { HashRouter, NavLink, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { BrowserRouter, NavLink, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { RagDocumentDetail } from "./components/RagDocumentDetail";
 import { RagJobs } from "./components/RagJobs";
 import { RagManager } from "./components/RagManager";
@@ -305,7 +305,7 @@ export default function App() {
   }, [isAuthenticated]);
 
   return (
-    <HashRouter>
+    <BrowserRouter>
       <Routes>
         <Route element={<MainLayout isAdmin={isAdmin} isAuthenticated={isAuthenticated} />}>
           <Route
@@ -356,6 +356,6 @@ export default function App() {
         <Route path="/telegram-login" element={<TelegramLoginPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </HashRouter>
+    </BrowserRouter>
   );
 }
