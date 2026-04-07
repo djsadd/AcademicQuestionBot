@@ -156,12 +156,13 @@ def upsert_user_profile(
         }
 
 
-def upsert_login_user(login: str) -> dict:
+def upsert_login_user(login: str, person_id: str | None = None) -> dict:
     normalized_login = login.strip()
     if not normalized_login:
         raise ValueError("Login is required.")
 
     internal_id = _login_to_internal_id(normalized_login)
+    normalized_person_id = str(person_id or "").strip() or None
     with _get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             """
@@ -169,17 +170,19 @@ def upsert_login_user(login: str) -> dict:
                 telegram_id,
                 username,
                 platonus_auth,
+                platonus_person_id,
                 updated_at
             )
-            VALUES (%s, %s, TRUE, NOW())
+            VALUES (%s, %s, TRUE, %s, NOW())
             ON CONFLICT (telegram_id) DO UPDATE
             SET username = EXCLUDED.username,
                 platonus_auth = TRUE,
+                platonus_person_id = COALESCE(EXCLUDED.platonus_person_id, telegram_users.platonus_person_id),
                 updated_at = NOW()
             RETURNING telegram_id, username, platonus_auth, platonus_role, platonus_person_id, platonus_iin,
                       platonus_fullname, platonus_status_name, platonus_email, platonus_birth_date;
             """,
-            (internal_id, normalized_login),
+            (internal_id, normalized_login, normalized_person_id),
         )
         row = cursor.fetchone()
         conn.commit()
@@ -194,6 +197,81 @@ def upsert_login_user(login: str) -> dict:
             "platonus_status_name": row[7],
             "platonus_email": row[8],
             "platonus_birth_date": row[9],
+        }
+
+
+def get_user_by_person_id(person_id: str) -> dict | None:
+    normalized_person_id = str(person_id or "").strip()
+    if not normalized_person_id:
+        return None
+
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT telegram_id, username, first_name, last_name, platonus_auth, platonus_role,
+                   platonus_person_id, platonus_iin, platonus_fullname, platonus_status_name,
+                   platonus_email, platonus_birth_date
+            FROM telegram_users
+            WHERE platonus_person_id = %s
+            LIMIT 1;
+            """,
+            (normalized_person_id,),
+        )
+        row = cursor.fetchone()
+        if not row:
+            return None
+        return {
+            "telegram_id": row[0],
+            "username": row[1],
+            "first_name": row[2],
+            "last_name": row[3],
+            "platonus_auth": row[4],
+            "platonus_role": row[5],
+            "platonus_person_id": row[6],
+            "platonus_iin": row[7],
+            "platonus_fullname": row[8],
+            "platonus_status_name": row[9],
+            "platonus_email": row[10],
+            "platonus_birth_date": row[11],
+        }
+
+
+def attach_login_to_existing_user(telegram_id: int, login: str, person_id: str | None = None) -> dict:
+    normalized_login = login.strip()
+    normalized_person_id = str(person_id or "").strip() or None
+
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE telegram_users
+            SET username = %s,
+                platonus_auth = TRUE,
+                platonus_person_id = COALESCE(%s, platonus_person_id),
+                updated_at = NOW()
+            WHERE telegram_id = %s
+            RETURNING telegram_id, username, first_name, last_name, platonus_auth, platonus_role,
+                      platonus_person_id, platonus_iin, platonus_fullname, platonus_status_name,
+                      platonus_email, platonus_birth_date;
+            """,
+            (normalized_login, normalized_person_id, telegram_id),
+        )
+        row = cursor.fetchone()
+        conn.commit()
+        if not row:
+            return None
+        return {
+            "telegram_id": row[0],
+            "username": row[1],
+            "first_name": row[2],
+            "last_name": row[3],
+            "platonus_auth": row[4],
+            "platonus_role": row[5],
+            "platonus_person_id": row[6],
+            "platonus_iin": row[7],
+            "platonus_fullname": row[8],
+            "platonus_status_name": row[9],
+            "platonus_email": row[10],
+            "platonus_birth_date": row[11],
         }
 
 

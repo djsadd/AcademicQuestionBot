@@ -79,6 +79,37 @@ def verify_platonus_credentials(login: str, password: str) -> Dict[str, Any]:
         detail = payload.get("message") or payload.get("detail") or "Platonus authorization failed."
         raise RuntimeError(str(detail))
 
+    headers = {
+        "token": str(payload.get("auth_token") or "").strip(),
+        "sid": str(payload.get("sid") or "").strip(),
+        "accept": "application/json",
+        "accept-language": "kz",
+    }
+
+    person_id_response = requests.get(
+        "https://platonus.tau-edu.kz/rest/api/person/personID",
+        headers=headers,
+        timeout=30,
+    )
+    try:
+        person_data = person_id_response.json()
+    except ValueError as exc:
+        raise RuntimeError("personID response is not JSON") from exc
+
+    person_id = person_data.get("personID")
+    if not person_id:
+        person_id_retry_response = requests.get(
+            "https://platonus.tau-edu.kz/rest/api/person/personID",
+            headers=headers,
+            timeout=30,
+        )
+        try:
+            person_data_retry = person_id_retry_response.json()
+        except ValueError as exc:
+            raise RuntimeError("personID retry response is not JSON") from exc
+        person_id = person_data_retry.get("personID")
+
+    payload["personID"] = person_id
     return payload
 
 

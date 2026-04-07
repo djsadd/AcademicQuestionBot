@@ -8,7 +8,12 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel
 
 from ...db import auth_tokens
-from ...db.telegram_users import upsert_login_user, upsert_user_profile
+from ...db.telegram_users import (
+    attach_login_to_existing_user,
+    get_user_by_person_id,
+    upsert_login_user,
+    upsert_user_profile,
+)
 from ...services.auth_tokens import (
     build_access_token,
     build_refresh_ttl_seconds,
@@ -109,12 +114,21 @@ async def password_login(payload: PasswordLoginPayload) -> dict:
         raise HTTPException(status_code=400, detail="Login and password required.")
 
     try:
-        await run_in_threadpool(
+        platonus_auth = await run_in_threadpool(
             verify_platonus_credentials,
             payload.login,
             payload.password,
         )
-        user = upsert_login_user(payload.login)
+        person_id = str(platonus_auth.get("personID") or "").strip() or None
+        existing_user = get_user_by_person_id(person_id) if person_id else None
+        if existing_user:
+            user = attach_login_to_existing_user(
+                existing_user["telegram_id"],
+                payload.login,
+                person_id,
+            )
+        else:
+            user = upsert_login_user(payload.login, person_id)
     except RuntimeError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     except Exception as exc:
