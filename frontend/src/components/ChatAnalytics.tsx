@@ -105,6 +105,15 @@ function EventLogModal({
   const activeEvent =
     events.find((item) => item.id === selectedEventId)
     ?? findMatchingEvent(events, selectedQuery);
+  const incomingRequest = activeEvent ? {
+    uuid: activeEvent.request_uuid ?? activeEvent.request_payload?.uuid ?? null,
+    session_id: activeEvent.session_id,
+    channel: activeEvent.channel,
+    auth_mode: activeEvent.auth_mode,
+    metadata_request: activeEvent.metadata?.request ?? null,
+    metadata_context_snapshot: activeEvent.metadata?.context_snapshot ?? null,
+    request_payload: activeEvent.request_payload ?? {},
+  } : null;
 
   return (
     <div className="chat-properties-modal__overlay" onClick={onClose} role="presentation">
@@ -176,6 +185,11 @@ function EventLogModal({
                   <span>Created</span>
                   <strong>{activeEvent.created_at ? formatDate(activeEvent.created_at) : "-"}</strong>
                 </div>
+              </div>
+
+              <div className="analytics-detail-section analytics-detail-section--wide">
+                <span className="eyebrow">Incoming request JSON</span>
+                <JsonBlock value={incomingRequest} />
               </div>
 
               <div className="analytics-detail-section">

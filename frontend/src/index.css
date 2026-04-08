@@ -649,27 +649,28 @@ body {
 }
 
 .analytics-modal {
-  width: min(1200px, 100%);
-  max-height: min(90vh, 900px);
+  width: min(1480px, calc(100vw - 32px));
+  max-height: min(94vh, 980px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  border-radius: 28px;
 }
 
 .analytics-modal__layout {
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: 1rem;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 1.25rem;
   min-height: 0;
   overflow: hidden;
-  margin-top: 1rem;
+  margin-top: 1.25rem;
 }
 
 .analytics-event-list {
   border: 1px solid #e2e8f0;
-  border-radius: 14px;
+  border-radius: 18px;
   overflow: auto;
-  padding: 0.5rem;
+  padding: 0.65rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -678,8 +679,8 @@ body {
 .analytics-event-list__item {
   border: 1px solid #e2e8f0;
   background: #fff;
-  border-radius: 12px;
-  padding: 0.75rem;
+  border-radius: 16px;
+  padding: 0.9rem;
   text-align: left;
   cursor: pointer;
   display: flex;
@@ -705,14 +706,18 @@ body {
   overflow: auto;
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  padding-right: 0.25rem;
+  gap: 1.1rem;
+  padding-right: 0.35rem;
 }
 
 .analytics-detail-section {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.6rem;
+}
+
+.analytics-detail-section--wide .analytics-json-block {
+  min-height: 280px;
 }
 
 .analytics-answer-block {
@@ -755,11 +760,12 @@ body {
   margin: 0;
   background: #0f172a;
   color: #e2e8f0;
-  border-radius: 14px;
-  padding: 1rem;
+  border-radius: 18px;
+  padding: 1.15rem 1.2rem;
   overflow: auto;
-  font-size: 0.82rem;
-  line-height: 1.5;
+  font-size: 0.84rem;
+  line-height: 1.6;
+  max-height: 520px;
 }
 
 .status-card {
