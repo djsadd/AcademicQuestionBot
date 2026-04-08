@@ -32,6 +32,7 @@ def _load_prompt_template() -> str:
     except FileNotFoundError:  # pragma: no cover - fallback for deployments
         return (
             "Вопрос: {question}\n"
+            "История диалога:\n{history}\n"
             "Ответы агентов: {agent_answers}\n"
             "Контекст: {context}\n"
             "Сформулируй итоговый ответ на том же языке, на котором задан вопрос."
@@ -194,16 +195,36 @@ class ResponseAggregator:
     ) -> str:
         context_text = self._format_context(context)
         citations_text = self._format_citations(citations)
+        history_text = self._format_history(user_payload.get("history"))
         answers_text = "\n---\n".join(answers) or "нет промежуточных ответов"
         intents_text = ", ".join(intents.get("intents", []) or ["general"])
 
         return self.prompt_template.format(
             question=user_payload.get("message", ""),
+            history=history_text,
             intents=intents_text,
             context=context_text,
             agent_answers=answers_text,
             citations=citations_text,
         )
+
+    def _format_history(self, history: Any) -> str:
+        if not isinstance(history, list) or not history:
+            return "- история диалога отсутствует"
+
+        lines: List[str] = []
+        for item in history[-16:]:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role") or "user").strip().lower()
+            if role == "bot":
+                role = "assistant"
+            content = str(item.get("content") or "").strip()
+            if not content:
+                continue
+            lines.append(f"- {role}: {content[:500]}")
+
+        return "\n".join(lines) if lines else "- история диалога отсутствует"
 
     def _format_context(self, context: List[Dict[str, Any]]) -> str:
         if not context:
