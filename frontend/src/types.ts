@@ -97,6 +97,7 @@ export type ChatRequestPayload = {
   user_id?: number;
   telegram_id?: number;
   person_id?: string | null;
+  uuid?: string;
   message: string;
   language: string;
   context: ChatContext;

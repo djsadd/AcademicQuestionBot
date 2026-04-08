@@ -792,6 +792,7 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
       user_id: isPublicAdmission ? undefined : profile?.telegram_id ?? 0,
       telegram_id: isPublicAdmission ? undefined : profile?.telegram_id,
       person_id: isPublicAdmission ? undefined : profile?.person_id ?? undefined,
+      uuid: isPublicAdmission ? requestMeta.session : undefined,
       message: trimmed,
       language: profileConfig.language,
       context: profileConfig.context,

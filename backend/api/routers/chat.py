@@ -41,6 +41,7 @@ class ChatPayload(BaseModel):
     user_id: int | None = None
     telegram_id: int | None = None
     person_id: str | None = None
+    uuid: str | None = None
     message: str
     language: str | None = "ru"
     context: dict[str, Any] | None = None
@@ -138,7 +139,7 @@ def _build_analytics_metadata(
     user: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str | None]:
     metadata = dict(payload.metadata or {})
-    session_id_raw = metadata.get("session_id") or metadata.get("session")
+    session_id_raw = metadata.get("session_id") or metadata.get("session") or payload.uuid
     session_id = str(session_id_raw).strip() if session_id_raw else None
 
     request_meta = metadata.get("request")
