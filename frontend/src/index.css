@@ -649,8 +649,8 @@ body {
 }
 
 .analytics-modal {
-  width: min(1480px, calc(100vw - 32px));
-  max-height: min(94vh, 980px);
+  width: min(1640px, calc(100vw - 20px));
+  max-height: min(96vh, 1040px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -659,8 +659,8 @@ body {
 
 .analytics-modal__layout {
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
-  gap: 1.25rem;
+  grid-template-columns: 380px minmax(0, 1fr);
+  gap: 1.5rem;
   min-height: 0;
   overflow: hidden;
   margin-top: 1.25rem;
@@ -1483,17 +1483,18 @@ td {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.25rem;
+  padding: 0.625rem;
   z-index: 80;
 }
 
 .chat-properties-modal__panel {
-  width: min(640px, 100%);
+  width: min(1640px, calc(100vw - 20px));
+  max-height: 96vh;
   background: #ffffff;
-  border-radius: 16px;
+  border-radius: 24px;
   border: 1px solid #e2e8f0;
   box-shadow: 0 24px 60px rgba(15, 23, 42, 0.22);
-  padding: 1rem;
+  padding: 1.25rem;
 }
 
 .chat-properties-modal__header {
