@@ -404,13 +404,11 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [storageKey, setStorageKey] = useState(() => buildStorageKey(mode, null));
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [highlightedChatId, setHighlightedChatId] = useState<string | null>(null);
   const [searchValue, setSearchValue] = useState("");
   const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null);
   const [propertiesChatId, setPropertiesChatId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  const searchRef = useRef<HTMLInputElement | null>(null);
   const highlightTimeoutRef = useRef<number | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const draftSessionIdRef = useRef<string>(createSessionId());
@@ -897,25 +895,12 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
   };
 
   return (
-    <section className={`chat-shell${isSidebarOpen ? "" : " chat-shell--collapsed"}`}>
-      <aside className="chat-sidebar" aria-hidden={!isSidebarOpen}>
+    <section className="chat-shell">
+      <aside className="chat-sidebar">
         <div className="chat-sidebar__content">
           <div className="chat-sidebar__brand">
             <span className="chat-sidebar__logo" aria-hidden="true">AQB</span>
             <span className="chat-sidebar__brand-text">{config.brand}</span>
-          </div>
-          <div className="chat-sidebar__header">
-            <button
-              type="button"
-              className="icon-button icon-button--ghost"
-              onClick={() => setIsSidebarOpen(false)}
-              aria-label="Collapse history"
-            >
-              <svg viewBox="0 0 24 24" aria-hidden="true">
-                <rect x="3" y="5" width="18" height="14" rx="3" fill="none" />
-                <line x1="9" y1="5" x2="9" y2="19" />
-              </svg>
-            </button>
           </div>
           <div className="chat-sidebar__primary">
             <button
@@ -940,7 +925,6 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
                 </svg>
               </span>
               <input
-                ref={searchRef}
                 type="search"
                 value={searchValue}
                 onChange={(event) => setSearchValue(event.target.value)}
@@ -1004,64 +988,10 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
             })}
           </div>
         </div>
-        <div className="chat-sidebar__icons" aria-hidden={isSidebarOpen}>
-          <button
-            type="button"
-            className="icon-button"
-            onClick={() => setIsSidebarOpen(true)}
-            aria-label="Show history"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <rect x="3" y="5" width="18" height="14" rx="3" fill="none" />
-              <line x1="9" y1="5" x2="9" y2="19" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="icon-button"
-            onClick={handleNewChat}
-            aria-label="New chat"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="12" cy="12" r="8" fill="none" />
-              <line x1="12" y1="8.5" x2="12" y2="15.5" />
-              <line x1="8.5" y1="12" x2="15.5" y2="12" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="icon-button"
-            onClick={() => {
-              setIsSidebarOpen(true);
-              window.setTimeout(() => searchRef.current?.focus(), 0);
-            }}
-            aria-label="Search chats"
-          >
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <circle cx="11" cy="11" r="6" fill="none" />
-              <line x1="15.5" y1="15.5" x2="20" y2="20" />
-            </svg>
-          </button>
-        </div>
       </aside>
 
       <section className="fake-chat">
         <header className="fake-chat__header chat-topbar">
-          <div className="fake-chat__actions">
-            {!isSidebarOpen ? (
-              <button
-                type="button"
-                className="icon-button icon-button--ghost"
-                onClick={() => setIsSidebarOpen(true)}
-                aria-label="Show history"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <rect x="3" y="5" width="18" height="14" rx="3" fill="none" />
-                  <line x1="9" y1="5" x2="9" y2="19" />
-                </svg>
-              </button>
-            ) : null}
-          </div>
           <div className="chat-topbar__title">
             <span className="chat-topbar__badge">{config.badge}</span>
             <span className="chat-topbar__name">{config.title}</span>
