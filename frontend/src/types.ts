@@ -268,6 +268,7 @@ export type ChatAnalyticsQuestion = {
 export type ChatAnalyticsSession = {
   session_key: string;
   session_id: string;
+  request_uuid?: string | null;
   channel: string | null;
   telegram_id: number | null;
   person_id: string | null;
@@ -314,6 +315,7 @@ export type ChatAnalyticsEvent = {
   id: string;
   session_key: string;
   session_id: string;
+  request_uuid?: string | null;
   channel: string | null;
   telegram_id: number | null;
   person_id: string | null;

@@ -78,9 +78,11 @@ function findMatchingEvent(events: ChatAnalyticsEvent[], selectedQuery: string |
   return events.find((item) => item.query === selectedQuery) ?? events[0] ?? null;
 }
 
-function getAnonymousUuid(session: Pick<ChatAnalyticsSession, "auth_mode" | "session_id" | "session_key">) {
+function getAnonymousUuid(
+  session: Pick<ChatAnalyticsSession, "auth_mode" | "request_uuid" | "session_id" | "session_key">,
+) {
   if (session.auth_mode !== "anonymous") return null;
-  return session.session_id || session.session_key || null;
+  return session.request_uuid || null;
 }
 
 function EventLogModal({
