@@ -553,3 +553,61 @@ def fetch_session_history(session_id: str, limit: int = 20) -> list[dict[str, An
                 {"role": "assistant", "content": response, "created_at": timestamp}
             )
     return history
+
+
+def fetch_public_chat_session(session_id: str) -> dict[str, Any] | None:
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT query, response, created_at
+            FROM chat_analytics
+            WHERE session_id = %s
+              AND telegram_id IS NULL
+              AND person_id IS NULL
+              AND (
+                    channel = 'public_web'
+                    OR (metadata->'request'->>'auth_mode') = 'anonymous'
+                  )
+            ORDER BY created_at ASC;
+            """,
+            (session_id,),
+        )
+        rows = cursor.fetchall()
+
+    if not rows:
+        return None
+
+    first_created_at = rows[0][2]
+    last_created_at = rows[-1][2]
+    session: dict[str, Any] = {
+        "session_id": session_id,
+        "title": "",
+        "created_at": first_created_at.isoformat(),
+        "updated_at": last_created_at.isoformat(),
+        "messages": [],
+    }
+
+    for query, response, created_at in rows:
+        timestamp = created_at.isoformat()
+        if query:
+            session["messages"].append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "role": "user",
+                    "content": query,
+                    "created_at": timestamp,
+                }
+            )
+            if not session["title"]:
+                session["title"] = query
+        if response:
+            session["messages"].append(
+                {
+                    "id": uuid.uuid4().hex,
+                    "role": "bot",
+                    "content": response,
+                    "created_at": timestamp,
+                }
+            )
+
+    return session

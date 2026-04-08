@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -837,3 +837,16 @@ async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_
 async def get_chat_history(user: dict = Depends(require_user)) -> dict:
     history = chat_analytics.fetch_chat_history(user["telegram_id"])
     return {"sessions": history}
+
+
+@router.get("/public/history/{session_id}")
+async def get_public_chat_history(session_id: str) -> dict:
+    normalized_session_id = session_id.strip()
+    if not normalized_session_id:
+        raise HTTPException(status_code=400, detail="session_id is required")
+
+    session = chat_analytics.fetch_public_chat_session(normalized_session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Public chat session not found")
+
+    return {"session": session}
