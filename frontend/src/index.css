@@ -560,6 +560,41 @@ body {
   gap: 1rem;
 }
 
+.analytics-tabs {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.analytics-tabs__link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 140px;
+  padding: 0.8rem 1rem;
+  border-radius: 16px;
+  border: 1px solid rgba(122, 33, 59, 0.14);
+  background: rgba(255, 255, 255, 0.72);
+  color: #61162c;
+  text-decoration: none;
+  font-weight: 600;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.analytics-tabs__link:hover,
+.analytics-tabs__link:focus-visible {
+  background: rgba(247, 232, 236, 0.7);
+  border-color: rgba(122, 33, 59, 0.24);
+  color: #4a1022;
+}
+
+.analytics-tabs__link.active {
+  background: linear-gradient(135deg, #fff7f9 0%, #f3dbe2 100%);
+  border-color: rgba(122, 33, 59, 0.26);
+  color: #4a1022;
+  box-shadow: 0 10px 24px rgba(74, 16, 34, 0.08);
+}
+
 .analytics-summary-card {
   display: flex;
   flex-direction: column;

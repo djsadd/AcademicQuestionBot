@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { NavLink, Navigate, useLocation } from "react-router-dom";
+import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import {
   fetchChatAnalyticsSessionEvents,
   fetchChatAnalyticsSessions,
@@ -10,6 +11,8 @@ import type {
   ChatAnalyticsEvent,
   ChatAnalyticsQuestion,
   ChatAnalyticsSession,
+  ChatAnalyticsSessionListResponse,
+  ChatAnalyticsUser,
 } from "../types";
 import { formatDate } from "../utils/format";
 
@@ -18,6 +21,10 @@ const AUTH_MODE_OPTIONS = [
   { value: "all", label: "Все чаты" },
   { value: "anonymous", label: "Анонимные" },
   { value: "authenticated", label: "Пользователи" },
+] as const;
+const CHAT_ANALYTICS_SECTIONS = [
+  { key: "logs", label: "Логи" },
+  { key: "users", label: "Пользователи" },
 ] as const;
 
 function JsonBlock({ value }: { value: unknown }) {
@@ -236,7 +243,248 @@ function EventLogModal({
   );
 }
 
+function ChatAnalyticsUsersPanel({ userItems }: { userItems: ChatAnalyticsUser[] }) {
+  return (
+    <div className="panel">
+      <div className="feature-section__header">
+        <div>
+          <p className="eyebrow">Users</p>
+          <h3>Список пользователей</h3>
+        </div>
+        <span className="muted">{userItems.length} записей</span>
+      </div>
+
+      {userItems.length === 0 ? (
+        <p className="muted">Авторизованных пользователей пока нет.</p>
+      ) : (
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Пользователь</th>
+                <th>Идентификаторы</th>
+                <th>Активность</th>
+                <th>Последние вопросы</th>
+              </tr>
+            </thead>
+            <tbody>
+              {userItems.map((item) => (
+                <tr key={item.user_key}>
+                  <td>
+                    <div className="doc-name">
+                      <strong>{item.full_name || item.email || `User ${item.telegram_id ?? item.person_id ?? "-"}`}</strong>
+                      <small>{item.email || "Email не указан"}</small>
+                      <small>Роль: {item.role || "-"}</small>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="doc-name">
+                      <small>Telegram ID: {item.telegram_id ?? "-"}</small>
+                      <small>Person ID: {item.person_id ?? "-"}</small>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="doc-name">
+                      <small>События: {item.event_count}</small>
+                      <small>Сессии: {item.session_count}</small>
+                      <small>Последняя активность: {item.last_seen ? formatDate(item.last_seen) : "-"}</small>
+                    </div>
+                  </td>
+                  <td><UserQuestions questions={item.recent_queries} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChatAnalyticsLogsPanel({
+  sessionItems,
+  page,
+  perPage,
+  authMode,
+  searchInput,
+  setAuthMode,
+  setPerPage,
+  setSearchInput,
+  setSearch,
+  setPage,
+  sessionsQuery,
+  openSessionDetails,
+}: {
+  sessionItems: ChatAnalyticsSession[];
+  page: number;
+  perPage: number;
+  authMode: string;
+  searchInput: string;
+  setAuthMode: (value: string) => void;
+  setPerPage: (value: number) => void;
+  setSearchInput: (value: string) => void;
+  setSearch: (value: string) => void;
+  setPage: (value: number | ((current: number) => number)) => void;
+  sessionsQuery: UseQueryResult<ChatAnalyticsSessionListResponse, Error>;
+  openSessionDetails: (session: ChatAnalyticsSession, question?: string) => void;
+}) {
+  return (
+    <div className="panel">
+      <div className="admin-toolbar">
+        <div className="admin-toolbar__summary">
+          <strong>Логи сессий: {sessionsQuery.data?.total ?? 0}</strong>
+          <span className="muted">
+            Страница {sessionsQuery.data?.page ?? page}
+            {sessionsQuery.data?.pages ? ` из ${sessionsQuery.data.pages}` : ""}
+          </span>
+        </div>
+
+        <div className="analytics-toolbar-group">
+          <label className="admin-toolbar__control">
+            <span>Тип чата</span>
+            <select
+              value={authMode}
+              onChange={(event) => {
+                setAuthMode(event.target.value);
+                setPage(1);
+              }}
+            >
+              {AUTH_MODE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="admin-toolbar__control">
+            <span>На странице</span>
+            <select
+              value={perPage}
+              onChange={(event) => {
+                setPerPage(Number(event.target.value));
+                setPage(1);
+              }}
+            >
+              {PAGE_SIZE_OPTIONS.map((option) => (
+                <option key={option} value={option}>
+                  {option}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <form
+            className="analytics-search"
+            onSubmit={(event) => {
+              event.preventDefault();
+              setSearch(searchInput.trim());
+              setPage(1);
+            }}
+          >
+            <input
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+              placeholder="Поиск по запросу, имени, email, Telegram ID"
+            />
+            <button type="submit" className="ghost">Найти</button>
+          </form>
+        </div>
+      </div>
+
+      {sessionsQuery.isLoading ? (
+        <p>Загрузка логов чатов...</p>
+      ) : sessionsQuery.isError ? (
+        <p className="error">Не удалось загрузить логи чатов.</p>
+      ) : sessionItems.length === 0 ? (
+        <p className="muted">Подходящих логов нет.</p>
+      ) : (
+        <>
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Сессия</th>
+                  <th>Тип</th>
+                  <th>Пользователь</th>
+                  <th>Вопросы пользователя</th>
+                  <th>Активность</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sessionItems.map((item) => (
+                  <tr key={item.session_key}>
+                    <td>
+                      <div className="doc-name">
+                        <strong>{item.session_id}</strong>
+                        {getAnonymousUuid(item) ? <small>UUID: {getAnonymousUuid(item)}</small> : null}
+                        <small>Канал: {item.channel || "-"}</small>
+                        <small>Событий: {item.event_count}</small>
+                        <button
+                          type="button"
+                          className="ghost analytics-open-button"
+                          onClick={() => openSessionDetails(item)}
+                        >
+                          Открыть логи
+                        </button>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`status-pill ${item.auth_mode === "anonymous" ? "status-pending" : "status-success"}`}>
+                        {item.auth_mode === "anonymous" ? "Анонимный" : "Пользователь"}
+                      </span>
+                    </td>
+                    <td>
+                      <div className="doc-name">
+                        <strong>{item.full_name || item.email || (item.auth_mode === "anonymous" ? "Публичный анонимный пользователь" : "Авторизованный пользователь")}</strong>
+                        <small>Telegram ID: {item.telegram_id ?? "-"}</small>
+                        <small>Person ID: {item.person_id ?? "-"}</small>
+                      </div>
+                    </td>
+                    <td>
+                      <SessionQuestions session={item} onOpen={openSessionDetails} />
+                    </td>
+                    <td>
+                      <div className="doc-name">
+                        <small>Начало: {item.started_at ? formatDate(item.started_at) : "-"}</small>
+                        <small>Последнее событие: {item.updated_at ? formatDate(item.updated_at) : "-"}</small>
+                        <small>Последний запрос: {item.last_query || "-"}</small>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="pagination">
+            <button
+              className="ghost"
+              onClick={() => setPage((current) => Math.max(current - 1, 1))}
+              disabled={page <= 1}
+            >
+              Назад
+            </button>
+            <span className="pagination__status">
+              Страница {sessionsQuery.data?.page ?? page}
+              {sessionsQuery.data?.pages ? ` из ${sessionsQuery.data.pages}` : ""}
+            </span>
+            <button
+              className="ghost"
+              onClick={() => setPage((current) => current + 1)}
+              disabled={sessionsQuery.data?.pages ? page >= sessionsQuery.data.pages : sessionItems.length < perPage}
+            >
+              Вперед
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 export function ChatAnalytics() {
+  const location = useLocation();
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState<number>(20);
   const [authMode, setAuthMode] = useState("all");
@@ -282,6 +530,14 @@ export function ChatAnalytics() {
     setSelectedQuery(question ?? null);
   };
 
+  const pathname = location.pathname.replace(/\/+$/, "");
+  const lastSegment = pathname.split("/").pop() || "logs";
+  const section = CHAT_ANALYTICS_SECTIONS.some((item) => item.key === lastSegment) ? lastSegment : "logs";
+
+  if (location.pathname === "/chat-analytics" || location.pathname === "/chat-analytics/") {
+    return <Navigate to="/chat-analytics/logs" replace />;
+  }
+
   return (
     <section className="feature-section">
       <div className="feature-section__header">
@@ -289,12 +545,24 @@ export function ChatAnalytics() {
           <p className="eyebrow">Chat Analytics</p>
           <h2>Аналитика и логи чатов</h2>
           <p className="muted">
-            Публичные анонимные диалоги и чаты авторизованных пользователей собираются в одной админ-панели.
+            Публичные анонимные диалоги и чаты авторизованных пользователей собраны в одной админ-панели.
           </p>
         </div>
         <span className="feature-section__status">
           {summaryQuery.data?.total_events ?? 0} logs
         </span>
+      </div>
+
+      <div className="analytics-tabs">
+        {CHAT_ANALYTICS_SECTIONS.map((item) => (
+          <NavLink
+            key={item.key}
+            to={`/chat-analytics/${item.key}`}
+            className={({ isActive }) => `analytics-tabs__link${isActive ? " active" : ""}`}
+          >
+            {item.label}
+          </NavLink>
+        ))}
       </div>
 
       <div className="analytics-summary-grid">
@@ -308,215 +576,30 @@ export function ChatAnalytics() {
           ))}
       </div>
 
-      <div className="panel">
-        <div className="feature-section__header">
-          <div>
-            <p className="eyebrow">Users</p>
-            <h3>Список пользователей</h3>
-          </div>
-          <span className="muted">{userItems.length} записей</span>
-        </div>
-
-        {usersQuery.isLoading ? (
+      {section === "users" ? (
+        usersQuery.isLoading ? (
           <p>Загрузка пользователей...</p>
         ) : usersQuery.isError ? (
           <p className="error">Не удалось загрузить список пользователей.</p>
-        ) : userItems.length === 0 ? (
-          <p className="muted">Авторизованных пользователей пока нет.</p>
         ) : (
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Пользователь</th>
-                  <th>Идентификаторы</th>
-                  <th>Активность</th>
-                  <th>Последние вопросы</th>
-                </tr>
-              </thead>
-              <tbody>
-                {userItems.map((item) => (
-                  <tr key={item.user_key}>
-                    <td>
-                      <div className="doc-name">
-                        <strong>{item.full_name || item.email || `User ${item.telegram_id ?? item.person_id ?? "-"}`}</strong>
-                        <small>{item.email || "Email не указан"}</small>
-                        <small>Роль: {item.role || "-"}</small>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="doc-name">
-                        <small>Telegram ID: {item.telegram_id ?? "-"}</small>
-                        <small>Person ID: {item.person_id ?? "-"}</small>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="doc-name">
-                        <small>События: {item.event_count}</small>
-                        <small>Сессии: {item.session_count}</small>
-                        <small>Последняя активность: {item.last_seen ? formatDate(item.last_seen) : "-"}</small>
-                      </div>
-                    </td>
-                    <td><UserQuestions questions={item.recent_queries} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      <div className="panel">
-        <div className="admin-toolbar">
-          <div className="admin-toolbar__summary">
-            <strong>Логи сессий: {sessionsQuery.data?.total ?? 0}</strong>
-            <span className="muted">
-              Страница {sessionsQuery.data?.page ?? page}
-              {sessionsQuery.data?.pages ? ` из ${sessionsQuery.data.pages}` : ""}
-            </span>
-          </div>
-
-          <div className="analytics-toolbar-group">
-            <label className="admin-toolbar__control">
-              <span>Тип чата</span>
-              <select
-                value={authMode}
-                onChange={(event) => {
-                  setAuthMode(event.target.value);
-                  setPage(1);
-                }}
-              >
-                {AUTH_MODE_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="admin-toolbar__control">
-              <span>На странице</span>
-              <select
-                value={perPage}
-                onChange={(event) => {
-                  setPerPage(Number(event.target.value));
-                  setPage(1);
-                }}
-              >
-                {PAGE_SIZE_OPTIONS.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <form
-              className="analytics-search"
-              onSubmit={(event) => {
-                event.preventDefault();
-                setSearch(searchInput.trim());
-                setPage(1);
-              }}
-            >
-              <input
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="Поиск по запросу, имени, email, Telegram ID"
-              />
-              <button type="submit" className="ghost">Найти</button>
-            </form>
-          </div>
-        </div>
-
-        {sessionsQuery.isLoading ? (
-          <p>Загрузка логов чатов...</p>
-        ) : sessionsQuery.isError ? (
-          <p className="error">Не удалось загрузить логи чатов.</p>
-        ) : sessionItems.length === 0 ? (
-          <p className="muted">Подходящих логов нет.</p>
-        ) : (
-          <>
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Сессия</th>
-                    <th>Тип</th>
-                    <th>Пользователь</th>
-                    <th>Вопросы пользователя</th>
-                    <th>Активность</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sessionItems.map((item) => (
-                    <tr key={item.session_key}>
-                      <td>
-                        <div className="doc-name">
-                          <strong>{item.session_id}</strong>
-                          {getAnonymousUuid(item) ? <small>UUID: {getAnonymousUuid(item)}</small> : null}
-                          <small>Канал: {item.channel || "-"}</small>
-                          <small>Событий: {item.event_count}</small>
-                          <button
-                            type="button"
-                            className="ghost analytics-open-button"
-                            onClick={() => openSessionDetails(item)}
-                          >
-                            Открыть логи
-                          </button>
-                        </div>
-                      </td>
-                      <td>
-                        <span className={`status-pill ${item.auth_mode === "anonymous" ? "status-pending" : "status-success"}`}>
-                          {item.auth_mode === "anonymous" ? "Анонимный" : "Пользователь"}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="doc-name">
-                          <strong>{item.full_name || item.email || (item.auth_mode === "anonymous" ? "Публичный анонимный пользователь" : "Авторизованный пользователь")}</strong>
-                          <small>Telegram ID: {item.telegram_id ?? "-"}</small>
-                          <small>Person ID: {item.person_id ?? "-"}</small>
-                        </div>
-                      </td>
-                      <td>
-                        <SessionQuestions session={item} onOpen={openSessionDetails} />
-                      </td>
-                      <td>
-                        <div className="doc-name">
-                          <small>Начало: {item.started_at ? formatDate(item.started_at) : "-"}</small>
-                          <small>Последнее событие: {item.updated_at ? formatDate(item.updated_at) : "-"}</small>
-                          <small>Последний запрос: {item.last_query || "-"}</small>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="pagination">
-              <button
-                className="ghost"
-                onClick={() => setPage((current) => Math.max(current - 1, 1))}
-                disabled={page <= 1}
-              >
-                Назад
-              </button>
-              <span className="pagination__status">
-                Страница {sessionsQuery.data?.page ?? page}
-                {sessionsQuery.data?.pages ? ` из ${sessionsQuery.data.pages}` : ""}
-              </span>
-              <button
-                className="ghost"
-                onClick={() => setPage((current) => current + 1)}
-                disabled={sessionsQuery.data?.pages ? page >= sessionsQuery.data.pages : sessionItems.length < perPage}
-              >
-                Вперед
-              </button>
-            </div>
-          </>
-        )}
-      </div>
+          <ChatAnalyticsUsersPanel userItems={userItems} />
+        )
+      ) : (
+        <ChatAnalyticsLogsPanel
+          sessionItems={sessionItems}
+          page={page}
+          perPage={perPage}
+          authMode={authMode}
+          searchInput={searchInput}
+          setAuthMode={setAuthMode}
+          setPerPage={setPerPage}
+          setSearchInput={setSearchInput}
+          setSearch={setSearch}
+          setPage={setPage}
+          sessionsQuery={sessionsQuery}
+          openSessionDetails={openSessionDetails}
+        />
+      )}
 
       {selectedSession ? (
         <EventLogModal

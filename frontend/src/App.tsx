@@ -382,7 +382,7 @@ export default function App() {
             element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><AdmissionsAdmin /></AdminGate>}
           />
           <Route
-            path="/chat-analytics"
+            path="/chat-analytics/*"
             element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><ChatAnalytics /></AdminGate>}
           />
         </Route>
