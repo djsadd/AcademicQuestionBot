@@ -127,9 +127,9 @@ function SiteHeader({
         ))}
       </nav>
       {isAuthenticated ? (
-        <a className="ghost docs-link" href="README.MD" target="_blank" rel="noreferrer">
-          README
-        </a>
+        <NavLink className="ghost docs-link" to="/chat">
+          CHAT
+        </NavLink>
       ) : (
         <NavLink className="ghost docs-link" to="/telegram-login">
           LOGIN
