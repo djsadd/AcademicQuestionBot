@@ -338,3 +338,42 @@ export type ChatAnalyticsEventListResponse = {
   session_key: string;
   items: ChatAnalyticsEvent[];
 };
+
+export type AgentChannelMetric = {
+  channel: string;
+  count: number;
+};
+
+export type AgentOverviewItem = {
+  key: string;
+  name: string;
+  label: string;
+  description: string;
+  kind: string;
+  state: "healthy" | "degraded" | "idle" | string;
+  executions: number;
+  sessions: number;
+  success_count: number;
+  error_count: number;
+  direct_response_count: number;
+  authenticated_count: number;
+  anonymous_count: number;
+  success_rate: number;
+  channel_breakdown: AgentChannelMetric[];
+  last_used_at: string | null;
+  last_status: string;
+  last_error: string | null;
+};
+
+export type AgentOverviewResponse = {
+  items: AgentOverviewItem[];
+  window_days: number;
+  summary: {
+    total_agents: number;
+    active_agents: number;
+    healthy_agents: number;
+    degraded_agents: number;
+    idle_agents: number;
+    error_agents: number;
+  };
+};

@@ -93,3 +93,8 @@ async def get_chat_analytics_users(limit: int = 100) -> dict[str, Any]:
 @router.get("/chat-analytics/sessions/{session_key}")
 async def get_chat_analytics_session_events(session_key: str) -> dict[str, Any]:
     return chat_analytics.get_session_events(session_key)
+
+
+@router.get("/agents/overview")
+async def get_agents_overview(days: int = 30) -> dict[str, Any]:
+    return chat_analytics.fetch_agent_overview(days=days)

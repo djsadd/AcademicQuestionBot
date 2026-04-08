@@ -3,6 +3,7 @@ import type {
   AdmissionApplicationListResponse,
   AdmissionInfoPayload,
   AdmissionInfoResponse,
+  AgentOverviewResponse,
   ChatAnalyticsEventListResponse,
   ChatAnalyticsSessionListResponse,
   ChatAnalyticsSummary,
@@ -54,4 +55,9 @@ export function fetchChatAnalyticsUsers(limit = 100): Promise<ChatAnalyticsUserL
 
 export function fetchChatAnalyticsSessionEvents(sessionKey: string): Promise<ChatAnalyticsEventListResponse> {
   return apiClient.get<ChatAnalyticsEventListResponse>(`/admin/chat-analytics/sessions/${encodeURIComponent(sessionKey)}`);
+}
+
+export function fetchAgentsOverview(days = 30): Promise<AgentOverviewResponse> {
+  const params = new URLSearchParams({ days: String(days) });
+  return apiClient.get<AgentOverviewResponse>(`/admin/agents/overview?${params.toString()}`);
 }

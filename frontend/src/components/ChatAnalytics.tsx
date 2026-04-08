@@ -1,18 +1,15 @@
 import { useMemo, useState } from "react";
-import { NavLink, Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import {
   fetchChatAnalyticsSessionEvents,
   fetchChatAnalyticsSessions,
   fetchChatAnalyticsSummary,
-  fetchChatAnalyticsUsers,
 } from "../api/admin";
 import type {
   ChatAnalyticsEvent,
-  ChatAnalyticsQuestion,
   ChatAnalyticsSession,
   ChatAnalyticsSessionListResponse,
-  ChatAnalyticsUser,
 } from "../types";
 import { formatDate } from "../utils/format";
 
@@ -21,10 +18,6 @@ const AUTH_MODE_OPTIONS = [
   { value: "all", label: "Все чаты" },
   { value: "anonymous", label: "Анонимные" },
   { value: "authenticated", label: "Пользователи" },
-] as const;
-const CHAT_ANALYTICS_SECTIONS = [
-  { key: "logs", label: "Логи" },
-  { key: "users", label: "Пользователи" },
 ] as const;
 
 function JsonBlock({ value }: { value: unknown }) {
@@ -58,23 +51,6 @@ function SessionQuestions({
           <strong>{item.query}</strong>
           <small>{formatDate(item.created_at)}</small>
         </button>
-      ))}
-    </div>
-  );
-}
-
-function UserQuestions({ questions }: { questions: ChatAnalyticsQuestion[] }) {
-  if (!questions.length) {
-    return <span className="muted">Запросов пока нет</span>;
-  }
-
-  return (
-    <div className="analytics-question-list">
-      {questions.slice(0, 5).map((item, index) => (
-        <div key={`${item.created_at}-${index}`} className="analytics-question-item">
-          <strong>{item.query}</strong>
-          <small>{formatDate(item.created_at)}</small>
-        </div>
       ))}
     </div>
   );
@@ -239,64 +215,6 @@ function EventLogModal({
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function ChatAnalyticsUsersPanel({ userItems }: { userItems: ChatAnalyticsUser[] }) {
-  return (
-    <div className="panel">
-      <div className="feature-section__header">
-        <div>
-          <p className="eyebrow">Users</p>
-          <h3>Список пользователей</h3>
-        </div>
-        <span className="muted">{userItems.length} записей</span>
-      </div>
-
-      {userItems.length === 0 ? (
-        <p className="muted">Авторизованных пользователей пока нет.</p>
-      ) : (
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Пользователь</th>
-                <th>Идентификаторы</th>
-                <th>Активность</th>
-                <th>Последние вопросы</th>
-              </tr>
-            </thead>
-            <tbody>
-              {userItems.map((item) => (
-                <tr key={item.user_key}>
-                  <td>
-                    <div className="doc-name">
-                      <strong>{item.full_name || item.email || `User ${item.telegram_id ?? item.person_id ?? "-"}`}</strong>
-                      <small>{item.email || "Email не указан"}</small>
-                      <small>Роль: {item.role || "-"}</small>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="doc-name">
-                      <small>Telegram ID: {item.telegram_id ?? "-"}</small>
-                      <small>Person ID: {item.person_id ?? "-"}</small>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="doc-name">
-                      <small>События: {item.event_count}</small>
-                      <small>Сессии: {item.session_count}</small>
-                      <small>Последняя активность: {item.last_seen ? formatDate(item.last_seen) : "-"}</small>
-                    </div>
-                  </td>
-                  <td><UserQuestions questions={item.recent_queries} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }
@@ -498,11 +416,6 @@ export function ChatAnalytics() {
     queryFn: () => fetchChatAnalyticsSummary(),
   });
 
-  const usersQuery = useQuery({
-    queryKey: ["chat-analytics-users"],
-    queryFn: () => fetchChatAnalyticsUsers(100),
-  });
-
   const sessionsQuery = useQuery({
     queryKey: ["chat-analytics-sessions", page, perPage, authMode, search],
     queryFn: () => fetchChatAnalyticsSessions(page, perPage, authMode, search),
@@ -523,16 +436,11 @@ export function ChatAnalytics() {
   }, [summaryQuery.data]);
 
   const sessionItems = sessionsQuery.data?.items ?? [];
-  const userItems = usersQuery.data?.items ?? [];
 
   const openSessionDetails = (session: ChatAnalyticsSession, question?: string) => {
     setSelectedSession(session);
     setSelectedQuery(question ?? null);
   };
-
-  const pathname = location.pathname.replace(/\/+$/, "");
-  const lastSegment = pathname.split("/").pop() || "logs";
-  const section = CHAT_ANALYTICS_SECTIONS.some((item) => item.key === lastSegment) ? lastSegment : "logs";
 
   if (location.pathname === "/chat-analytics" || location.pathname === "/chat-analytics/") {
     return <Navigate to="/chat-analytics/logs" replace />;
@@ -545,24 +453,12 @@ export function ChatAnalytics() {
           <p className="eyebrow">Chat Analytics</p>
           <h2>Аналитика и логи чатов</h2>
           <p className="muted">
-            Публичные анонимные диалоги и чаты авторизованных пользователей собраны в одной админ-панели.
+            Здесь остались только логи и детализация сессий. Пользователи вынесены в отдельный раздел меню.
           </p>
         </div>
         <span className="feature-section__status">
           {summaryQuery.data?.total_events ?? 0} logs
         </span>
-      </div>
-
-      <div className="analytics-tabs">
-        {CHAT_ANALYTICS_SECTIONS.map((item) => (
-          <NavLink
-            key={item.key}
-            to={`/chat-analytics/${item.key}`}
-            className={({ isActive }) => `analytics-tabs__link${isActive ? " active" : ""}`}
-          >
-            {item.label}
-          </NavLink>
-        ))}
       </div>
 
       <div className="analytics-summary-grid">
@@ -576,30 +472,20 @@ export function ChatAnalytics() {
           ))}
       </div>
 
-      {section === "users" ? (
-        usersQuery.isLoading ? (
-          <p>Загрузка пользователей...</p>
-        ) : usersQuery.isError ? (
-          <p className="error">Не удалось загрузить список пользователей.</p>
-        ) : (
-          <ChatAnalyticsUsersPanel userItems={userItems} />
-        )
-      ) : (
-        <ChatAnalyticsLogsPanel
-          sessionItems={sessionItems}
-          page={page}
-          perPage={perPage}
-          authMode={authMode}
-          searchInput={searchInput}
-          setAuthMode={setAuthMode}
-          setPerPage={setPerPage}
-          setSearchInput={setSearchInput}
-          setSearch={setSearch}
-          setPage={setPage}
-          sessionsQuery={sessionsQuery}
-          openSessionDetails={openSessionDetails}
-        />
-      )}
+      <ChatAnalyticsLogsPanel
+        sessionItems={sessionItems}
+        page={page}
+        perPage={perPage}
+        authMode={authMode}
+        searchInput={searchInput}
+        setAuthMode={setAuthMode}
+        setPerPage={setPerPage}
+        setSearchInput={setSearchInput}
+        setSearch={setSearch}
+        setPage={setPage}
+        sessionsQuery={sessionsQuery}
+        openSessionDetails={openSessionDetails}
+      />
 
       {selectedSession ? (
         <EventLogModal

@@ -5,9 +5,55 @@ import json
 import os
 import uuid
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
 
 import psycopg2
+
+AGENT_CATALOG: list[dict[str, str]] = [
+    {
+        "key": "intent",
+        "name": "intent-router",
+        "label": "Intent Router Agent",
+        "description": "Classifies incoming requests and sets the execution priority.",
+        "kind": "system",
+    },
+    {
+        "key": "tutor",
+        "name": "academic-tutor",
+        "label": "Academic Tutor Agent",
+        "description": "Answers study questions using the RAG knowledge base.",
+        "kind": "domain",
+    },
+    {
+        "key": "policy",
+        "name": "academic-policy",
+        "label": "Academic Policy Agent",
+        "description": "Returns grounded policy and regulation answers from documents.",
+        "kind": "domain",
+    },
+    {
+        "key": "admission",
+        "name": "admission-agent",
+        "label": "Admission Agent",
+        "description": "Handles admission FAQs and admission application flows.",
+        "kind": "domain",
+    },
+    {
+        "key": "dean",
+        "name": "dean-calendar",
+        "label": "Dean Calendar Agent",
+        "description": "Provides academic calendar and password reset workflows.",
+        "kind": "integration",
+    },
+    {
+        "key": "validator",
+        "name": "validator",
+        "label": "Validator Agent",
+        "description": "Checks the final response package before it is returned.",
+        "kind": "system",
+    },
+]
 
 
 @contextmanager
@@ -478,6 +524,182 @@ def get_session_events(session_key: str) -> dict[str, Any]:
         )
 
     return {"session_key": normalized_key, "items": items}
+
+
+def fetch_agent_overview(*, days: int = 30) -> dict[str, Any]:
+    safe_days = max(1, min(days, 365))
+    since = datetime.now(timezone.utc) - timedelta(days=safe_days)
+
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT
+                COALESCE(NULLIF(session_id, ''), id) AS session_key,
+                created_at,
+                channel,
+                COALESCE(
+                    NULLIF(metadata->'request'->>'auth_mode', ''),
+                    CASE
+                        WHEN telegram_id IS NOT NULL OR person_id IS NOT NULL THEN 'authenticated'
+                        ELSE 'anonymous'
+                    END
+                ) AS auth_mode,
+                trace
+            FROM chat_analytics
+            WHERE created_at >= %s
+            ORDER BY created_at DESC;
+            """,
+            (since,),
+        )
+        rows = cursor.fetchall()
+
+    catalog_map = {item["key"]: dict(item) for item in AGENT_CATALOG}
+    stats_by_agent: dict[str, dict[str, Any]] = {
+        item["key"]: {
+            **item,
+            "state": "idle",
+            "executions": 0,
+            "sessions": 0,
+            "success_count": 0,
+            "error_count": 0,
+            "direct_response_count": 0,
+            "authenticated_count": 0,
+            "anonymous_count": 0,
+            "channel_breakdown": {},
+            "last_used_at": None,
+            "last_status": "idle",
+            "last_error": None,
+        }
+        for item in AGENT_CATALOG
+    }
+    session_sets: dict[str, set[str]] = {item["key"]: set() for item in AGENT_CATALOG}
+
+    for session_key, created_at, channel, auth_mode, trace in rows:
+        if not isinstance(trace, list):
+            continue
+
+        for item in trace:
+            if not isinstance(item, dict):
+                continue
+            agent_key = str(item.get("key") or "").strip()
+            if not agent_key:
+                continue
+
+            if agent_key not in stats_by_agent:
+                stats_by_agent[agent_key] = {
+                    "key": agent_key,
+                    "name": str(item.get("name") or agent_key),
+                    "label": str(item.get("description") or item.get("name") or agent_key),
+                    "description": str(item.get("description") or ""),
+                    "kind": "discovered",
+                    "state": "idle",
+                    "executions": 0,
+                    "sessions": 0,
+                    "success_count": 0,
+                    "error_count": 0,
+                    "direct_response_count": 0,
+                    "authenticated_count": 0,
+                    "anonymous_count": 0,
+                    "channel_breakdown": {},
+                    "last_used_at": None,
+                    "last_status": "idle",
+                    "last_error": None,
+                }
+                session_sets[agent_key] = set()
+
+            stats = stats_by_agent[agent_key]
+            output = item.get("output")
+            output_dict = output if isinstance(output, dict) else {}
+            output_status = str(output_dict.get("status") or "").strip().lower()
+            output_error = output_dict.get("error") or output_dict.get("detail") or output_dict.get("message")
+            has_error = bool(output_error) or output_status in {
+                "error",
+                "failed",
+                "invalid",
+                "missing_data_file",
+                "invalid_data_file",
+            }
+
+            stats["name"] = str(item.get("name") or stats["name"] or agent_key)
+            if agent_key not in catalog_map and not stats["description"]:
+                stats["description"] = str(item.get("description") or "")
+
+            stats["executions"] += 1
+            if auth_mode == "authenticated":
+                stats["authenticated_count"] += 1
+            else:
+                stats["anonymous_count"] += 1
+            if item.get("output") and isinstance(item.get("output"), dict) and item["output"].get("direct_response"):
+                stats["direct_response_count"] += 1
+            if channel:
+                channel_key = str(channel)
+                stats["channel_breakdown"][channel_key] = stats["channel_breakdown"].get(channel_key, 0) + 1
+            if session_key is not None:
+                session_sets[agent_key].add(str(session_key))
+
+            if has_error:
+                stats["error_count"] += 1
+                stats["last_status"] = output_status or "error"
+                stats["last_error"] = str(output_error)
+            else:
+                stats["success_count"] += 1
+                stats["last_status"] = output_status or "ok"
+
+            if created_at:
+                iso_created_at = created_at.isoformat()
+                if not stats["last_used_at"] or iso_created_at > stats["last_used_at"]:
+                    stats["last_used_at"] = iso_created_at
+
+    items: list[dict[str, Any]] = []
+    active_agents = 0
+    error_agents = 0
+
+    for agent_key, stats in stats_by_agent.items():
+        stats["sessions"] = len(session_sets.get(agent_key, set()))
+        executions = int(stats["executions"] or 0)
+        success_count = int(stats["success_count"] or 0)
+        error_count = int(stats["error_count"] or 0)
+        last_used_at = stats.get("last_used_at")
+
+        if executions == 0:
+            state = "idle"
+        elif error_count > 0:
+            state = "degraded"
+        else:
+            state = "healthy"
+
+        stats["state"] = state
+        stats["success_rate"] = round((success_count / executions) * 100, 1) if executions else 0.0
+        stats["channel_breakdown"] = [
+            {"channel": channel_name, "count": count}
+            for channel_name, count in sorted(
+                stats["channel_breakdown"].items(),
+                key=lambda pair: (-pair[1], pair[0]),
+            )
+        ]
+
+        if executions > 0:
+            active_agents += 1
+        if error_count > 0:
+            error_agents += 1
+
+        stats["last_used_at"] = last_used_at
+        items.append(stats)
+
+    items.sort(key=lambda item: (-int(item["executions"]), item["label"], item["key"]))
+
+    return {
+        "items": items,
+        "window_days": safe_days,
+        "summary": {
+            "total_agents": len(items),
+            "active_agents": active_agents,
+            "healthy_agents": sum(1 for item in items if item["state"] == "healthy"),
+            "degraded_agents": sum(1 for item in items if item["state"] == "degraded"),
+            "idle_agents": sum(1 for item in items if item["state"] == "idle"),
+            "error_agents": error_agents,
+        },
+    }
 
 
 def fetch_chat_history(telegram_id: int) -> list[dict[str, Any]]:

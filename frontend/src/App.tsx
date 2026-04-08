@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { BrowserRouter, NavLink, Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
-import { RagDocumentDetail } from "./components/RagDocumentDetail";
-import { RagJobs } from "./components/RagJobs";
-import { RagManager } from "./components/RagManager";
+import { AdmissionsAdmin } from "./components/AdmissionsAdmin";
+import { AgentsDashboard } from "./components/AgentsDashboard";
+import { ChatAnalytics } from "./components/ChatAnalytics";
+import { ChatUsers } from "./components/ChatUsers";
 import { FakeChat } from "./components/FakeChat";
 import { MiniApp } from "./components/MiniApp";
 import { PlatonusStatus } from "./components/PlatonusStatus";
-import { TelegramLogin } from "./components/TelegramLogin";
 import { Profile } from "./components/Profile";
-import { AdmissionsAdmin } from "./components/AdmissionsAdmin";
-import { ChatAnalytics } from "./components/ChatAnalytics";
 import { PublicLanding } from "./components/PublicLanding";
-import { apiClient, AUTH_STORAGE_EVENT, authStorage, hasStoredSession } from "./api/client";
+import { RagDocumentDetail } from "./components/RagDocumentDetail";
+import { RagJobs } from "./components/RagJobs";
+import { RagManager } from "./components/RagManager";
+import { TelegramLogin } from "./components/TelegramLogin";
+import { apiClient, AUTH_STORAGE_EVENT, hasStoredSession } from "./api/client";
 
 const NAV_ITEMS = [
   { id: "profile", label: "PROFILE", path: "/profile" },
@@ -22,10 +24,11 @@ const NAV_ITEMS = [
   { id: "platonus", label: "PLATONUS", path: "/platonus" },
   { id: "admissions", label: "ADMISSIONS", path: "/admissions" },
   { id: "chat-analytics", label: "CHAT LOGS", path: "/chat-analytics" },
+  { id: "chat-users", label: "USERS", path: "/chat-users" },
 ] as const;
 
-type PageId = (typeof NAV_ITEMS)[number]["id"];
-type AdminOnlyId = "rag" | "rag-jobs" | "llm" | "agents" | "platonus" | "admissions" | "chat-analytics";
+type PageId = "llm";
+type AdminOnlyId = "rag" | "rag-jobs" | "llm" | "agents" | "platonus" | "admissions" | "chat-analytics" | "chat-users";
 
 const ADMIN_ONLY_IDS: Set<AdminOnlyId> = new Set([
   "rag",
@@ -35,6 +38,7 @@ const ADMIN_ONLY_IDS: Set<AdminOnlyId> = new Set([
   "platonus",
   "admissions",
   "chat-analytics",
+  "chat-users",
 ]);
 
 const ADMIN_ROLES = new Set([
@@ -46,49 +50,24 @@ const ADMIN_ROLES = new Set([
   "deanery",
 ]);
 
-const isAdminRole = (role?: string | null) => {
-  if (!role) return false;
-  return ADMIN_ROLES.has(role.trim().toLowerCase());
-};
-
 const FEATURE_SECTIONS = [
   {
     id: "llm",
     eyebrow: "LLM",
     title: "Финальный ответ языковой модели",
-    description:
-      "Бэкенд агрегирует выводы агентов и отдает их в LLM-клиент, чтобы получить связный итоговый ответ.",
-    status: "Готово на бэкенде",
+    description: "Бэкенд агрегирует результаты агентов и передает их в LLM-клиент для итогового ответа.",
+    status: "Backend ready",
     bullets: [
-      "Поддержка OpenAI API и локальных моделей (см. backend/langchain/llm.py)",
-      "Автоматическая проверка контента и повтор отправки при ошибках",
-    ],
-  },
-  {
-    id: "chat",
-    eyebrow: "Chat",
-    title: "Тестовый чат для инженеров знаний",
-    description:
-      "Слой веб-чата позволит обкатывать сценарии до выката в прод, а также собирать обратную связь от пользователей.",
-    status: "UI в разработке",
-    bullets: [
-      "Стриминговый REST/WebSocket API для сообщений",
-      "Логи экспериментов и сохранение истории диалогов на сервере",
-    ],
-  },
-  {
-    id: "agents",
-    eyebrow: "Agents",
-    title: "Оркестрация и наблюдаемость агентов",
-    description:
-      "Workflow объединяет планировщика, агрегатор фактов и финальный ответ. События трекаются, чтобы отслеживать качество.",
-    status: "Бэкенд online",
-    bullets: [
-      "Каждый агент работает с единой шиной контекста",
-      "Отправка метрик и логов в OpenTelemetry / Prometheus",
+      "Поддержка OpenAI API и локальных моделей.",
+      "Проверка и повторная отправка при ошибках ответа модели.",
     ],
   },
 ] as const;
+
+const isAdminRole = (role?: string | null) => {
+  if (!role) return false;
+  return ADMIN_ROLES.has(role.trim().toLowerCase());
+};
 
 function SiteHeader({
   isAdmin,
@@ -109,6 +88,7 @@ function SiteHeader({
         ],
     [isAdmin, isAuthenticated],
   );
+
   return (
     <header className={`site-header${isInternal ? " site-header--internal" : ""}`}>
       <NavLink to={isAuthenticated ? "/chat" : "/"} className="logo">
@@ -135,43 +115,6 @@ function SiteHeader({
         </NavLink>
       )}
     </header>
-  );
-}
-
-function Hero() {
-  return (
-    <section className="hero">
-      <div>
-        <p className="eyebrow">Academic Question Bot</p>
-        <h1>Единый интерфейс для академических ответов</h1>
-        <p className="muted">
-          Подключите RAG-документы, следите за статусом агентов и протестируйте чат прямо в браузере.
-        </p>
-        <div className="hero-actions">
-          <button className="primary">Открыть чат (скоро)</button>
-          <button
-            className="ghost"
-            onClick={() => document.getElementById("rag")?.scrollIntoView({ behavior: "smooth" })}
-          >
-            Управлять RAG
-          </button>
-        </div>
-      </div>
-      <div className="hero-card">
-        <h3>Статус сервисов</h3>
-        <ul>
-          <li>
-            <span className="dot success" /> API · Online
-          </li>
-          <li>
-            <span className="dot success" /> Orchestrator · Ready
-          </li>
-          <li>
-            <span className="dot success" /> RAG · Qdrant connected
-          </li>
-        </ul>
-      </div>
-    </section>
   );
 }
 
@@ -208,12 +151,7 @@ function FeaturePage({ pageId }: { pageId: PageId }) {
 }
 
 function RagPage() {
-  return (
-    <>
-      <Hero />
-      <RagManager sectionId="rag" />
-    </>
-  );
+  return <RagManager sectionId="rag" />;
 }
 
 function MiniAppPage() {
@@ -246,6 +184,7 @@ function MainLayout({
   const location = useLocation();
   const isChatPage = location.pathname === "/chat";
   const isInternalPage = isAuthenticated && !isChatPage;
+
   return (
     <>
       {isChatPage ? null : (
@@ -318,8 +257,10 @@ export default function App() {
       setIsAdminResolved(true);
       return;
     }
+
     let active = true;
     setIsAdminResolved(false);
+
     apiClient
       .get<{ status: string; user: { role?: string | null } }>("/auth/me")
       .then((response) => {
@@ -328,11 +269,11 @@ export default function App() {
         setIsAdminResolved(true);
       })
       .catch(() => {
-        if (active) {
-          setIsAdmin(false);
-          setIsAdminResolved(true);
-        }
+        if (!active) return;
+        setIsAdmin(false);
+        setIsAdminResolved(true);
       });
+
     return () => {
       active = false;
     };
@@ -351,6 +292,7 @@ export default function App() {
             element={isAuthenticated ? <FakeChat /> : <FakeChat mode="publicAdmission" />}
           />
         </Route>
+
         <Route element={<RequireAuth><MainLayout isAdmin={isAdmin} isAuthenticated={isAuthenticated} /></RequireAuth>}>
           <Route path="/profile" element={<Profile />} />
           <Route
@@ -371,7 +313,7 @@ export default function App() {
           />
           <Route
             path="/agents"
-            element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><FeaturePage pageId="agents" /></AdminGate>}
+            element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><AgentsDashboard /></AdminGate>}
           />
           <Route
             path="/platonus"
@@ -385,7 +327,12 @@ export default function App() {
             path="/chat-analytics/*"
             element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><ChatAnalytics /></AdminGate>}
           />
+          <Route
+            path="/chat-users"
+            element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><ChatUsers /></AdminGate>}
+          />
         </Route>
+
         <Route path="/mini-app" element={<MiniAppPage />} />
         <Route path="/telegram-login" element={<TelegramLoginPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
