@@ -201,6 +201,7 @@ def _build_request_log_payload(
 ) -> dict[str, Any]:
     return {
         "message": payload.message,
+        "uuid": payload.uuid,
         "language": payload.language,
         "context": payload.context or {},
         "history": router_payload.get("history") or [],
@@ -210,6 +211,17 @@ def _build_request_log_payload(
         "person_id": router_payload.get("person_id"),
         "user": user or None,
     }
+
+
+def _print_public_request(endpoint: str, request_payload: dict[str, Any]) -> None:
+    try:
+        print(
+            f"[public-request] {endpoint} :: "
+            f"{json.dumps(request_payload, ensure_ascii=False, default=str)}",
+            flush=True,
+        )
+    except Exception:
+        print(f"[public-request] {endpoint} :: {request_payload}", flush=True)
 
 
 def _build_public_admission_overview(*, program: str | None, level: str | None, language: str) -> dict[str, Any]:
@@ -493,6 +505,7 @@ async def handle_public_admission_chat(payload: ChatPayload) -> dict:
         router_payload=router_payload,
         metadata=metadata,
     )
+    _print_public_request("/chat/public/admission", request_payload)
     _save_public_admission_analytics(
         response=response,
         metadata=metadata,
@@ -513,6 +526,7 @@ async def handle_public_admission_chat_stream(payload: ChatPayload) -> Streaming
         router_payload=router_payload,
         metadata=metadata,
     )
+    _print_public_request("/chat/public/admission/stream", request_payload)
 
     async def event_stream():
         final_answer_parts: list[str] = []
