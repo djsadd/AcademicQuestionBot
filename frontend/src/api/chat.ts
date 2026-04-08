@@ -1,5 +1,5 @@
 import { apiClient, API_BASE_URL, authStorage, refreshTokens } from "./client";
-import type { ChatHistoryResponse, ChatRequestPayload, ChatResponse } from "../types";
+import type { ChatHistoryResponse, ChatHistorySession, ChatRequestPayload, ChatResponse } from "../types";
 
 export async function sendChatMessage(payload: ChatRequestPayload): Promise<ChatResponse> {
   return apiClient.post<ChatResponse>("/chat/", JSON.stringify(payload));
@@ -13,6 +13,10 @@ export async function sendPublicAdmissionMessage(
 
 export async function getChatHistory(): Promise<ChatHistoryResponse> {
   return apiClient.get<ChatHistoryResponse>("/chat/history");
+}
+
+export async function getPublicChatHistory(sessionId: string): Promise<{ session: ChatHistorySession }> {
+  return apiClient.get<{ session: ChatHistorySession }>(`/chat/public/history/${encodeURIComponent(sessionId)}`);
 }
 
 type StreamHandlers = {

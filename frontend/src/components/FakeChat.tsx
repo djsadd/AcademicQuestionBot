@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { apiClient } from "../api/client";
-import { getChatHistory, streamChatMessage, streamPublicAdmissionMessage } from "../api/chat";
+import {
+  getChatHistory,
+  getPublicChatHistory,
+  streamChatMessage,
+  streamPublicAdmissionMessage,
+} from "../api/chat";
 import type {
   ChatHistoryEntry,
   ChatHistorySession,
@@ -113,8 +118,16 @@ const createSessionId = () =>
 
 const createMessageId = (prefix: string) => createId(prefix);
 
-const buildStorageKey = (mode: FakeChatMode, telegramId?: number | null) =>
-  `${CHAT_STORAGE_PREFIX}_${CHAT_STORAGE_VERSION}_${mode}_${telegramId ?? "guest"}`;
+const buildStorageKey = (mode: FakeChatMode, sessionKey?: string | number | null) =>
+  `${CHAT_STORAGE_PREFIX}_${CHAT_STORAGE_VERSION}_${mode}_${sessionKey ?? "guest"}`;
+
+const getPublicSessionId = () => {
+  if (typeof window === "undefined") return null;
+  const params = new URLSearchParams(window.location.search);
+  const sessionId = params.get("uuid") || params.get("session_id");
+  const normalized = sessionId?.trim();
+  return normalized || null;
+};
 
 const escapeHtml = (value: string) =>
   value
@@ -397,13 +410,14 @@ const QUICK_ACTIONS = [
 export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
   const config = CHAT_VARIANTS[mode];
   const isPublicAdmission = mode === "publicAdmission";
+  const publicSessionId = isPublicAdmission ? getPublicSessionId() : null;
   const profileConfig = isPublicAdmission ? PUBLIC_ADMISSION_PROFILE : DEFAULT_PROFILE;
   const [inputValue, setInputValue] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [storageKey, setStorageKey] = useState(() => buildStorageKey(mode, null));
+  const [storageKey, setStorageKey] = useState(() => buildStorageKey(mode, publicSessionId));
   const [highlightedChatId, setHighlightedChatId] = useState<string | null>(null);
   const [searchValue, setSearchValue] = useState("");
   const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null);
@@ -411,11 +425,11 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const highlightTimeoutRef = useRef<number | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
-  const draftSessionIdRef = useRef<string>(createSessionId());
+  const draftSessionIdRef = useRef<string>(publicSessionId ?? createSessionId());
   const [chatState, setChatState] = useState<ChatHistoryState>(() => {
     const empty: ChatHistoryState = { activeChatId: null, chats: [] };
     if (typeof window === "undefined") return empty;
-    const stored = loadChatState(buildStorageKey(mode, null));
+    const stored = loadChatState(buildStorageKey(mode, publicSessionId));
     return stored ? normalizeChatState(stored, mode) : empty;
   });
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -474,13 +488,13 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
 
   useEffect(() => {
     if (isPublicAdmission) {
-      setStorageKey(buildStorageKey(mode, null));
+      setStorageKey(buildStorageKey(mode, publicSessionId));
       return;
     }
     if (profile?.telegram_id) {
       setStorageKey(buildStorageKey(mode, profile.telegram_id));
     }
-  }, [isPublicAdmission, mode, profile?.telegram_id]);
+  }, [isPublicAdmission, mode, profile?.telegram_id, publicSessionId]);
 
   useEffect(() => {
     if (isPublicAdmission) return;
@@ -503,6 +517,33 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
       active = false;
     };
   }, [isPublicAdmission, mode, profile?.telegram_id]);
+
+  useEffect(() => {
+    if (!isPublicAdmission) return;
+    if (!publicSessionId) return;
+    let active = true;
+    getPublicChatHistory(publicSessionId)
+      .then((response) => {
+        if (!active || !response.session) return;
+        const session = mapHistorySession(response.session);
+        draftSessionIdRef.current = response.session.session_id;
+        setChatState(
+          normalizeChatState(
+            {
+              activeChatId: session.id,
+              chats: [session],
+            },
+            mode,
+          ),
+        );
+      })
+      .catch(() => {
+        // Ignore public history loading errors and fall back to local state.
+      });
+    return () => {
+      active = false;
+    };
+  }, [isPublicAdmission, mode, publicSessionId]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
