@@ -18,7 +18,6 @@ const NAV_ITEMS = [
   { id: "rag", label: "RAG", path: "/rag" },
   { id: "rag-jobs", label: "JOBS", path: "/rag-jobs" },
   { id: "llm", label: "LLM", path: "/llm" },
-  { id: "chat", label: "CHAT", path: "/chat" },
   { id: "agents", label: "AGENTS", path: "/agents" },
   { id: "platonus", label: "PLATONUS", path: "/platonus" },
   { id: "admissions", label: "ADMISSIONS", path: "/admissions" },
