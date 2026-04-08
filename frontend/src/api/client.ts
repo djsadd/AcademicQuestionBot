@@ -26,26 +26,41 @@ export const authStorage = {
 
 export { AUTH_STORAGE_EVENT };
 
-async function refreshTokens(): Promise<void> {
+let refreshRequest: Promise<void> | null = null;
+
+export function hasStoredSession(): boolean {
+  return Boolean(authStorage.getAccessToken() || authStorage.getRefreshToken());
+}
+
+export async function refreshTokens(): Promise<void> {
   const refreshToken = authStorage.getRefreshToken();
   if (!refreshToken) {
     throw new Error("Refresh token missing.");
   }
-  const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ refresh_token: refreshToken }),
-  });
-  if (!response.ok) {
-    authStorage.clearTokens();
-    const detail = await response.text();
-    throw new Error(detail || `Refresh failed with status ${response.status}`);
+
+  if (!refreshRequest) {
+    refreshRequest = (async () => {
+      const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      });
+      if (!response.ok) {
+        authStorage.clearTokens();
+        const detail = await response.text();
+        throw new Error(detail || `Refresh failed with status ${response.status}`);
+      }
+      const data = (await response.json()) as {
+        access_token: string;
+        refresh_token: string;
+      };
+      authStorage.setTokens(data.access_token, data.refresh_token);
+    })().finally(() => {
+      refreshRequest = null;
+    });
   }
-  const data = (await response.json()) as {
-    access_token: string;
-    refresh_token: string;
-  };
-  authStorage.setTokens(data.access_token, data.refresh_token);
+
+  await refreshRequest;
 }
 
 async function request<T>(url: string, init?: RequestInit, retried?: boolean): Promise<T> {

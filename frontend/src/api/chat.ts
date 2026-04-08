@@ -1,4 +1,4 @@
-import { apiClient, API_BASE_URL, authStorage } from "./client";
+import { apiClient, API_BASE_URL, authStorage, refreshTokens } from "./client";
 import type { ChatHistoryResponse, ChatRequestPayload, ChatResponse } from "../types";
 
 export async function sendChatMessage(payload: ChatRequestPayload): Promise<ChatResponse> {
@@ -27,25 +27,14 @@ async function streamChatRequest(
   signal?: AbortSignal,
   requireAuth = true,
 ): Promise<ChatResponse> {
-  const refreshToken = authStorage.getRefreshToken();
   const tryRefresh = async () => {
-    if (!refreshToken || !requireAuth) return false;
-    const refreshResponse = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refresh_token: refreshToken }),
-      signal,
-    });
-    if (!refreshResponse.ok) {
-      authStorage.clearTokens();
+    if (!authStorage.getRefreshToken() || !requireAuth) return false;
+    try {
+      await refreshTokens();
+      return true;
+    } catch {
       return false;
     }
-    const data = (await refreshResponse.json()) as {
-      access_token: string;
-      refresh_token: string;
-    };
-    authStorage.setTokens(data.access_token, data.refresh_token);
-    return true;
   };
 
   const headers: Record<string, string> = {

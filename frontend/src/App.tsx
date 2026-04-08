@@ -11,7 +11,7 @@ import { Profile } from "./components/Profile";
 import { AdmissionsAdmin } from "./components/AdmissionsAdmin";
 import { ChatAnalytics } from "./components/ChatAnalytics";
 import { PublicLanding } from "./components/PublicLanding";
-import { apiClient, AUTH_STORAGE_EVENT, authStorage } from "./api/client";
+import { apiClient, AUTH_STORAGE_EVENT, authStorage, hasStoredSession } from "./api/client";
 
 const NAV_ITEMS = [
   { id: "profile", label: "PROFILE", path: "/profile" },
@@ -249,8 +249,7 @@ function MainLayout({
 }
 
 function RequireAuth({ children }: { children: JSX.Element }) {
-  const token = authStorage.getAccessToken();
-  if (!token) {
+  if (!hasStoredSession()) {
     return <Navigate to="/telegram-login" replace />;
   }
   return children;
@@ -264,12 +263,12 @@ function RequireAdmin({ isAdmin, children }: { isAdmin: boolean; children: JSX.E
 }
 
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(() => Boolean(authStorage.getAccessToken()));
+  const [isAuthenticated, setIsAuthenticated] = useState(() => hasStoredSession());
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
     const handleAuthChanged = () => {
-      setIsAuthenticated(Boolean(authStorage.getAccessToken()));
+      setIsAuthenticated(hasStoredSession());
     };
 
     window.addEventListener(AUTH_STORAGE_EVENT, handleAuthChanged);
@@ -282,8 +281,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const token = authStorage.getAccessToken();
-    if (!token) {
+    if (!hasStoredSession()) {
       setIsAdmin(false);
       return;
     }
