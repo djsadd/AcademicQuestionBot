@@ -78,6 +78,11 @@ function findMatchingEvent(events: ChatAnalyticsEvent[], selectedQuery: string |
   return events.find((item) => item.query === selectedQuery) ?? events[0] ?? null;
 }
 
+function getAnonymousUuid(session: Pick<ChatAnalyticsSession, "auth_mode" | "session_id" | "session_key">) {
+  if (session.auth_mode !== "anonymous") return null;
+  return session.session_id || session.session_key || null;
+}
+
 function EventLogModal({
   session,
   selectedQuery,
@@ -112,6 +117,7 @@ function EventLogModal({
           <div>
             <h3>Детали сессии</h3>
             <p className="muted">Session ID: {session.session_id}</p>
+            {getAnonymousUuid(session) ? <p className="muted">UUID: {getAnonymousUuid(session)}</p> : null}
           </div>
           <button className="icon-button" type="button" onClick={onClose} aria-label="Close">
             x
@@ -432,6 +438,7 @@ export function ChatAnalytics() {
                       <td>
                         <div className="doc-name">
                           <strong>{item.session_id}</strong>
+                          {getAnonymousUuid(item) ? <small>UUID: {getAnonymousUuid(item)}</small> : null}
                           <small>Канал: {item.channel || "-"}</small>
                           <small>Событий: {item.event_count}</small>
                           <button
