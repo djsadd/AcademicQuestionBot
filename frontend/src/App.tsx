@@ -262,9 +262,29 @@ function RequireAdmin({ isAdmin, children }: { isAdmin: boolean; children: JSX.E
   return children;
 }
 
+function AdminGate({
+  isAdmin,
+  isResolved,
+  children,
+}: {
+  isAdmin: boolean;
+  isResolved: boolean;
+  children: JSX.Element;
+}) {
+  if (!isResolved) {
+    return (
+      <section className="panel">
+        <p className="muted">Загрузка доступа...</p>
+      </section>
+    );
+  }
+  return <RequireAdmin isAdmin={isAdmin}>{children}</RequireAdmin>;
+}
+
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(() => hasStoredSession());
   const [isAdmin, setIsAdmin] = useState(false);
+  const [isAdminResolved, setIsAdminResolved] = useState(() => !hasStoredSession());
 
   useEffect(() => {
     const handleAuthChanged = () => {
@@ -283,18 +303,22 @@ export default function App() {
   useEffect(() => {
     if (!hasStoredSession()) {
       setIsAdmin(false);
+      setIsAdminResolved(true);
       return;
     }
     let active = true;
+    setIsAdminResolved(false);
     apiClient
       .get<{ status: string; user: { role?: string | null } }>("/auth/me")
       .then((response) => {
         if (!active) return;
         setIsAdmin(isAdminRole(response.user.role ?? null));
+        setIsAdminResolved(true);
       })
       .catch(() => {
         if (active) {
           setIsAdmin(false);
+          setIsAdminResolved(true);
         }
       });
     return () => {
@@ -319,35 +343,35 @@ export default function App() {
           <Route path="/profile" element={<Profile />} />
           <Route
             path="/rag"
-            element={<RequireAdmin isAdmin={isAdmin}><RagPage /></RequireAdmin>}
+            element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><RagPage /></AdminGate>}
           />
           <Route
             path="/rag/:documentId"
-            element={<RequireAdmin isAdmin={isAdmin}><RagDocumentDetail /></RequireAdmin>}
+            element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><RagDocumentDetail /></AdminGate>}
           />
           <Route
             path="/rag-jobs"
-            element={<RequireAdmin isAdmin={isAdmin}><RagJobs /></RequireAdmin>}
+            element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><RagJobs /></AdminGate>}
           />
           <Route
             path="/llm"
-            element={<RequireAdmin isAdmin={isAdmin}><FeaturePage pageId="llm" /></RequireAdmin>}
+            element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><FeaturePage pageId="llm" /></AdminGate>}
           />
           <Route
             path="/agents"
-            element={<RequireAdmin isAdmin={isAdmin}><FeaturePage pageId="agents" /></RequireAdmin>}
+            element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><FeaturePage pageId="agents" /></AdminGate>}
           />
           <Route
             path="/platonus"
-            element={<RequireAdmin isAdmin={isAdmin}><PlatonusStatus /></RequireAdmin>}
+            element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><PlatonusStatus /></AdminGate>}
           />
           <Route
             path="/admissions/*"
-            element={<RequireAdmin isAdmin={isAdmin}><AdmissionsAdmin /></RequireAdmin>}
+            element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><AdmissionsAdmin /></AdminGate>}
           />
           <Route
             path="/chat-analytics"
-            element={<RequireAdmin isAdmin={isAdmin}><ChatAnalytics /></RequireAdmin>}
+            element={<AdminGate isAdmin={isAdmin} isResolved={isAdminResolved}><ChatAnalytics /></AdminGate>}
           />
         </Route>
         <Route path="/mini-app" element={<MiniAppPage />} />
