@@ -91,7 +91,15 @@ const FEATURE_SECTIONS = [
   },
 ] as const;
 
-function SiteHeader({ isAdmin, isAuthenticated }: { isAdmin: boolean; isAuthenticated: boolean }) {
+function SiteHeader({
+  isAdmin,
+  isAuthenticated,
+  isInternal,
+}: {
+  isAdmin: boolean;
+  isAuthenticated: boolean;
+  isInternal: boolean;
+}) {
   const navItems = useMemo(
     () =>
       isAuthenticated
@@ -103,7 +111,7 @@ function SiteHeader({ isAdmin, isAuthenticated }: { isAdmin: boolean; isAuthenti
     [isAdmin, isAuthenticated],
   );
   return (
-    <header className="site-header">
+    <header className={`site-header${isInternal ? " site-header--internal" : ""}`}>
       <NavLink to={isAuthenticated ? "/chat" : "/"} className="logo">
         AcademicQuestionBot
       </NavLink>
@@ -238,10 +246,15 @@ function MainLayout({
 }) {
   const location = useLocation();
   const isChatPage = location.pathname === "/chat";
+  const isInternalPage = isAuthenticated && !isChatPage;
   return (
     <>
-      {isChatPage ? null : <SiteHeader isAdmin={isAdmin} isAuthenticated={isAuthenticated} />}
-      <main className={`page-main${isChatPage ? " page-main--no-scroll page-main--chat" : ""}`}>
+      {isChatPage ? null : (
+        <SiteHeader isAdmin={isAdmin} isAuthenticated={isAuthenticated} isInternal={isInternalPage} />
+      )}
+      <main
+        className={`page-main${isChatPage ? " page-main--no-scroll page-main--chat" : ""}${isInternalPage ? " page-main--internal" : ""}`}
+      >
         <Outlet />
       </main>
     </>
