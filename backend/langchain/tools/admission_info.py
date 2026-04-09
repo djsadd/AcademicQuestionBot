@@ -20,6 +20,7 @@ TEXTS = {
         "missing_data_file": "Не найден файл данных для приемной комиссии: {data_path}.",
         "invalid_data_file": "Файл данных приемной комиссии поврежден или заполнен некорректно. Путь: {data_path}. Ошибка: {detail}.",
         "not_found": "Подходящие данные не найдены по указанным параметрам.",
+        "not_found_contacts_hint": "Если вам нужна точная консультация, свяжитесь с приемной комиссией:",
         "available_levels": "Доступные уровни: {items}.",
         "available_programs": "Доступные программы: {items}.",
         "contacts_department_fallback": "Приемная комиссия",
@@ -61,6 +62,7 @@ TEXTS = {
         "missing_data_file": "Қабылдау комиссиясы деректері файлы табылмады: {data_path}.",
         "invalid_data_file": "Қабылдау комиссиясы деректері файлы бүлінген немесе қате толтырылған. Жолы: {data_path}. Қате: {detail}.",
         "not_found": "Көрсетілген параметрлер бойынша деректер табылмады.",
+        "not_found_contacts_hint": "Егер сізге нақты кеңес керек болса, қабылдау комиссиясымен байланысыңыз:",
         "available_levels": "Қолжетімді деңгейлер: {items}.",
         "available_programs": "Қолжетімді бағдарламалар: {items}.",
         "contacts_department_fallback": "Қабылдау комиссиясы",
@@ -102,6 +104,7 @@ TEXTS = {
         "missing_data_file": "Admission data file not found: {data_path}.",
         "invalid_data_file": "Admission data file is invalid or corrupted. Path: {data_path}. Error: {detail}.",
         "not_found": "No matching data was found for the requested parameters.",
+        "not_found_contacts_hint": "If you need an exact answer, contact the admissions office:",
         "available_levels": "Available levels: {items}.",
         "available_programs": "Available programs: {items}.",
         "contacts_department_fallback": "Admissions Office",
@@ -577,6 +580,21 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
             lines.append(_text(lang, "available_levels", items=", ".join(available_levels)))
         if available_programs:
             lines.append(_text(lang, "available_programs", items=", ".join(available_programs)))
+        contacts = result.get("contacts")
+        if isinstance(contacts, dict) and contacts:
+            lines.append("")
+            lines.append(_text(lang, "not_found_contacts_hint"))
+            lines.append(
+                format_admission_tool_result(
+                    {
+                        "status": "ok",
+                        "tool": "contacts",
+                        "language": lang,
+                        "contacts": contacts,
+                    },
+                    language=lang,
+                )
+            )
         return "\n".join(lines)
 
     tool = result.get("tool")
@@ -833,6 +851,7 @@ def _not_found(
         "message": _text(lang, "not_found"),
         "requested_level": _normalize_level(level),
         "requested_program": program,
+        "contacts": _resolve_localized_value(data.get("contacts") or {}, lang),
         "available_programs": [
             _program_display_name(item, language=lang)
             for item in data.get("programs") or []
