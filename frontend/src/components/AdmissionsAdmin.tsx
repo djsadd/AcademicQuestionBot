@@ -15,7 +15,6 @@ const LEVEL_OPTIONS = [
 const ADMISSION_SECTIONS = [
   { key: "general", label: "Общее" },
   { key: "contacts", label: "Контакты" },
-  { key: "programs", label: "Специальности" },
   { key: "durations", label: "Сроки" },
   { key: "documents", label: "Документы" },
   { key: "applications", label: "Заявки" },
@@ -936,15 +935,6 @@ function AdmissionInfoEditor() {
         removeTechnicalContact={removeTechnicalContact}
       />
     );
-  } else if (section === "programs") {
-    content = (
-      <ProgramsSection
-        programs={formState.programs}
-        updateProgram={updateProgram}
-        removeProgram={removeProgram}
-        addProgram={() => setFormState((current) => current ? { ...current, programs: [...current.programs, createEmptyProgram()] } : current)}
-      />
-    );
   } else if (section === "durations") {
     content = (
       <JsonSection
@@ -1012,6 +1002,14 @@ function AdmissionInfoEditor() {
             ))}
           </aside>
           <div className="admissions-admin-content">
+            {section !== "applications" ? (
+              <ProgramsSection
+                programs={formState.programs}
+                updateProgram={updateProgram}
+                removeProgram={removeProgram}
+                addProgram={() => setFormState((current) => current ? { ...current, programs: [...current.programs, createEmptyProgram()] } : current)}
+              />
+            ) : null}
             {content}
           </div>
         </div>
@@ -1022,7 +1020,7 @@ function AdmissionInfoEditor() {
 
 export function AdmissionsAdmin() {
   const location = useLocation();
-  if (location.pathname === "/admissions" || location.pathname === "/admissions/") {
+  if (location.pathname === "/admissions" || location.pathname === "/admissions/" || location.pathname === "/admissions/programs") {
     return <Navigate to="/admissions/general" replace />;
   }
   return <AdmissionInfoEditor />;
