@@ -14,6 +14,7 @@ from ..langchain.tools.admission_info import (
     get_admission_contacts,
     get_available_programs,
     get_current_prices,
+    get_management,
     get_passing_scores,
     get_required_documents,
     get_scholarships,
@@ -53,6 +54,8 @@ class AdmissionAgent(BaseAgent):
             result = get_study_durations(program=program, level=level, language=language)
         elif requested_tool == "scholarships":
             result = get_scholarships(language=language)
+        elif requested_tool == "management":
+            result = get_management(language=language)
         else:
             result = _build_overview(program=program, level=level, language=language)
 
@@ -70,6 +73,7 @@ def _build_overview(*, program: str | None, level: str | None, language: str) ->
     scores = get_passing_scores(program=program, level=level, language=language)
     durations = get_study_durations(program=program, level=level, language=language)
     scholarships = get_scholarships(language=language)
+    management = get_management(language=language)
     contacts = get_admission_contacts(language=language)
 
     answer = "\n\n".join(
@@ -80,6 +84,7 @@ def _build_overview(*, program: str | None, level: str | None, language: str) ->
             format_admission_tool_result(scores, language=language),
             format_admission_tool_result(durations, language=language),
             format_admission_tool_result(scholarships, language=language),
+            format_admission_tool_result(management, language=language),
             format_admission_tool_result(contacts, language=language),
         ]
     )

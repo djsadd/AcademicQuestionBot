@@ -157,6 +157,185 @@
       "updated_at": "2026-04-16"
     }
   },
+  "management": {
+    "ru": {
+      "rector": {
+        "name": "Джапарова Гульжамал Алькеновна",
+        "items": [
+          "кандидат экономических наук, профессор"
+        ]
+      },
+      "leadership": [
+        {
+          "name": "Аубакиров Т. О.",
+          "items": [
+            "советник ректора",
+            "первый казах-космонавт, Герой Советского Союза, Халық Қаһарманы",
+            "доктор технических наук, профессор"
+          ]
+        },
+        {
+          "name": "Абдыров А.М.",
+          "items": [
+            "первый проректор",
+            "кандидат технических наук, доктор педагогических наук, профессор"
+          ]
+        },
+        {
+          "name": "Алиев У. Ж.",
+          "items": [
+            "вице-президент образовательной корпорации «Туран»",
+            "доктор экономических наук, профессор"
+          ]
+        },
+        {
+          "name": "Капенова А. З.",
+          "items": [
+            "проректор по корпоративному развитию и докторантуре",
+            "кандидат экономических наук, профессор"
+          ]
+        },
+        {
+          "name": "Конев А.С.",
+          "items": [
+            "проректор по цифровизации и искусственному интеллекту"
+          ]
+        },
+        {
+          "name": "Смоилов С.Ж.",
+          "items": [
+            "проректор по науке и инновациям",
+            "PhD, доцент"
+          ]
+        },
+        {
+          "name": "Нурпеисов С.Е.",
+          "items": [
+            "проректор по социальному и корпоративному развитию"
+          ]
+        }
+      ],
+      "updated_at": "2026-04-16"
+    },
+    "kk": {
+      "rector": {
+        "name": "Джапарова Гульжамал Алькеновна",
+        "items": [
+          "экономика ғылымдарының кандидаты, профессор"
+        ]
+      },
+      "leadership": [
+        {
+          "name": "Аубакиров Т. О.",
+          "items": [
+            "ректордың кеңесшісі",
+            "тұңғыш қазақ ғарышкері, Кеңес Одағының Батыры, Халық Қаһарманы",
+            "техника ғылымдарының докторы, профессор"
+          ]
+        },
+        {
+          "name": "Абдыров А.М.",
+          "items": [
+            "бірінші проректор",
+            "техника ғылымдарының кандидаты, педагогика ғылымдарының докторы, профессор"
+          ]
+        },
+        {
+          "name": "Алиев У. Ж.",
+          "items": [
+            "«Туран» білім беру корпорациясының вице-президенті",
+            "экономика ғылымдарының докторы, профессор"
+          ]
+        },
+        {
+          "name": "Капенова А. З.",
+          "items": [
+            "корпоративтік даму және докторантура жөніндегі проректор",
+            "экономика ғылымдарының кандидаты, профессор"
+          ]
+        },
+        {
+          "name": "Конев А.С.",
+          "items": [
+            "цифрландыру және жасанды интеллект жөніндегі проректор"
+          ]
+        },
+        {
+          "name": "Смоилов С.Ж.",
+          "items": [
+            "ғылым және инновациялар жөніндегі проректор",
+            "PhD, доцент"
+          ]
+        },
+        {
+          "name": "Нурпеисов С.Е.",
+          "items": [
+            "әлеуметтік және корпоративтік даму жөніндегі проректор"
+          ]
+        }
+      ],
+      "updated_at": "2026-04-16"
+    },
+    "en": {
+      "rector": {
+        "name": "Gulzhamal Alkenovna Dzhaparova",
+        "items": [
+          "Candidate of Economic Sciences, Professor"
+        ]
+      },
+      "leadership": [
+        {
+          "name": "T. O. Aubakirov",
+          "items": [
+            "Advisor to the Rector",
+            "first Kazakh cosmonaut, Hero of the Soviet Union, Halyk Kaharmany",
+            "Doctor of Technical Sciences, Professor"
+          ]
+        },
+        {
+          "name": "A.M. Abdyrov",
+          "items": [
+            "First Vice-Rector",
+            "Candidate of Technical Sciences, Doctor of Pedagogical Sciences, Professor"
+          ]
+        },
+        {
+          "name": "U. Zh. Aliyev",
+          "items": [
+            "Vice President of the Turan Educational Corporation",
+            "Doctor of Economic Sciences, Professor"
+          ]
+        },
+        {
+          "name": "A. Z. Kapenova",
+          "items": [
+            "Vice-Rector for Corporate Development and Doctoral Studies",
+            "Candidate of Economic Sciences, Professor"
+          ]
+        },
+        {
+          "name": "A.S. Konev",
+          "items": [
+            "Vice-Rector for Digitalization and Artificial Intelligence"
+          ]
+        },
+        {
+          "name": "S.Zh. Smoilov",
+          "items": [
+            "Vice-Rector for Science and Innovation",
+            "PhD, Associate Professor"
+          ]
+        },
+        {
+          "name": "S.E. Nurpeisov",
+          "items": [
+            "Vice-Rector for Social and Corporate Development"
+          ]
+        }
+      ],
+      "updated_at": "2026-04-16"
+    }
+  },
   "documents": {
     "bachelor": {
       "title": "Поступление 2026-2027",

@@ -21,6 +21,7 @@ from ...langchain.tools.admission_info import (
     get_admission_contacts,
     get_available_programs,
     get_current_prices,
+    get_management,
     get_passing_scores,
     get_required_documents,
     get_scholarships,
@@ -252,6 +253,7 @@ def _build_public_admission_overview(*, program: str | None, level: str | None, 
     scores = get_passing_scores(program=program, level=level, language=language)
     durations = get_study_durations(program=program, level=level, language=language)
     scholarships = get_scholarships(language=language)
+    management = get_management(language=language)
     contacts = get_admission_contacts(language=language)
 
     answer = "\n\n".join(
@@ -262,6 +264,7 @@ def _build_public_admission_overview(*, program: str | None, level: str | None, 
             format_admission_tool_result(scores, language=language),
             format_admission_tool_result(durations, language=language),
             format_admission_tool_result(scholarships, language=language),
+            format_admission_tool_result(management, language=language),
             format_admission_tool_result(contacts, language=language),
         ]
     )
@@ -346,6 +349,8 @@ def _build_public_admission_response(
         tool_result = get_study_durations(program=program, level=level, language=language)
     elif requested_tool == "scholarships":
         tool_result = get_scholarships(language=language)
+    elif requested_tool == "management":
+        tool_result = get_management(language=language)
     else:
         tool_result = _build_public_admission_overview(program=program, level=level, language=language)
 

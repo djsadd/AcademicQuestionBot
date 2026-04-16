@@ -57,6 +57,7 @@ TEXTS = {
         "documents_not_found": "Документы не найдены для уровня '{level}'.",
         "durations_title": "Сроки обучения:",
         "scholarships_title": "Стипендии и государственные гранты:",
+        "management_title": "Руководство университета:",
         "fallback_answer": "Данные по поступлению загружены, но формат ответа для этого инструмента не настроен.",
     },
     "kk": {
@@ -101,6 +102,7 @@ TEXTS = {
         "documents_not_found": "'{level}' деңгейі үшін құжаттар табылмады.",
         "durations_title": "Оқу мерзімдері:",
         "scholarships_title": "Стипендиялар және мемлекеттік гранттар:",
+        "management_title": "Университет басшылығы:",
         "fallback_answer": "Оқуға түсу деректері жүктелді, бірақ бұл құрал үшін жауап форматы бапталмаған.",
     },
     "en": {
@@ -145,6 +147,7 @@ TEXTS = {
         "documents_not_found": "Documents not found for level '{level}'.",
         "durations_title": "Study durations:",
         "scholarships_title": "Scholarships and state grants:",
+        "management_title": "University leadership:",
         "fallback_answer": "Admission data is loaded, but the response format for this tool is not configured.",
     },
 }
@@ -541,6 +544,27 @@ def get_scholarships(*, language: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
+def get_management(*, language: Optional[str] = None) -> Dict[str, Any]:
+    data = load_admission_data()
+    if data.get("status") in {"missing_data_file", "invalid_data_file"}:
+        return data
+
+    lang = normalize_language(language)
+    management = _resolve_localized_value(data.get("management") or {}, lang)
+    return {
+        "status": "ok",
+        "tool": "management",
+        "language": lang,
+        "management": management,
+        "data_updated_at": (
+            management.get("updated_at")
+            if isinstance(management, dict)
+            else data.get("last_updated")
+        ) or data.get("last_updated"),
+        "source_path": _source_path(),
+    }
+
+
 def detect_requested_tool(query: str) -> str:
     normalized_query = _normalize_text(query)
     raw_query = (query or "").casefold()
@@ -563,6 +587,26 @@ def detect_requested_tool(query: str) -> str:
         for term in scholarship_terms
     ):
         return "scholarships"
+
+    management_terms = {
+        "руководство",
+        "руководящий состав",
+        "состав руководства",
+        "администрация университета",
+        "ректор",
+        "проректор",
+        "first vice rector",
+        "leadership",
+        "management",
+        "rector",
+    }
+    if any(
+        _term_matches_query(term, normalized_query)
+        or _normalize_text(term) in normalized_query
+        or term.casefold() in raw_query
+        for term in management_terms
+    ):
+        return "management"
 
     for tool_name in ("programs", "documents", "contacts", "prices", "passing_scores", "durations"):
         if any(
@@ -781,6 +825,32 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
                 lines.append(f"- {note}")
             for item in section.get("items") or []:
                 lines.append(f"- {item}")
+        return "\n".join(lines)
+
+    if tool == "management":
+        management = result.get("management") or {}
+        if not isinstance(management, dict):
+            return str(management or _text(lang, "not_specified"))
+
+        lines = [_text(lang, "management_title")]
+        rector = management.get("rector") or {}
+        rector_name = rector.get("name")
+        if rector_name:
+            lines.append("Ректор:")
+            lines.append(f"- {rector_name}")
+            for item in rector.get("items") or []:
+                lines.append(f"- {item}")
+
+        leadership = management.get("leadership") or []
+        if leadership:
+            lines.append("Руководящий состав:")
+            for entry in leadership:
+                name = entry.get("name")
+                if not name:
+                    continue
+                lines.append(f"- {name}")
+                for item in entry.get("items") or []:
+                    lines.append(f"- {item}")
         return "\n".join(lines)
 
     return _text(lang, "fallback_answer")
