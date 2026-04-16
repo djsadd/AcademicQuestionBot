@@ -28,6 +28,126 @@ function JsonBlock({ value }: { value: unknown }) {
   );
 }
 
+type HtmlViewMode = "rendered" | "html" | "text";
+
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const sanitizeHtml = (value: string) => {
+  if (typeof window === "undefined") return value;
+  const parser = new DOMParser();
+  const document = parser.parseFromString(value, "text/html");
+  ["script", "style", "iframe", "object", "embed", "link"].forEach((tag) => {
+    document.querySelectorAll(tag).forEach((node) => node.remove());
+  });
+  document.querySelectorAll("*").forEach((node) => {
+    Array.from(node.attributes).forEach((attr) => {
+      const name = attr.name.toLowerCase();
+      const attrValue = attr.value.trim().toLowerCase();
+      if (name.startsWith("on")) {
+        node.removeAttribute(attr.name);
+      }
+      if ((name === "href" || name === "src") && attrValue.startsWith("javascript:")) {
+        node.removeAttribute(attr.name);
+      }
+    });
+  });
+  return document.body.innerHTML;
+};
+
+const stripHtml = (value: string) => {
+  if (!value) return "";
+  if (typeof window === "undefined") {
+    return value
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/(p|div|li|h[1-6]|tr|section|article)>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+      .trim();
+  }
+
+  const parser = new DOMParser();
+  const document = parser.parseFromString(value, "text/html");
+  document.querySelectorAll("br").forEach((node) => node.replaceWith("\n"));
+  document.querySelectorAll("p, div, li, h1, h2, h3, h4, h5, h6, tr, section, article").forEach((node) => {
+    node.append(document.createTextNode("\n"));
+  });
+  return (document.body.textContent ?? "").replace(/\n{3,}/g, "\n\n").trim();
+};
+
+const looksLikeHtml = (value: string) => /<\/?[a-z][\s\S]*>/i.test(value);
+
+function HtmlContentBlock({
+  value,
+  title,
+}: {
+  value: string | null | undefined;
+  title: string;
+}) {
+  const [mode, setMode] = useState<HtmlViewMode>("rendered");
+
+  const content = value?.trim() ?? "";
+  const hasHtml = looksLikeHtml(content);
+
+  if (!content) {
+    return <p className="analytics-answer-block">-</p>;
+  }
+
+  if (!hasHtml) {
+    return <p className="analytics-answer-block">{content}</p>;
+  }
+
+  const sanitized = sanitizeHtml(content);
+  const plainText = stripHtml(content);
+
+  return (
+    <div className="analytics-html-viewer">
+      <div className="analytics-html-viewer__toolbar" role="tablist" aria-label={`${title} format`}>
+        <button
+          type="button"
+          className={`analytics-html-viewer__tab${mode === "rendered" ? " active" : ""}`}
+          onClick={() => setMode("rendered")}
+        >
+          Preview
+        </button>
+        <button
+          type="button"
+          className={`analytics-html-viewer__tab${mode === "html" ? " active" : ""}`}
+          onClick={() => setMode("html")}
+        >
+          HTML
+        </button>
+        <button
+          type="button"
+          className={`analytics-html-viewer__tab${mode === "text" ? " active" : ""}`}
+          onClick={() => setMode("text")}
+        >
+          Text
+        </button>
+      </div>
+
+      {mode === "rendered" ? (
+        <div
+          className="analytics-answer-block analytics-answer-block--html"
+          dangerouslySetInnerHTML={{ __html: sanitized }}
+        />
+      ) : mode === "html" ? (
+        <pre className="analytics-answer-block analytics-answer-block--code">
+          <code>{content}</code>
+        </pre>
+      ) : (
+        <pre className="analytics-answer-block analytics-answer-block--text">
+          {plainText || stripHtml(sanitized) || "-"}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function SessionQuestions({
   session,
   onOpen,
@@ -143,12 +263,12 @@ function EventLogModal({
             <div className="analytics-event-detail">
               <div className="analytics-detail-section">
                 <span className="eyebrow">Question</span>
-                <p className="analytics-answer-block">{activeEvent.query || "-"}</p>
+                <HtmlContentBlock value={activeEvent.query} title="Question" />
               </div>
 
               <div className="analytics-detail-section">
                 <span className="eyebrow">AI Answer</span>
-                <p className="analytics-answer-block">{activeEvent.response || "-"}</p>
+                <HtmlContentBlock value={activeEvent.response} title="AI Answer" />
               </div>
 
               <div className="analytics-detail-grid">
