@@ -939,6 +939,7 @@ function AdmissionInfoEditor() {
           name_ru: (program.name_ru ?? "").trim(),
           name_kk: (program.name_kk ?? "").trim(),
           name_en: (program.name_en ?? "").trim(),
+          source: (program.source ?? "").trim(),
           aliases: (program.aliases ?? []).map((item) => item.trim()).filter(Boolean),
           duration: typeof program.duration === "string" ? program.duration.trim() : program.duration,
           tuition: {
