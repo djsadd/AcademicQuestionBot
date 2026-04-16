@@ -15,6 +15,7 @@ const LEVEL_OPTIONS = [
 const ADMISSION_SECTIONS = [
   { key: "general", label: "Общее" },
   { key: "contacts", label: "Контакты" },
+  { key: "programs", label: "Программы" },
   { key: "durations", label: "Сроки" },
   { key: "documents", label: "Документы" },
   { key: "applications", label: "Заявки" },
@@ -519,10 +520,7 @@ function ProgramsSection({
   const editingProgram = editingIndex != null ? programs[editingProgramIndex] : null;
 
   return (
-    <SectionShell
-      title="Программы"
-      description="Все программы показаны плоским списком, а детальное редактирование открывается отдельно."
-    >
+    <>
       <div className="admission-editor__section-header">
         <div>
           <strong>Список программ</strong>
@@ -739,7 +737,7 @@ function ProgramsSection({
           </div>
         </div>
       ) : null}
-    </SectionShell>
+    </>
   );
 }
 
@@ -935,6 +933,15 @@ function AdmissionInfoEditor() {
         removeTechnicalContact={removeTechnicalContact}
       />
     );
+  } else if (section === "programs") {
+    content = (
+      <ProgramsSection
+        programs={formState.programs}
+        updateProgram={updateProgram}
+        removeProgram={removeProgram}
+        addProgram={() => setFormState((current) => current ? { ...current, programs: [...current.programs, createEmptyProgram()] } : current)}
+      />
+    );
   } else if (section === "durations") {
     content = (
       <JsonSection
@@ -1002,14 +1009,6 @@ function AdmissionInfoEditor() {
             ))}
           </aside>
           <div className="admissions-admin-content">
-            {section !== "applications" ? (
-              <ProgramsSection
-                programs={formState.programs}
-                updateProgram={updateProgram}
-                removeProgram={removeProgram}
-                addProgram={() => setFormState((current) => current ? { ...current, programs: [...current.programs, createEmptyProgram()] } : current)}
-              />
-            ) : null}
             {content}
           </div>
         </div>
@@ -1020,7 +1019,7 @@ function AdmissionInfoEditor() {
 
 export function AdmissionsAdmin() {
   const location = useLocation();
-  if (location.pathname === "/admissions" || location.pathname === "/admissions/" || location.pathname === "/admissions/programs") {
+  if (location.pathname === "/admissions" || location.pathname === "/admissions/") {
     return <Navigate to="/admissions/general" replace />;
   }
   return <AdmissionInfoEditor />;
