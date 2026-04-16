@@ -236,7 +236,7 @@ function ProgramEditorFields({
           />
         </label>
         <label>
-          <span>Р“СЂР°РЅС‚</span>
+          <span>Грант</span>
           <input
             type="number"
             value={program.passing_score.grant ?? ""}
