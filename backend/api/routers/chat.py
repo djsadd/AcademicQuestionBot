@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import html
 import json
 import logging
 from typing import Any
@@ -59,13 +58,6 @@ PUBLIC_OVERVIEW_TITLES = {
     "kk": "Қабылдау комиссиясы туралы ақпарат:",
     "en": "Admissions information:",
 }
-
-PUBLIC_SOURCE_LABELS = {
-    "ru": "Источники",
-    "kk": "Анықтамалар",
-    "en": "Sources",
-}
-
 
 def _normalize_history_item(item: Any) -> dict[str, str] | None:
     if not isinstance(item, dict):
@@ -275,58 +267,9 @@ def _build_public_admission_overview(*, program: str | None, level: str | None, 
         "tool": "overview",
         "language": language,
         "answer": answer,
-        "sources": _collect_public_admission_sources(programs, prices, scores, durations),
         "source_path": prices.get("source_path") or contacts.get("source_path"),
         "data_updated_at": prices.get("data_updated_at") or contacts.get("data_updated_at"),
     }
-
-
-def _collect_public_admission_sources(*tool_results: dict[str, Any]) -> list[str]:
-    sources: list[str] = []
-    seen: set[str] = set()
-
-    for tool_result in tool_results:
-        preset_sources = tool_result.get("sources")
-        if isinstance(preset_sources, list):
-            candidates = preset_sources
-        else:
-            candidates = [
-                entry.get("source")
-                for entry in tool_result.get("results") or []
-                if isinstance(entry, dict)
-            ]
-        for raw_source in candidates:
-            source = str(raw_source or "").strip()
-            if not source or source in seen:
-                continue
-            seen.add(source)
-            sources.append(source)
-
-    return sources
-
-
-def _append_public_admission_sources(final_answer: str, tool_result: dict[str, Any], language: str) -> str:
-    sources = _collect_public_admission_sources(tool_result)
-    if not sources:
-        return final_answer
-
-    missing_sources = [source for source in sources if source not in final_answer]
-    if not missing_sources:
-        return final_answer
-
-    label = PUBLIC_SOURCE_LABELS.get(language, PUBLIC_SOURCE_LABELS["ru"])
-    stripped_answer = final_answer.strip()
-    is_html = stripped_answer.startswith("<")
-
-    if is_html:
-        source_lines = "<br/>".join(
-            f'<a href="{html.escape(source, quote=True)}" target="_blank" rel="noreferrer">{html.escape(source)}</a>'
-            for source in missing_sources
-        )
-        return f'{stripped_answer}<p><strong>{html.escape(label)}:</strong><br/>{source_lines}</p>'
-
-    source_lines = "\n".join(f"- {source}" for source in missing_sources)
-    return f"{stripped_answer}\n\n{label}:\n{source_lines}".strip()
 
 
 def _synthesize_public_admission_answer(
@@ -357,13 +300,13 @@ def _synthesize_public_admission_answer(
     ]
     llm_answer = llm_client.chat(messages)
     if llm_answer:
-        return _append_public_admission_sources(llm_answer, tool_result, language), {
+        return llm_answer, {
             "used": True,
             "model": getattr(llm_client, "model", None),
             "error": getattr(llm_client, "last_error", None),
             "raw_request": None,
         }
-    return _append_public_admission_sources(fallback_answer, tool_result, language), {
+    return fallback_answer, {
         "used": False,
         "model": getattr(llm_client, "model", None),
         "error": getattr(llm_client, "last_error", None),

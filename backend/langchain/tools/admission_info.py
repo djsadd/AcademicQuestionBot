@@ -315,7 +315,6 @@ def get_current_prices(
                 "currency": data.get("currency", "KZT"),
                 "period": _resolve_localized_value(tuition.get("period"), lang),
                 "updated_at": tuition.get("updated_at") or data.get("last_updated"),
-                "source": item.get("source"),
             }
         )
     return {
@@ -393,7 +392,6 @@ def get_passing_scores(
                 "exam": _resolve_localized_value(score.get("exam"), lang),
                 "notes": _resolve_localized_value(score.get("notes") or [], lang),
                 "updated_at": score.get("updated_at") or data.get("last_updated"),
-                "source": item.get("source"),
             }
         )
     return {
@@ -502,7 +500,6 @@ def get_study_durations(
                 "program": _program_display_name(item, language=lang),
                 "level": item.get("level"),
                 "duration": _resolve_localized_value(item.get("duration"), lang),
-                "source": item.get("source"),
             }
         )
     return {
@@ -642,9 +639,6 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
             lines.append(
                 f"- {item.get('program')} ({item.get('level')}): {amount_text} {item.get('currency')} {item.get('period') or ''}".rstrip()
             )
-            source = item.get("source")
-            if source:
-                lines.append(f"  {_text(lang, 'source_label')}: {source}")
         return "\n".join(lines)
 
     if tool == "passing_scores":
@@ -672,9 +666,6 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
             if notes:
                 line += " " + _text(lang, "passing_notes", value=" ".join(str(note) for note in notes))
             lines.append(line)
-            source = item.get("source")
-            if source:
-                lines.append(f"  {_text(lang, 'source_label')}: {source}")
         return "\n".join(lines)
 
     if tool == "documents":
@@ -726,9 +717,6 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
             lines.append(
                 f"- {item.get('program')} ({item.get('level')}): {item.get('duration') or _text(lang, 'not_specified')}."
             )
-            source = item.get("source")
-            if source:
-                lines.append(f"  {_text(lang, 'source_label')}: {source}")
         for rule in result.get("duration_rules") or []:
             lines.append(f"{rule.get('title')}:")
             for item in rule.get("items") or []:
