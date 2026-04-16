@@ -221,6 +221,7 @@ export type AdmissionProgram = {
   };
   passing_score: {
     gop_code?: string | null;
+    grant?: number | null;
     grant_full?: number | null;
     grant_short?: number | null;
     paid?: number | null;

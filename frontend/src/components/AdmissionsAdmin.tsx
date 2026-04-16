@@ -71,6 +71,7 @@ function createEmptyProgram(): AdmissionProgram {
     },
     passing_score: {
       gop_code: "",
+      grant: null,
       grant_full: null,
       grant_short: null,
       paid: null,
@@ -232,6 +233,14 @@ function ProgramEditorFields({
             type="number"
             value={program.passing_score.grant_full ?? ""}
             onChange={(event) => updatePassingField("grant_full", event.target.value === "" ? null : Number(event.target.value))}
+          />
+        </label>
+        <label>
+          <span>Р“СЂР°РЅС‚</span>
+          <input
+            type="number"
+            value={program.passing_score.grant ?? ""}
+            onChange={(event) => updatePassingField("grant", event.target.value === "" ? null : Number(event.target.value))}
           />
         </label>
         <label>
@@ -624,6 +633,8 @@ function ProgramsSection({
                       ? `Paid: ${formatCompactNumber(program.passing_score.paid)}`
                       : program.passing_score.grant_full != null
                         ? `Grant: ${formatCompactNumber(program.passing_score.grant_full)}`
+                        : program.passing_score.grant != null
+                          ? `Grant: ${formatCompactNumber(program.passing_score.grant)}`
                         : "-"}
                   </td>
                   <td data-label="Actions">
