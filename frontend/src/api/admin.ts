@@ -3,6 +3,7 @@ import type {
   AdmissionApplicationListResponse,
   AdmissionInfoPayload,
   AdmissionInfoResponse,
+  AdmissionProgramsListResponse,
   AgentOverviewResponse,
   ChatAnalyticsEventListResponse,
   ChatAnalyticsSessionListResponse,
@@ -23,6 +24,21 @@ export function fetchAdmissionApplications(
 
 export function fetchAdmissionInfo(): Promise<AdmissionInfoResponse> {
   return apiClient.get<AdmissionInfoResponse>("/admin/admission-info");
+}
+
+export function fetchAdmissionPrograms(
+  page: number,
+  perPage: number,
+  level: string,
+  search: string,
+): Promise<AdmissionProgramsListResponse> {
+  const params = new URLSearchParams({
+    page: String(page),
+    per_page: String(perPage),
+    level,
+    search,
+  });
+  return apiClient.get<AdmissionProgramsListResponse>(`/admin/admission-programs?${params.toString()}`);
 }
 
 export function updateAdmissionInfo(payload: AdmissionInfoPayload): Promise<AdmissionInfoResponse> {

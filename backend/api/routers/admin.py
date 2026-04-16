@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from ...db import admission_applications, chat_analytics
 from ...services.admission_admin import (
     get_data_path,
+    list_admission_programs_for_admin,
     load_admission_info_for_admin,
     save_admission_info_for_admin,
 )
@@ -52,6 +53,29 @@ async def get_admission_info() -> dict[str, Any]:
     except ValidationError as exc:
         raise HTTPException(status_code=500, detail=exc.errors(include_url=False)) from exc
     return {"status": "ok", "source_path": str(get_data_path()), "data": payload}
+
+
+@router.get("/admission-programs")
+async def get_admission_programs(
+    search: str = "",
+    level: str = "all",
+    page: int = 1,
+    per_page: int = 10,
+) -> dict[str, Any]:
+    try:
+        payload = list_admission_programs_for_admin(
+            search=search,
+            level=level,
+            page=page,
+            per_page=per_page,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=f"Admission data file not found: {get_data_path()}") from exc
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail=f"Admission data JSON is invalid: {exc}") from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=500, detail=exc.errors(include_url=False)) from exc
+    return {"status": "ok", **payload}
 
 
 @router.put("/admission-info")

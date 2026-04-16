@@ -249,6 +249,24 @@ export type AdmissionInfoResponse = {
   data: AdmissionInfoPayload;
 };
 
+export type AdmissionProgramsListItem = {
+  program_index: number;
+  program_id?: string | null;
+};
+
+export type AdmissionProgramsListResponse = {
+  status: string;
+  items: AdmissionProgramsListItem[];
+  page: number;
+  per_page: number;
+  total: number;
+  pages: number;
+  filters: {
+    search: string;
+    level: string;
+  };
+};
+
 export type ChatAnalyticsSummary = {
   total_events: number;
   total_sessions: number;

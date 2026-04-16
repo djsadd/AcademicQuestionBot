@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { NavLink, Navigate, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchAdmissionInfo, updateAdmissionInfo } from "../api/admin";
+import { fetchAdmissionInfo, fetchAdmissionPrograms, updateAdmissionInfo } from "../api/admin";
 import { AdmissionApplications } from "./AdmissionApplications";
 import type { AdmissionInfoPayload, AdmissionProgram, AdmissionTechnicalContact } from "../types";
 
@@ -469,45 +469,9 @@ function ProgramsSection({
   const [page, setPage] = useState<number>(1);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
-  const filteredPrograms = useMemo(() => {
-    const query = searchValue.trim().toLowerCase();
-    return programs
-      .map((program, index) => ({ program, index }))
-      .filter(({ program }) => {
-        if (levelFilter !== "all" && program.level !== levelFilter) return false;
-        if (!query) return true;
-        const haystack = [
-          program.id,
-          program.name,
-          program.name_ru,
-          program.name_kk,
-          program.name_en,
-          program.passing_score.gop_code,
-          ...(program.aliases ?? []),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(query);
-      });
-  }, [levelFilter, programs, searchValue]);
-
-  const pageCount = Math.max(1, Math.ceil(filteredPrograms.length / pageSize));
-  const currentPage = Math.min(page, pageCount);
-  const paginatedPrograms = useMemo(() => {
-    const start = (currentPage - 1) * pageSize;
-    return filteredPrograms.slice(start, start + pageSize);
-  }, [currentPage, filteredPrograms, pageSize]);
-
   useEffect(() => {
     setPage(1);
   }, [levelFilter, pageSize, searchValue]);
-
-  useEffect(() => {
-    if (page > pageCount) {
-      setPage(pageCount);
-    }
-  }, [page, pageCount]);
 
   useEffect(() => {
     if (editingIndex == null) return;
@@ -519,12 +483,38 @@ function ProgramsSection({
   const editingProgramIndex = editingIndex ?? 0;
   const editingProgram = editingIndex != null ? programs[editingProgramIndex] : null;
 
+  const programsQuery = useQuery({
+    queryKey: ["admission-programs", page, pageSize, levelFilter, searchValue],
+    queryFn: () => fetchAdmissionPrograms(page, pageSize, levelFilter, searchValue),
+    placeholderData: (previousData) => previousData,
+  });
+
+  const pageCount = Math.max(1, programsQuery.data?.pages ?? 1);
+  const currentPage = Math.min(page, pageCount);
+
+  useEffect(() => {
+    if (page > pageCount) {
+      setPage(pageCount);
+    }
+  }, [page, pageCount]);
+
+  const paginatedPrograms = useMemo(
+    () =>
+      (programsQuery.data?.items ?? [])
+        .map(({ program_index }) => ({
+          index: program_index,
+          program: programs[program_index],
+        }))
+        .filter((item) => Boolean(item.program)),
+    [programs, programsQuery.data],
+  );
+
   return (
     <>
-      <div className="admission-editor__section-header">
-        <div>
-          <strong>Список программ</strong>
-          <p className="muted">Таблица для быстрого обзора, окно для редактирования полной карточки.</p>
+      <div className="admission-editor__section-header admission-editor__program-toolbar">
+        <div className="admission-editor__program-toolbar-copy">
+          <strong>Programs</strong>
+          <p className="muted">Bright table, backend filters, modal editing.</p>
         </div>
         <button
           type="button"
@@ -534,92 +524,112 @@ function ProgramsSection({
             setEditingIndex(programs.length);
           }}
         >
-          Добавить программу
+          Add program
         </button>
       </div>
 
-      <div className="admission-editor__program-tools">
+      <div className="admission-editor__program-filters">
         <label className="admission-editor__program-search">
-          <span>Поиск</span>
+          <span>Search</span>
           <input
             type="search"
             value={searchValue}
             onChange={(event) => setSearchValue(event.target.value)}
-            placeholder="Название, ID, alias, GOP..."
+            placeholder="Name, ID, alias, GOP..."
           />
         </label>
-        <label>
-          <span>Степень</span>
-          <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
-            <option value="all">Все степени</option>
-            {LEVEL_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>На странице</span>
-          <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
-            {PROGRAMS_PAGE_SIZES.map((size) => (
-              <option key={size} value={size}>
-                {size}
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="admission-editor__program-stats">
-          <strong>{filteredPrograms.length}</strong>
-          <span>{filteredPrograms.length === programs.length ? "программ всего" : `из ${programs.length} программ`}</span>
+        <div className="admission-editor__program-levels" role="tablist" aria-label="Program level filter">
+          <button
+            type="button"
+            className={`admission-editor__filter-chip${levelFilter === "all" ? " is-active" : ""}`}
+            onClick={() => setLevelFilter("all")}
+          >
+            All
+          </button>
+          {LEVEL_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              className={`admission-editor__filter-chip${levelFilter === option.value ? " is-active" : ""}`}
+              onClick={() => setLevelFilter(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+        <div className="admission-editor__program-meta">
+          <label>
+            <span>Per page</span>
+            <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+              {PROGRAMS_PAGE_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="admission-editor__program-stats">
+            <strong>{programsQuery.data?.total ?? 0}</strong>
+            <span>server matches</span>
+          </div>
         </div>
       </div>
 
-      {paginatedPrograms.length ? (
+      {programsQuery.isLoading ? (
+        <div className="admission-editor__empty-state">
+          <strong>Loading programs</strong>
+          <p className="muted">Fetching filtered results from the backend.</p>
+        </div>
+      ) : programsQuery.isError ? (
+        <div className="admission-editor__empty-state">
+          <strong>Failed to load programs</strong>
+          <p className="muted">Try changing the filter or refreshing the page.</p>
+        </div>
+      ) : paginatedPrograms.length ? (
         <div className="admission-editor__program-table-wrap">
           <table className="admission-editor__program-table">
             <thead>
               <tr>
-                <th>Программа</th>
+                <th>Program</th>
                 <th>ID / GOP</th>
-                <th>Академическая степень</th>
-                <th>Стоимость</th>
-                <th>Проходной балл</th>
-                <th className="admission-editor__program-actions-head">Действия</th>
+                <th>Degree</th>
+                <th>Tuition</th>
+                <th>Passing score</th>
+                <th className="admission-editor__program-actions-head">Actions</th>
               </tr>
             </thead>
             <tbody>
               {paginatedPrograms.map(({ program, index }) => (
                 <tr key={`${program.id ?? program.name}-${index}`}>
-                  <td data-label="Программа">
+                  <td data-label="Program">
                     <div className="admission-editor__program-cell-main">
-                      <strong>{program.name || `Программа ${index + 1}`}</strong>
-                      <span>{program.name_ru || program.name_kk || program.name_en || "Без дополнительного названия"}</span>
+                      <strong>{program.name || `Program ${index + 1}`}</strong>
+                      <span>{program.name_ru || program.name_kk || program.name_en || "No alternate name"}</span>
                     </div>
                   </td>
                   <td data-label="ID / GOP">
                     <div className="admission-editor__program-cell-meta">
-                      <strong>{program.id || "—"}</strong>
-                      <span>{program.passing_score.gop_code || "GOP не указан"}</span>
+                      <strong>{program.id || "-"}</strong>
+                      <span>{program.passing_score.gop_code || "GOP not set"}</span>
                     </div>
                   </td>
-                  <td data-label="Академическая степень">{formatProgramLevel(program.level)}</td>
-                  <td data-label="Стоимость">
+                  <td data-label="Degree">{formatProgramLevel(program.level)}</td>
+                  <td data-label="Tuition">
                     {program.tuition.amount != null
-                      ? `${formatCompactNumber(program.tuition.amount)}${program.tuition.period ? ` · ${String(program.tuition.period)}` : ""}`
-                      : "—"}
+                      ? `${formatCompactNumber(program.tuition.amount)}${program.tuition.period ? ` ? ${String(program.tuition.period)}` : ""}`
+                      : "-"}
                   </td>
-                  <td data-label="Проходной балл">
+                  <td data-label="Passing score">
                     {program.passing_score.paid != null
-                      ? `Платное: ${formatCompactNumber(program.passing_score.paid)}`
+                      ? `Paid: ${formatCompactNumber(program.passing_score.paid)}`
                       : program.passing_score.grant_full != null
-                        ? `Грант: ${formatCompactNumber(program.passing_score.grant_full)}`
-                        : "—"}
+                        ? `Grant: ${formatCompactNumber(program.passing_score.grant_full)}`
+                        : "-"}
                   </td>
-                  <td data-label="Действия">
+                  <td data-label="Actions">
                     <div className="admission-editor__program-row-actions">
                       <button type="button" className="ghost" onClick={() => setEditingIndex(index)}>
-                        Редактировать
+                        Edit
                       </button>
                       <button
                         type="button"
@@ -631,7 +641,7 @@ function ProgramsSection({
                           removeProgram(index);
                         }}
                       >
-                        Удалить
+                        Delete
                       </button>
                     </div>
                   </td>
@@ -643,15 +653,15 @@ function ProgramsSection({
       ) : (
         <div className="admission-editor__stack">
           <div className="admission-editor__empty-state">
-            <strong>Программы не найдены</strong>
-            <p className="muted">Измените фильтр или добавьте новую программу.</p>
+            <strong>No programs found</strong>
+            <p className="muted">Adjust backend filters or add a new program.</p>
           </div>
         </div>
       )}
-      {filteredPrograms.length ? (
+      {(programsQuery.data?.total ?? 0) > 0 ? (
         <div className="admission-editor__pagination">
           <div className="admission-editor__pagination-status">
-            Показаны {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, filteredPrograms.length)} из {filteredPrograms.length}
+            Showing {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, programsQuery.data?.total ?? 0)} of {programsQuery.data?.total ?? 0}
           </div>
           <div className="admission-editor__pagination-controls">
             <button
@@ -660,7 +670,7 @@ function ProgramsSection({
               onClick={() => setPage((current) => Math.max(1, current - 1))}
               disabled={currentPage === 1}
             >
-              Назад
+              Prev
             </button>
             {Array.from({ length: pageCount }, (_, index) => index + 1)
               .slice(Math.max(0, currentPage - 3), Math.max(0, currentPage - 3) + 5)
@@ -680,7 +690,7 @@ function ProgramsSection({
               onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
               disabled={currentPage === pageCount}
             >
-              Вперёд
+              Next
             </button>
           </div>
         </div>
@@ -691,7 +701,7 @@ function ProgramsSection({
           className="chat-properties-modal__overlay"
           role="dialog"
           aria-modal="true"
-          aria-label="Редактирование программы"
+          aria-label="Program editing"
           onMouseDown={(event) => {
             if (event.target === event.currentTarget) {
               setEditingIndex(null);
@@ -701,14 +711,14 @@ function ProgramsSection({
           <div className="chat-properties-modal__panel admission-editor__program-modal">
             <div className="chat-properties-modal__header">
               <div>
-                <h3>{editingProgram.name || `Программа ${editingProgramIndex + 1}`}</h3>
-                <p className="muted">Все поля программы открыты в отдельном окне.</p>
+                <h3>{editingProgram.name || `Program ${editingProgramIndex + 1}`}</h3>
+                <p className="muted">Edit the full card in a separate modal.</p>
               </div>
               <button
                 type="button"
                 className="icon-button icon-button--ghost"
                 onClick={() => setEditingIndex(null)}
-                aria-label="Закрыть"
+                aria-label="Close"
               >
                 <svg viewBox="0 0 24 24" aria-hidden="true">
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -731,7 +741,7 @@ function ProgramsSection({
 
             <div className="admission-editor__program-modal-footer">
               <button type="button" className="primary" onClick={() => setEditingIndex(null)}>
-                Готово
+                Done
               </button>
             </div>
           </div>

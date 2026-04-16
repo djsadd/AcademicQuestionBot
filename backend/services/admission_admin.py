@@ -88,6 +88,67 @@ def save_admission_info_for_admin(payload: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def list_admission_programs_for_admin(
+    *,
+    search: str = "",
+    level: str = "all",
+    page: int = 1,
+    per_page: int = 10,
+) -> dict[str, Any]:
+    payload = load_admission_info_for_admin()
+    programs = payload.get("programs") or []
+    normalized_search = search.strip().lower()
+    normalized_level = level.strip().lower() or "all"
+
+    matched_indices: list[int] = []
+    for index, program in enumerate(programs):
+        if normalized_level != "all" and str(program.get("level") or "").lower() != normalized_level:
+            continue
+        if normalized_search:
+            haystack = " ".join(
+                str(value).strip()
+                for value in [
+                    program.get("id"),
+                    program.get("name"),
+                    program.get("name_ru"),
+                    program.get("name_kk"),
+                    program.get("name_en"),
+                    (program.get("passing_score") or {}).get("gop_code"),
+                    *((program.get("aliases") or []) if isinstance(program.get("aliases"), list) else []),
+                ]
+                if value
+            ).lower()
+            if normalized_search not in haystack:
+                continue
+        matched_indices.append(index)
+
+    safe_per_page = max(1, min(per_page, 100))
+    safe_page = max(1, page)
+    total = len(matched_indices)
+    pages = max(1, (total + safe_per_page - 1) // safe_per_page)
+    safe_page = min(safe_page, pages)
+    start = (safe_page - 1) * safe_per_page
+    sliced_indices = matched_indices[start:start + safe_per_page]
+
+    return {
+        "items": [
+            {
+                "program_index": index,
+                "program_id": programs[index].get("id"),
+            }
+            for index in sliced_indices
+        ],
+        "page": safe_page,
+        "per_page": safe_per_page,
+        "total": total,
+        "pages": pages,
+        "filters": {
+            "search": search,
+            "level": normalized_level,
+        },
+    }
+
+
 def _apply_update_timestamps(payload: dict[str, Any]) -> dict[str, Any]:
     current_date = date.today().isoformat()
     normalized = deepcopy(payload)
