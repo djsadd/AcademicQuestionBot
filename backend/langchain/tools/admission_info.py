@@ -56,6 +56,7 @@ TEXTS = {
         "passing_notes": "Примечание: {value}",
         "documents_not_found": "Документы не найдены для уровня '{level}'.",
         "durations_title": "Сроки обучения:",
+        "scholarships_title": "Стипендии и государственные гранты:",
         "fallback_answer": "Данные по поступлению загружены, но формат ответа для этого инструмента не настроен.",
     },
     "kk": {
@@ -99,6 +100,7 @@ TEXTS = {
         "passing_notes": "Ескерту: {value}",
         "documents_not_found": "'{level}' деңгейі үшін құжаттар табылмады.",
         "durations_title": "Оқу мерзімдері:",
+        "scholarships_title": "Стипендиялар және мемлекеттік гранттар:",
         "fallback_answer": "Оқуға түсу деректері жүктелді, бірақ бұл құрал үшін жауап форматы бапталмаған.",
     },
     "en": {
@@ -142,6 +144,7 @@ TEXTS = {
         "passing_notes": "Notes: {value}",
         "documents_not_found": "Documents not found for level '{level}'.",
         "durations_title": "Study durations:",
+        "scholarships_title": "Scholarships and state grants:",
         "fallback_answer": "Admission data is loaded, but the response format for this tool is not configured.",
     },
 }
@@ -517,9 +520,50 @@ def get_study_durations(
     }
 
 
+def get_scholarships(*, language: Optional[str] = None) -> Dict[str, Any]:
+    data = load_admission_data()
+    if data.get("status") in {"missing_data_file", "invalid_data_file"}:
+        return data
+
+    lang = normalize_language(language)
+    scholarships = _resolve_localized_value(data.get("scholarships") or {}, lang)
+    return {
+        "status": "ok",
+        "tool": "scholarships",
+        "language": lang,
+        "scholarships": scholarships,
+        "data_updated_at": (
+            scholarships.get("updated_at")
+            if isinstance(scholarships, dict)
+            else data.get("last_updated")
+        ) or data.get("last_updated"),
+        "source_path": _source_path(),
+    }
+
+
 def detect_requested_tool(query: str) -> str:
     normalized_query = _normalize_text(query)
     raw_query = (query or "").casefold()
+    scholarship_terms = {
+        "стипенд",
+        "стипендия",
+        "стипендии",
+        "гос стипендия",
+        "государственная стипендия",
+        "повышенная стипендия",
+        "президентская стипендия",
+        "scholarship",
+        "stipend",
+        "шәкіртақы",
+    }
+    if any(
+        _term_matches_query(term, normalized_query)
+        or _normalize_text(term) in normalized_query
+        or term.casefold() in raw_query
+        for term in scholarship_terms
+    ):
+        return "scholarships"
+
     for tool_name in ("programs", "documents", "contacts", "prices", "passing_scores", "durations"):
         if any(
             _term_matches_query(term, normalized_query)
@@ -720,6 +764,22 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
         for rule in result.get("duration_rules") or []:
             lines.append(f"{rule.get('title')}:")
             for item in rule.get("items") or []:
+                lines.append(f"- {item}")
+        return "\n".join(lines)
+
+    if tool == "scholarships":
+        scholarships = result.get("scholarships") or {}
+        if not isinstance(scholarships, dict):
+            return str(scholarships or _text(lang, "not_specified"))
+
+        lines = [_text(lang, "scholarships_title")]
+        for section in scholarships.get("sections") or []:
+            title = section.get("title")
+            if title:
+                lines.append(title)
+            for note in section.get("notes") or []:
+                lines.append(f"- {note}")
+            for item in section.get("items") or []:
                 lines.append(f"- {item}")
         return "\n".join(lines)
 
