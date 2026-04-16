@@ -7,6 +7,8 @@ RUN apt-get update \
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend ./backend
 COPY docker/entrypoint.sh /entrypoint.sh
-RUN mkdir -p /app/storage/documents
+RUN sed -i 's/\r$//' /entrypoint.sh \
+    && chmod +x /entrypoint.sh \
+    && mkdir -p /app/storage/documents
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["uvicorn", "backend.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
