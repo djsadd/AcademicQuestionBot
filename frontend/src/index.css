@@ -2785,6 +2785,43 @@ td {
   gap: 1rem;
 }
 
+.admission-editor__program-tools {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.6fr) repeat(2, minmax(140px, 0.7fr)) minmax(140px, 0.7fr);
+  gap: 0.9rem;
+  align-items: end;
+  padding: 1rem;
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(252, 247, 248, 0.96) 100%);
+  border: 1px solid rgba(122, 33, 59, 0.1);
+}
+
+.admission-editor__program-search {
+  min-width: 0;
+}
+
+.admission-editor__program-stats {
+  min-height: 58px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.15rem;
+  padding: 0.8rem 0.95rem;
+  border-radius: 16px;
+  background: rgba(247, 232, 236, 0.62);
+  border: 1px solid rgba(122, 33, 59, 0.1);
+}
+
+.admission-editor__program-stats strong {
+  font-size: 1.05rem;
+  color: var(--admissions-ink);
+}
+
+.admission-editor__program-stats span {
+  color: var(--admissions-muted);
+  font-size: 0.82rem;
+}
+
 .admission-editor label {
   display: flex;
   flex-direction: column;
@@ -2838,6 +2875,118 @@ td {
   flex-direction: column;
   gap: 1rem;
   box-shadow: 0 12px 30px rgba(74, 16, 34, 0.05);
+}
+
+.admission-editor__program-card {
+  padding: 1.35rem;
+  border-radius: 24px;
+}
+
+.admission-editor__program-header {
+  align-items: flex-start;
+}
+
+.admission-editor__program-summary {
+  flex: 1;
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  cursor: default;
+}
+
+.admission-editor__program-summary-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.admission-editor__program-summary-main strong {
+  font-size: 1.05rem;
+  color: var(--admissions-ink);
+}
+
+.admission-editor__program-summary-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-left: auto;
+  justify-content: flex-end;
+}
+
+.admission-editor__program-metric {
+  padding: 0.45rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(247, 232, 236, 0.72);
+  color: var(--admissions-burgundy-900);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.admission-editor__program-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.admission-editor__empty-state {
+  padding: 1.2rem 1.3rem;
+  border-radius: 18px;
+  border: 1px dashed rgba(122, 33, 59, 0.22);
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.admission-editor__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding-top: 0.5rem;
+}
+
+.admission-editor__pagination-status {
+  color: var(--admissions-muted);
+  font-size: 0.9rem;
+}
+
+.admission-editor__pagination-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.admission-editor__page-chip {
+  min-width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(122, 33, 59, 0.16);
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--admissions-burgundy-900);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.admission-editor__page-chip:hover,
+.admission-editor__page-chip:focus-visible {
+  background: var(--admissions-burgundy-100);
+  border-color: rgba(122, 33, 59, 0.26);
+}
+
+.admission-editor__page-chip.is-active {
+  background: linear-gradient(135deg, var(--admissions-burgundy-900) 0%, var(--admissions-burgundy-700) 100%);
+  border-color: transparent;
+  color: #fff;
+  box-shadow: 0 10px 20px rgba(122, 33, 59, 0.18);
 }
 
 .admissions-admin-page .panel {
@@ -2967,6 +3116,23 @@ td {
   .admission-editor__actions,
   .admission-editor__section-header,
   .admission-editor__program-header {
+    align-items: stretch;
+  }
+
+  .admission-editor__program-tools {
+    grid-template-columns: 1fr;
+  }
+
+  .admission-editor__program-summary {
+    flex-direction: column;
+  }
+
+  .admission-editor__program-summary-badges {
+    margin-left: 0;
+    justify-content: flex-start;
+  }
+
+  .admission-editor__pagination {
     align-items: stretch;
   }
 

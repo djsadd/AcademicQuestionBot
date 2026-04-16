@@ -1,4 +1,4 @@
-import { useEffect, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { NavLink, Navigate, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAdmissionInfo, updateAdmissionInfo } from "../api/admin";
@@ -22,6 +22,7 @@ const ADMISSION_SECTIONS = [
 ] as const;
 
 type AdmissionSectionKey = (typeof ADMISSION_SECTIONS)[number]["key"];
+const PROGRAMS_PAGE_SIZES = [4, 6, 8, 12] as const;
 
 function clonePayload(payload: AdmissionInfoPayload): AdmissionInfoPayload {
   return JSON.parse(JSON.stringify(payload)) as AdmissionInfoPayload;
@@ -87,11 +88,15 @@ function createEmptyTechnicalContact(): AdmissionTechnicalContact {
 function ProgramCard({
   program,
   index,
+  isExpanded,
+  onToggle,
   onChange,
   onRemove,
 }: {
   program: AdmissionProgram;
   index: number;
+  isExpanded: boolean;
+  onToggle: () => void;
   onChange: (index: number, nextValue: AdmissionProgram) => void;
   onRemove: (index: number) => void;
 }) {
@@ -449,6 +454,51 @@ function ProgramsSection({
   removeProgram: (index: number) => void;
   addProgram: () => void;
 }) {
+  const [searchValue, setSearchValue] = useState("");
+  const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [pageSize, setPageSize] = useState<number>(6);
+  const [page, setPage] = useState<number>(1);
+
+  const filteredPrograms = useMemo(() => {
+    const query = searchValue.trim().toLowerCase();
+    return programs
+      .map((program, index) => ({ program, index }))
+      .filter(({ program }) => {
+        if (levelFilter !== "all" && program.level !== levelFilter) return false;
+        if (!query) return true;
+        const haystack = [
+          program.id,
+          program.name,
+          program.name_ru,
+          program.name_kk,
+          program.name_en,
+          program.passing_score.gop_code,
+          ...(program.aliases ?? []),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return haystack.includes(query);
+      });
+  }, [levelFilter, programs, searchValue]);
+
+  const pageCount = Math.max(1, Math.ceil(filteredPrograms.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const paginatedPrograms = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredPrograms.slice(start, start + pageSize);
+  }, [currentPage, filteredPrograms, pageSize]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [levelFilter, pageSize, searchValue]);
+
+  useEffect(() => {
+    if (page > pageCount) {
+      setPage(pageCount);
+    }
+  }, [page, pageCount]);
+
   return (
     <SectionShell
       title="Специальности"
@@ -464,17 +514,98 @@ function ProgramsSection({
         </button>
       </div>
 
+      <div className="admission-editor__program-tools">
+        <label className="admission-editor__program-search">
+          <span>Search</span>
+          <input
+            type="search"
+            value={searchValue}
+            onChange={(event) => setSearchValue(event.target.value)}
+            placeholder="Name, ID, alias, GOP..."
+          />
+        </label>
+        <label>
+          <span>Level</span>
+          <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
+            <option value="all">All levels</option>
+            {LEVEL_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span>Per page</span>
+          <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
+            {PROGRAMS_PAGE_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {size}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="admission-editor__program-stats">
+          <strong>{filteredPrograms.length}</strong>
+          <span>{filteredPrograms.length === programs.length ? "programs total" : `of ${programs.length} programs`}</span>
+        </div>
+      </div>
+
       <div className="admission-editor__stack">
-        {programs.map((program, index) => (
+        {paginatedPrograms.length ? paginatedPrograms.map(({ program, index }) => (
           <ProgramCard
             key={`${program.id ?? program.name}-${index}`}
             program={program}
             index={index}
+            isExpanded
+            onToggle={() => undefined}
             onChange={updateProgram}
             onRemove={removeProgram}
           />
-        ))}
+        )) : (
+          <div className="admission-editor__empty-state">
+            <strong>No programs found</strong>
+            <p className="muted">Adjust filters or create a new program.</p>
+          </div>
+        )}
       </div>
+      {filteredPrograms.length ? (
+        <div className="admission-editor__pagination">
+          <div className="admission-editor__pagination-status">
+            Showing {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, filteredPrograms.length)} of {filteredPrograms.length}
+          </div>
+          <div className="admission-editor__pagination-controls">
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={currentPage === 1}
+            >
+              Prev
+            </button>
+            {Array.from({ length: pageCount }, (_, index) => index + 1)
+              .slice(Math.max(0, currentPage - 3), Math.max(0, currentPage - 3) + 5)
+              .map((pageNumber) => (
+                <button
+                  key={pageNumber}
+                  type="button"
+                  className={`admission-editor__page-chip${pageNumber === currentPage ? " is-active" : ""}`}
+                  onClick={() => setPage(pageNumber)}
+                >
+                  {pageNumber}
+                </button>
+              ))}
+            <button
+              type="button"
+              className="ghost"
+              onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+              disabled={currentPage === pageCount}
+            >
+              Next
+            </button>
+          </div>
+        </div>
+      ) : null}
     </SectionShell>
   );
 }
