@@ -23,6 +23,9 @@ const ADMISSION_SECTIONS = [
 
 type AdmissionSectionKey = (typeof ADMISSION_SECTIONS)[number]["key"];
 const PROGRAMS_PAGE_SIZES = [4, 6, 8, 12] as const;
+const LEVEL_LABELS: Record<string, string> = Object.fromEntries(
+  LEVEL_OPTIONS.map((option) => [option.value, option.label]),
+);
 
 function clonePayload(payload: AdmissionInfoPayload): AdmissionInfoPayload {
   return JSON.parse(JSON.stringify(payload)) as AdmissionInfoPayload;
@@ -85,20 +88,26 @@ function createEmptyTechnicalContact(): AdmissionTechnicalContact {
   };
 }
 
-function ProgramCard({
+function formatProgramLevel(level: string | null | undefined): string {
+  if (!level) return "—";
+  return LEVEL_LABELS[level] ?? level;
+}
+
+function formatCompactNumber(value: number | null | undefined): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  return new Intl.NumberFormat("ru-RU").format(value);
+}
+
+function ProgramEditorFields({
   program,
   index,
-  isExpanded,
-  onToggle,
   onChange,
   onRemove,
 }: {
   program: AdmissionProgram;
   index: number;
-  isExpanded: boolean;
-  onToggle: () => void;
   onChange: (index: number, nextValue: AdmissionProgram) => void;
-  onRemove: (index: number) => void;
+  onRemove?: (index: number) => void;
 }) {
   const updateField = (field: keyof AdmissionProgram, value: unknown) => {
     onChange(index, { ...program, [field]: value });
@@ -125,13 +134,13 @@ function ProgramCard({
   };
 
   return (
-    <article className="admission-editor__program-card">
+    <>
       <div className="admission-editor__program-header">
         <div>
           <strong>{program.name || `Программа ${index + 1}`}</strong>
           <p className="muted">Карточка специальности</p>
         </div>
-        <button type="button" className="ghost" onClick={() => onRemove(index)}>
+        <button type="button" className="ghost" onClick={() => onRemove?.(index)} disabled={!onRemove}>
           Удалить
         </button>
       </div>
@@ -251,7 +260,7 @@ function ProgramCard({
           onChange={(event) => updatePassingField("notes", linesToArray(event.target.value))}
         />
       </label>
-    </article>
+    </>
   );
 }
 
@@ -458,6 +467,7 @@ function ProgramsSection({
   const [levelFilter, setLevelFilter] = useState<string>("all");
   const [pageSize, setPageSize] = useState<number>(6);
   const [page, setPage] = useState<number>(1);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
 
   const filteredPrograms = useMemo(() => {
     const query = searchValue.trim().toLowerCase();
@@ -499,35 +509,52 @@ function ProgramsSection({
     }
   }, [page, pageCount]);
 
+  useEffect(() => {
+    if (editingIndex == null) return;
+    if (editingIndex >= programs.length) {
+      setEditingIndex(programs.length ? programs.length - 1 : null);
+    }
+  }, [editingIndex, programs.length]);
+
+  const editingProgramIndex = editingIndex ?? 0;
+  const editingProgram = editingIndex != null ? programs[editingProgramIndex] : null;
+
   return (
     <SectionShell
-      title="Специальности"
-      description="Каждая образовательная программа редактируется отдельно."
+      title="Программы"
+      description="Все программы показаны плоским списком, а детальное редактирование открывается отдельно."
     >
       <div className="admission-editor__section-header">
         <div>
-          <strong>Программы</strong>
-          <p className="muted">Стоимость и проходные баллы редактируются прямо в карточке программы.</p>
+          <strong>Список программ</strong>
+          <p className="muted">Таблица для быстрого обзора, окно для редактирования полной карточки.</p>
         </div>
-        <button type="button" className="ghost" onClick={addProgram}>
+        <button
+          type="button"
+          className="ghost"
+          onClick={() => {
+            addProgram();
+            setEditingIndex(programs.length);
+          }}
+        >
           Добавить программу
         </button>
       </div>
 
       <div className="admission-editor__program-tools">
         <label className="admission-editor__program-search">
-          <span>Search</span>
+          <span>Поиск</span>
           <input
             type="search"
             value={searchValue}
             onChange={(event) => setSearchValue(event.target.value)}
-            placeholder="Name, ID, alias, GOP..."
+            placeholder="Название, ID, alias, GOP..."
           />
         </label>
         <label>
-          <span>Level</span>
+          <span>Степень</span>
           <select value={levelFilter} onChange={(event) => setLevelFilter(event.target.value)}>
-            <option value="all">All levels</option>
+            <option value="all">Все степени</option>
             {LEVEL_OPTIONS.map((option) => (
               <option key={option.value} value={option.value}>
                 {option.label}
@@ -536,7 +563,7 @@ function ProgramsSection({
           </select>
         </label>
         <label>
-          <span>Per page</span>
+          <span>На странице</span>
           <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
             {PROGRAMS_PAGE_SIZES.map((size) => (
               <option key={size} value={size}>
@@ -547,32 +574,87 @@ function ProgramsSection({
         </label>
         <div className="admission-editor__program-stats">
           <strong>{filteredPrograms.length}</strong>
-          <span>{filteredPrograms.length === programs.length ? "programs total" : `of ${programs.length} programs`}</span>
+          <span>{filteredPrograms.length === programs.length ? "программ всего" : `из ${programs.length} программ`}</span>
         </div>
       </div>
 
-      <div className="admission-editor__stack">
-        {paginatedPrograms.length ? paginatedPrograms.map(({ program, index }) => (
-          <ProgramCard
-            key={`${program.id ?? program.name}-${index}`}
-            program={program}
-            index={index}
-            isExpanded
-            onToggle={() => undefined}
-            onChange={updateProgram}
-            onRemove={removeProgram}
-          />
-        )) : (
+      {paginatedPrograms.length ? (
+        <div className="admission-editor__program-table-wrap">
+          <table className="admission-editor__program-table">
+            <thead>
+              <tr>
+                <th>Программа</th>
+                <th>ID / GOP</th>
+                <th>Академическая степень</th>
+                <th>Стоимость</th>
+                <th>Проходной балл</th>
+                <th className="admission-editor__program-actions-head">Действия</th>
+              </tr>
+            </thead>
+            <tbody>
+              {paginatedPrograms.map(({ program, index }) => (
+                <tr key={`${program.id ?? program.name}-${index}`}>
+                  <td data-label="Программа">
+                    <div className="admission-editor__program-cell-main">
+                      <strong>{program.name || `Программа ${index + 1}`}</strong>
+                      <span>{program.name_ru || program.name_kk || program.name_en || "Без дополнительного названия"}</span>
+                    </div>
+                  </td>
+                  <td data-label="ID / GOP">
+                    <div className="admission-editor__program-cell-meta">
+                      <strong>{program.id || "—"}</strong>
+                      <span>{program.passing_score.gop_code || "GOP не указан"}</span>
+                    </div>
+                  </td>
+                  <td data-label="Академическая степень">{formatProgramLevel(program.level)}</td>
+                  <td data-label="Стоимость">
+                    {program.tuition.amount != null
+                      ? `${formatCompactNumber(program.tuition.amount)}${program.tuition.period ? ` · ${String(program.tuition.period)}` : ""}`
+                      : "—"}
+                  </td>
+                  <td data-label="Проходной балл">
+                    {program.passing_score.paid != null
+                      ? `Платное: ${formatCompactNumber(program.passing_score.paid)}`
+                      : program.passing_score.grant_full != null
+                        ? `Грант: ${formatCompactNumber(program.passing_score.grant_full)}`
+                        : "—"}
+                  </td>
+                  <td data-label="Действия">
+                    <div className="admission-editor__program-row-actions">
+                      <button type="button" className="ghost" onClick={() => setEditingIndex(index)}>
+                        Редактировать
+                      </button>
+                      <button
+                        type="button"
+                        className="ghost danger"
+                        onClick={() => {
+                          if (editingIndex === index) {
+                            setEditingIndex(null);
+                          }
+                          removeProgram(index);
+                        }}
+                      >
+                        Удалить
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="admission-editor__stack">
           <div className="admission-editor__empty-state">
-            <strong>No programs found</strong>
-            <p className="muted">Adjust filters or create a new program.</p>
+            <strong>Программы не найдены</strong>
+            <p className="muted">Измените фильтр или добавьте новую программу.</p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
       {filteredPrograms.length ? (
         <div className="admission-editor__pagination">
           <div className="admission-editor__pagination-status">
-            Showing {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, filteredPrograms.length)} of {filteredPrograms.length}
+            Показаны {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, filteredPrograms.length)} из {filteredPrograms.length}
           </div>
           <div className="admission-editor__pagination-controls">
             <button
@@ -581,7 +663,7 @@ function ProgramsSection({
               onClick={() => setPage((current) => Math.max(1, current - 1))}
               disabled={currentPage === 1}
             >
-              Prev
+              Назад
             </button>
             {Array.from({ length: pageCount }, (_, index) => index + 1)
               .slice(Math.max(0, currentPage - 3), Math.max(0, currentPage - 3) + 5)
@@ -601,8 +683,60 @@ function ProgramsSection({
               onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
               disabled={currentPage === pageCount}
             >
-              Next
+              Вперёд
             </button>
+          </div>
+        </div>
+      ) : null}
+
+      {editingProgram ? (
+        <div
+          className="chat-properties-modal__overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Редактирование программы"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              setEditingIndex(null);
+            }
+          }}
+        >
+          <div className="chat-properties-modal__panel admission-editor__program-modal">
+            <div className="chat-properties-modal__header">
+              <div>
+                <h3>{editingProgram.name || `Программа ${editingProgramIndex + 1}`}</h3>
+                <p className="muted">Все поля программы открыты в отдельном окне.</p>
+              </div>
+              <button
+                type="button"
+                className="icon-button icon-button--ghost"
+                onClick={() => setEditingIndex(null)}
+                aria-label="Закрыть"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="admission-editor admission-editor__program-modal-body">
+              <ProgramEditorFields
+                program={editingProgram}
+                index={editingProgramIndex}
+                onChange={updateProgram}
+                onRemove={(index) => {
+                  removeProgram(index);
+                  setEditingIndex(null);
+                }}
+              />
+            </div>
+
+            <div className="admission-editor__program-modal-footer">
+              <button type="button" className="primary" onClick={() => setEditingIndex(null)}>
+                Готово
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

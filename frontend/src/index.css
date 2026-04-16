@@ -2822,6 +2822,100 @@ td {
   font-size: 0.82rem;
 }
 
+.admission-editor__program-table-wrap {
+  overflow-x: auto;
+  border-radius: 22px;
+  border: 1px solid rgba(122, 33, 59, 0.12);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(252, 247, 248, 0.98) 100%);
+  box-shadow: 0 12px 30px rgba(74, 16, 34, 0.05);
+}
+
+.admission-editor__program-table {
+  width: 100%;
+  border-collapse: collapse;
+  min-width: 980px;
+}
+
+.admission-editor__program-table th,
+.admission-editor__program-table td {
+  padding: 1rem 1.1rem;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid rgba(122, 33, 59, 0.08);
+}
+
+.admission-editor__program-table thead th {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--admissions-muted);
+  background: rgba(247, 232, 236, 0.56);
+}
+
+.admission-editor__program-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.admission-editor__program-cell-main,
+.admission-editor__program-cell-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.admission-editor__program-cell-main strong,
+.admission-editor__program-cell-meta strong {
+  color: var(--admissions-ink);
+}
+
+.admission-editor__program-cell-main span,
+.admission-editor__program-cell-meta span {
+  color: var(--admissions-muted);
+  font-size: 0.84rem;
+}
+
+.admission-editor__program-row-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.admission-editor__program-actions-head {
+  text-align: right;
+}
+
+.admission-editor__program-modal {
+  width: min(1120px, calc(100vw - 20px));
+}
+
+.admission-editor__program-modal-body {
+  margin-top: 1rem;
+  max-height: calc(90vh - 180px);
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.admission-editor__program-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e2e8f0;
+}
+
+.admissions-admin-page button.danger {
+  color: #b42318;
+  border-color: rgba(180, 35, 24, 0.22);
+  background: rgba(254, 242, 242, 0.9);
+}
+
+.admissions-admin-page button.danger:hover,
+.admissions-admin-page button.danger:focus-visible {
+  border-color: rgba(180, 35, 24, 0.36);
+  background: #fee2e2;
+}
+
 .admission-editor label {
   display: flex;
   flex-direction: column;
@@ -3130,6 +3224,64 @@ td {
   .admission-editor__program-summary-badges {
     margin-left: 0;
     justify-content: flex-start;
+  }
+
+  .admission-editor__program-table {
+    min-width: 0;
+  }
+
+  .admission-editor__program-table thead {
+    display: none;
+  }
+
+  .admission-editor__program-table tbody,
+  .admission-editor__program-table tr,
+  .admission-editor__program-table td {
+    display: block;
+    width: 100%;
+  }
+
+  .admission-editor__program-table tbody {
+    padding: 0.35rem;
+  }
+
+  .admission-editor__program-table tr {
+    padding: 0.8rem;
+    border-bottom: 1px solid rgba(122, 33, 59, 0.08);
+  }
+
+  .admission-editor__program-table tr:last-child {
+    border-bottom: none;
+  }
+
+  .admission-editor__program-table td {
+    padding: 0.45rem 0;
+    border-bottom: none;
+  }
+
+  .admission-editor__program-table td::before {
+    content: attr(data-label);
+    display: block;
+    margin-bottom: 0.28rem;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--admissions-muted);
+  }
+
+  .admission-editor__program-row-actions,
+  .admission-editor__program-actions-head {
+    justify-content: stretch;
+    text-align: left;
+  }
+
+  .admission-editor__program-row-actions button {
+    width: 100%;
+  }
+
+  .admission-editor__program-modal {
+    width: min(100vw - 16px, 100%);
+    max-height: 96vh;
   }
 
   .admission-editor__pagination {
