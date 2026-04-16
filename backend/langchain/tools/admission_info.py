@@ -42,6 +42,7 @@ TEXTS = {
         "programs_level_doctorate": "Докторантура",
         "programs_level_second_higher": "Второе высшее",
         "programs_level_other": "Другие программы",
+        "source_label": "Источник",
         "prices_title": "Актуальные цены по обучению:",
         "not_specified": "не указано",
         "passing_scores_title": "Актуальные проходные баллы:",
@@ -84,6 +85,7 @@ TEXTS = {
         "programs_level_doctorate": "Докторантура",
         "programs_level_second_higher": "Екінші жоғары",
         "programs_level_other": "Басқа бағдарламалар",
+        "source_label": "Анықтама",
         "prices_title": "Оқу құны:",
         "not_specified": "көрсетілмеген",
         "passing_scores_title": "Өту балдары:",
@@ -126,6 +128,7 @@ TEXTS = {
         "programs_level_doctorate": "Doctorate",
         "programs_level_second_higher": "Second higher education",
         "programs_level_other": "Other programs",
+        "source_label": "Source",
         "prices_title": "Current tuition fees:",
         "not_specified": "not specified",
         "passing_scores_title": "Current passing scores:",
@@ -342,6 +345,7 @@ def get_available_programs(*, level: Optional[str] = None, language: Optional[st
                 "level": item.get("level"),
                 "duration": _resolve_localized_value(item.get("duration"), lang),
                 "gop_code": (item.get("passing_score") or {}).get("gop_code"),
+                "source": item.get("source"),
             }
         )
     return {
@@ -622,6 +626,9 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
                 gop_code = item.get("gop_code")
                 suffix = f" (GOP {gop_code})" if gop_code and lang == "en" else f" (ГОП {gop_code})" if gop_code else ""
                 lines.append(f"- {item.get('program')}{suffix}")
+                source = item.get("source")
+                if source:
+                    lines.append(f"  {_text(lang, 'source_label')}: {source}")
         return "\n".join(lines)
 
     if tool == "prices":

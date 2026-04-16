@@ -12,6 +12,13 @@ const LEVEL_OPTIONS = [
   { value: "second_higher", label: "Второе высшее" },
 ] as const;
 
+const LEVEL_LABELS: Record<string, string> = {
+  bachelor: "Бакалавриат / Bachelor",
+  master: "Магистратура / Master",
+  doctorate: "Докторантура / Doctorate",
+  second_higher: "Второе высшее / Second higher education",
+};
+
 const ADMISSION_SECTIONS = [
   { key: "general", label: "Общее" },
   { key: "contacts", label: "Контакты" },
@@ -23,9 +30,6 @@ const ADMISSION_SECTIONS = [
 
 type AdmissionSectionKey = (typeof ADMISSION_SECTIONS)[number]["key"];
 const PROGRAMS_PAGE_SIZES = [4, 6, 8, 12] as const;
-const LEVEL_LABELS: Record<string, string> = Object.fromEntries(
-  LEVEL_OPTIONS.map((option) => [option.value, option.label]),
-);
 
 function clonePayload(payload: AdmissionInfoPayload): AdmissionInfoPayload {
   return JSON.parse(JSON.stringify(payload)) as AdmissionInfoPayload;
@@ -78,6 +82,7 @@ function createEmptyProgram(): AdmissionProgram {
       exam: "",
       notes: [],
     },
+    source: "",
   };
 }
 
@@ -176,6 +181,10 @@ function ProgramEditorFields({
         <label>
           <span>Название EN</span>
           <input value={program.name_en ?? ""} onChange={(event) => updateField("name_en", event.target.value)} />
+        </label>
+        <label>
+          <span>Источник (URL)</span>
+          <input value={program.source ?? ""} onChange={(event) => updateField("source", event.target.value)} />
         </label>
       </div>
 
@@ -601,7 +610,8 @@ function ProgramsSection({
               <tr>
                 <th>Program</th>
                 <th>ID / GOP</th>
-                <th>Degree</th>
+                <th>Степень</th>
+                <th>Источник</th>
                 <th>Tuition</th>
                 <th>Passing score</th>
                 <th className="admission-editor__program-actions-head">Actions</th>
@@ -622,7 +632,16 @@ function ProgramsSection({
                       <span>{program.passing_score.gop_code || "GOP not set"}</span>
                     </div>
                   </td>
-                  <td data-label="Degree">{formatProgramLevel(program.level)}</td>
+                  <td data-label="Степень">{formatProgramLevel(program.level)}</td>
+                  <td data-label="Источник">
+                    {program.source ? (
+                      <a href={program.source} target="_blank" rel="noreferrer">
+                        {program.source}
+                      </a>
+                    ) : (
+                      "-"
+                    )}
+                  </td>
                   <td data-label="Tuition">
                     {program.tuition.amount != null
                       ? `${formatCompactNumber(program.tuition.amount)}${program.tuition.period ? ` ? ${String(program.tuition.period)}` : ""}`

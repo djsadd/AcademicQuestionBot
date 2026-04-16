@@ -230,6 +230,7 @@ export type AdmissionProgram = {
     updated_at?: string | null;
     [key: string]: unknown;
   };
+  source?: string | null;
   [key: string]: unknown;
 };
 
