@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { authStorage } from "../api/client";
 import {
   getChatHistory,
   getPublicChatHistory,
@@ -407,9 +409,22 @@ const QUICK_ACTIONS = [
   { title: "Статус заявки", prompt: "Проверь статус моей заявки и что ещё нужно предоставить." },
 ] as const;
 
+const SETTINGS_URL = "https://academiq.tau-edu.kz/#/settings";
+const PERSONALIZATION_URL = "https://academiq.tau-edu.kz/#/personalization";
+const HELP_URL = "https://academiq.tau-edu.kz/#/help";
+
+const buildUserInitials = (fullname?: string | null) => {
+  const source = fullname?.trim();
+  if (!source) return "U";
+  const parts = source.split(/\s+/).filter(Boolean).slice(0, 2);
+  if (!parts.length) return "U";
+  return parts.map((part) => part[0]?.toUpperCase() ?? "").join("") || "U";
+};
+
 export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
   const config = CHAT_VARIANTS[mode];
   const isPublicAdmission = mode === "publicAdmission";
+  const navigate = useNavigate();
   const publicSessionId = isPublicAdmission ? getPublicSessionId() : null;
   const profileConfig = isPublicAdmission ? PUBLIC_ADMISSION_PROFILE : DEFAULT_PROFILE;
   const [inputValue, setInputValue] = useState("");
@@ -422,7 +437,10 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
   const [searchValue, setSearchValue] = useState("");
   const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null);
   const [propertiesChatId, setPropertiesChatId] = useState<string | null>(null);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const userMenuRef = useRef<HTMLDivElement | null>(null);
   const highlightTimeoutRef = useRef<number | null>(null);
   const streamAbortRef = useRef<AbortController | null>(null);
   const draftSessionIdRef = useRef<string>(publicSessionId ?? createSessionId());
@@ -485,6 +503,26 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
     if (!propertiesChatId) return null;
     return chatState.chats.find((chat) => chat.id === propertiesChatId) ?? null;
   }, [chatState.chats, propertiesChatId]);
+
+  const userDisplayName = useMemo(() => {
+    const fullname = profile?.fullname?.trim();
+    if (fullname) return fullname;
+    const email = profile?.email?.trim();
+    if (email) return email;
+    return "Пользователь";
+  }, [profile?.email, profile?.fullname]);
+
+  const userMeta = useMemo(() => {
+    const status = profile?.statusName?.trim();
+    if (status) return status;
+    const email = profile?.email?.trim();
+    if (email) return email;
+    const role = profile?.role?.trim();
+    if (role) return role;
+    return "Аккаунт TAU";
+  }, [profile?.email, profile?.role, profile?.statusName]);
+
+  const userInitials = useMemo(() => buildUserInitials(profile?.fullname), [profile?.fullname]);
 
   useEffect(() => {
     if (isPublicAdmission) {
@@ -668,6 +706,31 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
     window.addEventListener("keydown", handleKeyDown, true);
     return () => window.removeEventListener("keydown", handleKeyDown, true);
   }, [propertiesChatId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (!isUserMenuOpen) return;
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node | null;
+      if (!target) return;
+      if (userMenuRef.current?.contains(target)) return;
+      setIsUserMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsUserMenuOpen(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown, true);
+    window.addEventListener("keydown", handleKeyDown, true);
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown, true);
+      window.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [isUserMenuOpen]);
 
   const replaceMessage = (chatId: string, id: string, data: Partial<ChatMessage>) => {
     setChatState((prev) => {
@@ -935,6 +998,34 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
       });
   };
 
+  const handleUserMenuAction = (callback: () => void) => {
+    setIsUserMenuOpen(false);
+    callback();
+  };
+
+  const handleOpenExternal = (url: string) => {
+    if (typeof window === "undefined") return;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const handleLogout = async () => {
+    const refreshToken = authStorage.getRefreshToken();
+    setIsLoggingOut(true);
+    setProfileError(null);
+    try {
+      if (refreshToken) {
+        await apiClient.post("/auth/logout", JSON.stringify({ refresh_token: refreshToken }));
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Logout failed.";
+      setProfileError(message);
+    } finally {
+      authStorage.clearTokens();
+      setIsLoggingOut(false);
+      navigate("/telegram-login", { replace: true });
+    }
+  };
+
   return (
     <section className="chat-shell">
       <aside className="chat-sidebar">
@@ -1028,6 +1119,75 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
               );
             })}
           </div>
+          {!isPublicAdmission ? (
+            <div className="chat-sidebar__user" ref={userMenuRef}>
+              {isUserMenuOpen ? (
+                <div className="chat-sidebar__user-menu" role="menu" aria-label="Меню пользователя">
+                  <button
+                    type="button"
+                    className="chat-sidebar__user-menu-item"
+                    role="menuitem"
+                    onClick={() => handleUserMenuAction(() => navigate("/profile"))}
+                  >
+                    Профиль
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-sidebar__user-menu-item"
+                    role="menuitem"
+                    onClick={() => handleUserMenuAction(() => handleOpenExternal(SETTINGS_URL))}
+                  >
+                    Настройки
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-sidebar__user-menu-item"
+                    role="menuitem"
+                    onClick={() => handleUserMenuAction(() => handleOpenExternal(PERSONALIZATION_URL))}
+                  >
+                    Персонализация
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-sidebar__user-menu-item"
+                    role="menuitem"
+                    onClick={() => handleUserMenuAction(() => handleOpenExternal(HELP_URL))}
+                  >
+                    Справка
+                  </button>
+                  <button
+                    type="button"
+                    className="chat-sidebar__user-menu-item chat-sidebar__user-menu-item--danger"
+                    role="menuitem"
+                    onClick={() => handleUserMenuAction(() => {
+                      void handleLogout();
+                    })}
+                    disabled={isLoggingOut}
+                  >
+                    {isLoggingOut ? "Выходим..." : "Выйти с аккаунта"}
+                  </button>
+                </div>
+              ) : null}
+              <button
+                type="button"
+                className={`chat-sidebar__user-trigger${isUserMenuOpen ? " chat-sidebar__user-trigger--open" : ""}`}
+                onClick={() => setIsUserMenuOpen((current) => !current)}
+                aria-haspopup="menu"
+                aria-expanded={isUserMenuOpen}
+              >
+                <span className="chat-sidebar__user-avatar" aria-hidden="true">{userInitials}</span>
+                <span className="chat-sidebar__user-text">
+                  <span className="chat-sidebar__user-name">{userDisplayName}</span>
+                  <span className="chat-sidebar__user-meta">{userMeta}</span>
+                </span>
+                <span className="chat-sidebar__user-caret" aria-hidden="true">
+                  <svg viewBox="0 0 24 24">
+                    <path d="M7 10l5 5 5-5" fill="none" />
+                  </svg>
+                </span>
+              </button>
+            </div>
+          ) : null}
         </div>
       </aside>
 

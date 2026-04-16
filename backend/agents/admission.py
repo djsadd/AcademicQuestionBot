@@ -126,7 +126,6 @@ APP_TEXTS: dict[str, dict[str, str]] = {
         "summary_title": "Application data:",
     },
 }
-
 APPLICATION_FIELD_ORDER = [
     "full_name",
     "iin",
