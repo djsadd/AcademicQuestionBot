@@ -242,6 +242,8 @@ export type AdmissionInfoPayload = {
   last_updated?: string | null;
   duration_rules: Record<string, unknown>;
   contacts: AdmissionContactSection;
+  scholarships?: Record<string, unknown>;
+  management?: Record<string, unknown>;
   documents: Record<string, unknown>;
   programs: AdmissionProgram[];
   [key: string]: unknown;

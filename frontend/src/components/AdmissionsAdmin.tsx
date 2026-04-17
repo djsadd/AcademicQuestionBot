@@ -22,6 +22,8 @@ const LEVEL_LABELS: Record<string, string> = {
 const ADMISSION_SECTIONS = [
   { key: "general", label: "Общее" },
   { key: "contacts", label: "Контакты" },
+  { key: "scholarships", label: "Стипендии" },
+  { key: "management", label: "Руководство" },
   { key: "programs", label: "Программы" },
   { key: "durations", label: "Сроки" },
   { key: "documents", label: "Документы" },
@@ -824,6 +826,8 @@ function AdmissionInfoEditor() {
   const [formState, setFormState] = useState<AdmissionInfoPayload | null>(null);
   const [durationRulesText, setDurationRulesText] = useState("{}");
   const [documentsText, setDocumentsText] = useState("{}");
+  const [scholarshipsText, setScholarshipsText] = useState("{}");
+  const [managementText, setManagementText] = useState("{}");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -838,6 +842,8 @@ function AdmissionInfoEditor() {
     setFormState(payload);
     setDurationRulesText(JSON.stringify(payload.duration_rules ?? {}, null, 2));
     setDocumentsText(JSON.stringify(payload.documents ?? {}, null, 2));
+    setScholarshipsText(JSON.stringify(payload.scholarships ?? {}, null, 2));
+    setManagementText(JSON.stringify(payload.management ?? {}, null, 2));
     setErrorMessage(null);
   }, [admissionInfoQuery.data]);
 
@@ -927,6 +933,8 @@ function AdmissionInfoEditor() {
     setFormState(payload);
     setDurationRulesText(JSON.stringify(payload.duration_rules ?? {}, null, 2));
     setDocumentsText(JSON.stringify(payload.documents ?? {}, null, 2));
+    setScholarshipsText(JSON.stringify(payload.scholarships ?? {}, null, 2));
+    setManagementText(JSON.stringify(payload.management ?? {}, null, 2));
     setErrorMessage(null);
     setSuccessMessage(null);
   };
@@ -946,6 +954,8 @@ function AdmissionInfoEditor() {
             note: (contact.note ?? "").trim(),
           })),
         },
+        scholarships: parseJsonSection("Блок scholarships", scholarshipsText),
+        management: parseJsonSection("Блок management", managementText),
         duration_rules: parseJsonSection("Блок duration_rules", durationRulesText),
         documents: parseJsonSection("Блок documents", documentsText),
         programs: formState.programs.map((program) => ({
@@ -990,6 +1000,24 @@ function AdmissionInfoEditor() {
         updateContacts={updateContacts}
         updateTechnicalContact={updateTechnicalContact}
         removeTechnicalContact={removeTechnicalContact}
+      />
+    );
+  } else if (section === "scholarships") {
+    content = (
+      <JsonSection
+        title="Стипендии и госгранты"
+        description="Отдельная страница для блока scholarships."
+        value={scholarshipsText}
+        onChange={setScholarshipsText}
+      />
+    );
+  } else if (section === "management") {
+    content = (
+      <JsonSection
+        title="Руководство"
+        description="Отдельная страница для блока management."
+        value={managementText}
+        onChange={setManagementText}
       />
     );
   } else if (section === "programs") {
