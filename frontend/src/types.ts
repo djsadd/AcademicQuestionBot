@@ -210,6 +210,8 @@ export type AdmissionProgram = {
   name_ru?: string | null;
   name_kk?: string | null;
   name_en?: string | null;
+  profile_subject_1?: string | null;
+  profile_subject_2?: string | null;
   aliases?: string[];
   level: string;
   duration: string;

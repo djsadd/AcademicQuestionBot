@@ -227,7 +227,20 @@ TOOL_TERMS["programs"].update(
     }
 )
 TOOL_TERMS["prices"].update({"құны", "бағасы", "оқу ақысы"})
-TOOL_TERMS["passing_scores"].update({"өту балы", "балл", "ұбт", "шекті балл"})
+TOOL_TERMS["passing_scores"].update(
+    {
+        "өту балы",
+        "балл",
+        "ұбт",
+        "шекті балл",
+        "профильный предмет",
+        "профильные предметы",
+        "предметы по специальности",
+        "какие профильные",
+        "profile subject",
+        "profile subjects",
+    }
+)
 TOOL_TERMS["documents"].update({"құжат", "құжаттар", "не керек", "қандай құжаттар керек"})
 TOOL_TERMS["contacts"].update({"байланыс", "телефон", "пошта", "мекенжай"})
 TOOL_TERMS["durations"].update({"мерзім", "ұзақтығы", "қанша жыл", "оқу мерзімі"})
@@ -350,6 +363,8 @@ def get_available_programs(*, level: Optional[str] = None, language: Optional[st
                 "program": _program_display_name(item, language=lang),
                 "level": item.get("level"),
                 "duration": _resolve_localized_value(item.get("duration"), lang),
+                "profile_subject_1": _resolve_localized_value(item.get("profile_subject_1"), lang),
+                "profile_subject_2": _resolve_localized_value(item.get("profile_subject_2"), lang),
                 "gop_code": (item.get("passing_score") or {}).get("gop_code"),
                 "source": item.get("source"),
             }
@@ -397,6 +412,8 @@ def get_passing_scores(
                 "paid": score.get("paid"),
                 "exam": _resolve_localized_value(score.get("exam"), lang),
                 "notes": _resolve_localized_value(score.get("notes") or [], lang),
+                "profile_subject_1": _resolve_localized_value(item.get("profile_subject_1"), lang),
+                "profile_subject_2": _resolve_localized_value(item.get("profile_subject_2"), lang),
                 "updated_at": score.get("updated_at") or data.get("last_updated"),
             }
         )
@@ -714,6 +731,13 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
                 gop_code = item.get("gop_code")
                 suffix = f" (GOP {gop_code})" if gop_code and lang == "en" else f" (ГОП {gop_code})" if gop_code else ""
                 lines.append(f"- {item.get('program')}{suffix}")
+                profile_subjects = _format_profile_subjects(
+                    item.get("profile_subject_1"),
+                    item.get("profile_subject_2"),
+                    language=lang,
+                )
+                if profile_subjects:
+                    lines.append(f"  {profile_subjects}")
                 source = item.get("source")
                 if source:
                     lines.append(f"  {_text(lang, 'source_label')}: {source}")
@@ -750,6 +774,13 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
             score_parts.append(_text(lang, "passing_paid", value=paid if paid is not None else _text(lang, "not_specified")))
             score_parts.append(_text(lang, "passing_exam", value=item.get("exam") or _text(lang, "not_specified")))
             line = f"- {item.get('program')} ({item.get('level')}): " + ", ".join(score_parts) + "."
+            profile_subjects = _format_profile_subjects(
+                item.get("profile_subject_1"),
+                item.get("profile_subject_2"),
+                language=lang,
+            )
+            if profile_subjects:
+                line += f" {profile_subjects}."
             notes = item.get("notes") or []
             if notes:
                 line += " " + _text(lang, "passing_notes", value=" ".join(str(note) for note in notes))
@@ -931,6 +962,27 @@ def _program_display_name(program: Dict[str, Any], language: Optional[str] = Non
         or program.get("id")
         or ""
     )
+
+
+def _format_profile_subjects(
+    subject_1: Any,
+    subject_2: Any,
+    *,
+    language: Optional[str],
+) -> str:
+    lang = normalize_language(language)
+    labels = {
+        "ru": ("Профильный предмет 1", "Профильный предмет 2"),
+        "kk": ("Бейіндік пән 1", "Бейіндік пән 2"),
+        "en": ("Profile subject 1", "Profile subject 2"),
+    }
+    left_label, right_label = labels.get(lang, labels[DEFAULT_LANGUAGE])
+    parts: List[str] = []
+    if subject_1 not in (None, "", [], {}):
+        parts.append(f"{left_label}: {subject_1}")
+    if subject_2 not in (None, "", [], {}):
+        parts.append(f"{right_label}: {subject_2}")
+    return ", ".join(parts)
 
 
 def _normalize_level(level: Optional[str]) -> Optional[str]:

@@ -66,6 +66,8 @@ function createEmptyProgram(): AdmissionProgram {
     name_ru: "",
     name_kk: "",
     name_en: "",
+    profile_subject_1: "",
+    profile_subject_2: "",
     aliases: [],
     level: "bachelor",
     duration: "",
@@ -181,6 +183,20 @@ function ProgramEditorFields({
         <label>
           <span>Название EN</span>
           <input value={program.name_en ?? ""} onChange={(event) => updateField("name_en", event.target.value)} />
+        </label>
+        <label>
+          <span>Профильный предмет 1</span>
+          <input
+            value={program.profile_subject_1 ?? ""}
+            onChange={(event) => updateField("profile_subject_1", event.target.value)}
+          />
+        </label>
+        <label>
+          <span>Профильный предмет 2</span>
+          <input
+            value={program.profile_subject_2 ?? ""}
+            onChange={(event) => updateField("profile_subject_2", event.target.value)}
+          />
         </label>
         <label>
           <span>Источник (URL)</span>
@@ -939,6 +955,8 @@ function AdmissionInfoEditor() {
           name_ru: (program.name_ru ?? "").trim(),
           name_kk: (program.name_kk ?? "").trim(),
           name_en: (program.name_en ?? "").trim(),
+          profile_subject_1: (program.profile_subject_1 ?? "").trim(),
+          profile_subject_2: (program.profile_subject_2 ?? "").trim(),
           source: (program.source ?? "").trim(),
           aliases: (program.aliases ?? []).map((item) => item.trim()).filter(Boolean),
           duration: typeof program.duration === "string" ? program.duration.trim() : program.duration,

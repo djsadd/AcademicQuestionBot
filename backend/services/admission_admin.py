@@ -113,6 +113,8 @@ def list_admission_programs_for_admin(
                     program.get("name_ru"),
                     program.get("name_kk"),
                     program.get("name_en"),
+                    program.get("profile_subject_1"),
+                    program.get("profile_subject_2"),
                     program.get("source"),
                     (program.get("passing_score") or {}).get("gop_code"),
                     *((program.get("aliases") or []) if isinstance(program.get("aliases"), list) else []),
