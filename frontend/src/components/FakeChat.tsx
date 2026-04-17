@@ -428,7 +428,6 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
   const publicSessionId = isPublicAdmission ? getPublicSessionId() : null;
   const profileConfig = isPublicAdmission ? PUBLIC_ADMISSION_PROFILE : DEFAULT_PROFILE;
   const [inputValue, setInputValue] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -746,10 +745,6 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
     });
   };
 
-  const toggleDetails = (id: string) => {
-    setExpandedId((current) => (current === id ? null : id));
-  };
-
   const focusComposer = () => {
     window.setTimeout(() => inputRef.current?.focus(), 0);
   };
@@ -777,7 +772,6 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
     highlightTimeoutRef.current = window.setTimeout(() => {
       setHighlightedChatId(null);
     }, 700);
-    setExpandedId(null);
     setInputValue("");
     focusComposer();
   };
@@ -785,7 +779,6 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
   const handleSelectChat = (chatId: string) => {
     abortStream();
     setChatState((prev) => ({ ...prev, activeChatId: chatId }));
-    setExpandedId(null);
     setOpenChatMenuId(null);
     focusComposer();
   };
@@ -1267,23 +1260,6 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
                     className={`chat-message ${message.role === "user" ? "user" : "bot"}${
                       message.status === "pending" ? " pending" : ""
                     }${message.status === "error" ? " error" : ""}`}
-                    onClick={() => {
-                      if (message.role === "bot" && message.details) {
-                        toggleDetails(message.id);
-                      }
-                    }}
-                    role={message.role === "bot" && message.details ? "button" : undefined}
-                    tabIndex={message.role === "bot" && message.details ? 0 : undefined}
-                    onKeyDown={(event) => {
-                      if (
-                        event.key === "Enter" &&
-                        message.role === "bot" &&
-                        message.details
-                      ) {
-                        event.preventDefault();
-                        toggleDetails(message.id);
-                      }
-                    }}
                   >
                     <div
                       className="chat-message__content"
@@ -1291,16 +1267,6 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
                         __html: formatMessageContent(message.content),
                       }}
                     />
-                    {message.role === "bot" && message.details ? (
-                      <div
-                        className={`chat-message__details ${
-                          expandedId === message.id ? "open" : ""
-                        }`}
-                      >
-                        <span className="chat-message__details-label">Details JSON</span>
-                        <pre>{JSON.stringify(message.details, null, 2)}</pre>
-                      </div>
-                    ) : null}
                   </article>
                 ))}
                 <div ref={messagesEndRef} />
