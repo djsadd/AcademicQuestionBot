@@ -56,6 +56,7 @@ TEXTS = {
         "passing_notes": "Примечание: {value}",
         "documents_not_found": "Документы не найдены для уровня '{level}'.",
         "durations_title": "Сроки обучения:",
+        "academic_cooperation_title": "Академическое сотрудничество:",
         "scholarships_title": "Стипендии и государственные гранты:",
         "management_title": "Руководство университета:",
         "fallback_answer": "Данные по поступлению загружены, но формат ответа для этого инструмента не настроен.",
@@ -101,6 +102,7 @@ TEXTS = {
         "passing_notes": "Ескерту: {value}",
         "documents_not_found": "'{level}' деңгейі үшін құжаттар табылмады.",
         "durations_title": "Оқу мерзімдері:",
+        "academic_cooperation_title": "Академиялық ынтымақтастық:",
         "scholarships_title": "Стипендиялар және мемлекеттік гранттар:",
         "management_title": "Университет басшылығы:",
         "fallback_answer": "Оқуға түсу деректері жүктелді, бірақ бұл құрал үшін жауап форматы бапталмаған.",
@@ -146,6 +148,7 @@ TEXTS = {
         "passing_notes": "Notes: {value}",
         "documents_not_found": "Documents not found for level '{level}'.",
         "durations_title": "Study durations:",
+        "academic_cooperation_title": "Academic cooperation:",
         "scholarships_title": "Scholarships and state grants:",
         "management_title": "University leadership:",
         "fallback_answer": "Admission data is loaded, but the response format for this tool is not configured.",
@@ -208,6 +211,22 @@ TOOL_TERMS = {
     "documents": {"документ", "справк", "что нужно", "что надо", "document", "documents"},
     "contacts": {"контакт", "телефон", "почта", "email", "адрес", "contact", "contacts", "phone", "mail"},
     "durations": {"срок", "длительность", "сколько уч", "duration", "study period", "how long"},
+    "academic_cooperation": {
+        "академическая мобильность",
+        "мобильност",
+        "внутренняя академическая мобильность",
+        "международная академическая мобильность",
+        "академическое сотрудничество",
+        "обмен",
+        "обучение по обмену",
+        "двудипломное",
+        "двудиплом",
+        "double degree",
+        "mobility",
+        "academic mobility",
+        "internal academic mobility",
+        "international academic mobility",
+    },
 }
 
 LEVEL_ALIASES["bachelor"].update({"бакалавриат", "бакалавр", "бакалаврият", "бакалавриатқа", "бакалавриатта"})
@@ -244,6 +263,16 @@ TOOL_TERMS["passing_scores"].update(
 TOOL_TERMS["documents"].update({"құжат", "құжаттар", "не керек", "қандай құжаттар керек"})
 TOOL_TERMS["contacts"].update({"байланыс", "телефон", "пошта", "мекенжай"})
 TOOL_TERMS["durations"].update({"мерзім", "ұзақтығы", "қанша жыл", "оқу мерзімі"})
+TOOL_TERMS["academic_cooperation"].update(
+    {
+        "академиялық ынтымақтастық",
+        "академиялық ұтқырлық",
+        "ұтқырл",
+        "ішкі академиялық ұтқырлық",
+        "халықаралық академиялық ұтқырлық",
+        "екі диплом",
+    }
+)
 
 
 def load_admission_data() -> Dict[str, Any]:
@@ -540,6 +569,44 @@ def get_study_durations(
     }
 
 
+def get_academic_cooperation(
+    *,
+    program: Optional[str] = None,
+    query: Optional[str] = None,
+    language: Optional[str] = None,
+) -> Dict[str, Any]:
+    data = load_admission_data()
+    if data.get("status") in {"missing_data_file", "invalid_data_file"}:
+        return data
+
+    lang = normalize_language(language)
+    cooperation = _resolve_localized_value(data.get("academic_cooperation") or {}, lang)
+    if not isinstance(cooperation, dict) or not cooperation:
+        return _not_found("academic_cooperation", data, level=None, program=program or query, language=lang)
+
+    all_programs = cooperation.get("programs") or {}
+    matched_programs = _match_academic_cooperation_programs(
+        all_programs,
+        program=program,
+        query=query,
+    )
+    results = matched_programs or [
+        {"id": key, **value}
+        for key, value in all_programs.items()
+        if isinstance(value, dict)
+    ]
+
+    return {
+        "status": "ok",
+        "tool": "academic_cooperation",
+        "language": lang,
+        "source": cooperation.get("source") or {},
+        "results": results,
+        "data_updated_at": data.get("last_updated"),
+        "source_path": _source_path(),
+    }
+
+
 def get_scholarships(*, language: Optional[str] = None) -> Dict[str, Any]:
     data = load_admission_data()
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
@@ -624,6 +691,14 @@ def detect_requested_tool(query: str) -> str:
         for term in management_terms
     ):
         return "management"
+
+    if any(
+        _term_matches_query(term, normalized_query)
+        or _normalize_text(term) in normalized_query
+        or term.casefold() in raw_query
+        for term in TOOL_TERMS["academic_cooperation"]
+    ):
+        return "academic_cooperation"
 
     for tool_name in ("programs", "documents", "contacts", "prices", "passing_scores", "durations"):
         if any(
@@ -842,6 +917,72 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
                 lines.append(f"- {item}")
         return "\n".join(lines)
 
+    if tool == "academic_cooperation":
+        lines = [_text(lang, "academic_cooperation_title")]
+        source = result.get("source") or {}
+        source_name = source.get("name")
+        source_url = source.get("url")
+        if source_name or source_url:
+            source_value = source_name or _text(lang, "not_specified")
+            if source_url:
+                source_value = f"{source_value} ({source_url})"
+            lines.append(f"{_text(lang, 'source_label')}: {source_value}")
+
+        for entry in result.get("results") or []:
+            lines.append("")
+            lines.append(str(entry.get("name") or _text(lang, "not_specified")))
+
+            description = entry.get("description")
+            if description:
+                lines.append(f"- {description}")
+
+            advantages = entry.get("advantages") or []
+            if advantages:
+                lines.append("Advantages:")
+                for item in advantages:
+                    lines.append(f"- {item}")
+
+            eligibility = entry.get("eligibility_criteria") or {}
+            if isinstance(eligibility, dict) and eligibility:
+                lines.append("Eligibility:")
+                for key, value in eligibility.items():
+                    lines.append(f"- {key}: {value}")
+
+            requirements = entry.get("requirements") or []
+            if requirements:
+                lines.append("Requirements:")
+                for item in requirements:
+                    lines.append(f"- {item}")
+
+            languages = entry.get("languages") or []
+            if languages:
+                lines.append(f"Languages: {', '.join(str(item) for item in languages)}")
+
+            duration = entry.get("duration") or []
+            if duration:
+                lines.append(f"Duration: {', '.join(str(item) for item in duration)}")
+
+            partner_universities = entry.get("partner_universities") or []
+            if partner_universities:
+                lines.append("Partner universities:")
+                for item in partner_universities:
+                    lines.append(f"- {item}")
+
+            documents = entry.get("documents") or []
+            if documents:
+                lines.append("Documents:")
+                for item in documents:
+                    lines.append(f"- {item}")
+
+            contacts = entry.get("contacts") or {}
+            if isinstance(contacts, dict) and contacts:
+                lines.append("Contacts:")
+                for key in ("address", "phone", "email", "working_hours"):
+                    value = contacts.get(key)
+                    if value:
+                        lines.append(f"- {key}: {value}")
+        return "\n".join(lines)
+
     if tool == "scholarships":
         scholarships = result.get("scholarships") or {}
         if not isinstance(scholarships, dict):
@@ -962,6 +1103,48 @@ def _program_display_name(program: Dict[str, Any], language: Optional[str] = Non
         or program.get("id")
         or ""
     )
+
+
+def _match_academic_cooperation_programs(
+    programs: Dict[str, Any],
+    *,
+    program: Optional[str],
+    query: Optional[str],
+) -> List[Dict[str, Any]]:
+    normalized_program = _normalize_text(program)
+    normalized_query = _normalize_text(query)
+    matches: List[Dict[str, Any]] = []
+
+    extra_terms = {
+        "internal_academic_mobility": {"внутренняя", "internal", "ішкі"},
+        "international_academic_mobility": {"международная", "international", "зарубеж", "халықаралық"},
+        "double_degree_program": {"двудиплом", "double degree", "екі диплом"},
+    }
+
+    for key, value in programs.items():
+        if not isinstance(value, dict):
+            continue
+
+        candidates = [
+            str(value.get("name") or ""),
+            str(key),
+            str(value.get("description") or ""),
+        ]
+        if normalized_program and not any(_program_matches(normalized_program, candidate) for candidate in candidates if candidate):
+            continue
+
+        if normalized_query and not normalized_program:
+            direct_match = any(_term_matches_query(candidate, normalized_query) for candidate in candidates if candidate)
+            extra_match = any(
+                _term_matches_query(term, normalized_query) or _normalize_text(term) in normalized_query
+                for term in extra_terms.get(key, set())
+            )
+            if not direct_match and not extra_match:
+                continue
+
+        matches.append({"id": key, **value})
+
+    return matches
 
 
 def _format_profile_subjects(

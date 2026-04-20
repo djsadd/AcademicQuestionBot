@@ -3,6 +3,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
+from ..langchain.tools.admission_info import (
+    build_context_entries,
+    detect_requested_tool,
+    format_admission_tool_result,
+    get_academic_cooperation,
+    normalize_language,
+)
 from ..rag.service import rag_service
 from .base import AgentResult, BaseAgent
 
@@ -46,6 +53,25 @@ class AcademicPolicyAgent(BaseAgent):
 
     async def run(self, payload: Dict[str, Any]) -> AgentResult:
         query = payload.get("message") or payload.get("policy") or "академическая политика"
+        language = normalize_language(payload.get("language"))
+        requested_tool = detect_requested_tool(str(query))
+        if requested_tool == "academic_cooperation":
+            result = get_academic_cooperation(query=str(query), language=language)
+            return AgentResult(
+                answer=format_admission_tool_result(result, language=language),
+                context=build_context_entries(result, language=language),
+                intent="policy",
+                citations=[
+                    {
+                        "file_name": "admission_info.json",
+                        "source_path": result.get("source_path"),
+                        "chunk_index": 0,
+                    }
+                ],
+                validation={"is_valid": True, "issues": []},
+                tool_data=result,
+            )
+
         related_context = rag_service.search(query, top_k=5, compress=True)
         guidelines = self._build_guidelines(related_context)
         citations = self._build_citations(related_context)

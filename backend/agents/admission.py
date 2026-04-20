@@ -11,6 +11,7 @@ from ..langchain.tools.admission_info import (
     extract_level,
     extract_program,
     format_admission_tool_result,
+    get_academic_cooperation,
     get_admission_contacts,
     get_available_programs,
     get_current_prices,
@@ -52,6 +53,8 @@ class AdmissionAgent(BaseAgent):
             result = get_admission_contacts(language=language)
         elif requested_tool == "durations":
             result = get_study_durations(program=program, level=level, language=language)
+        elif requested_tool == "academic_cooperation":
+            result = get_academic_cooperation(program=program, query=query, language=language)
         elif requested_tool == "scholarships":
             result = get_scholarships(language=language)
         elif requested_tool == "management":
