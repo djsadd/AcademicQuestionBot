@@ -293,20 +293,7 @@ def _synthesize_public_admission_answer(
 
 
 def _should_skip_public_admission_llm(*, tool_result: dict[str, Any], fallback_answer: str) -> bool:
-    tool_name = str(tool_result.get("tool") or "")
-    if tool_name in {
-        "programs",
-        "prices",
-        "passing_scores",
-        "documents",
-        "contacts",
-        "durations",
-        "academic_cooperation",
-        "scholarships",
-        "management",
-    }:
-        return True
-    return len((fallback_answer or "").strip()) >= 2500 or fallback_answer.count("\n") >= 25
+    return len((fallback_answer or "").strip()) >= 5000 or fallback_answer.count("\n") >= 60
 
 
 def _build_public_admission_response(

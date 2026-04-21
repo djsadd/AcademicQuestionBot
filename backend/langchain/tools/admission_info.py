@@ -1118,61 +1118,141 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
         selection_process = mobility.get("selection_process") or []
         partner_universities = mobility.get("partner_universities") or []
 
+        labels = {
+            "ru": {
+                "program_types": "Форматы",
+                "eligibility": "Кто может участвовать",
+                "financials": "Финансовые условия",
+                "deadlines": "Сроки подачи",
+                "documents": "Документы",
+                "required": "Обязательные",
+                "optional": "Дополнительные",
+                "partners": "Вузы-партнеры",
+                "selection": "Этапы отбора",
+                "contacts": "Контакты",
+                "logic": "Условия отбора",
+                "gpa": "Минимальный GPA",
+                "language": "Минимальный уровень языка",
+                "bachelor": "Бакалавриат",
+                "master": "Магистратура",
+                "covered": "Расходы студента",
+                "tuition": "Обучение",
+                "credit_transfer": "Требуется перезачет кредитов",
+            },
+            "kk": {
+                "program_types": "Форматтар",
+                "eligibility": "Қатыса алатындар",
+                "financials": "Қаржылық шарттар",
+                "deadlines": "Өтінім мерзімдері",
+                "documents": "Құжаттар",
+                "required": "Міндетті",
+                "optional": "Қосымша",
+                "partners": "Серіктес ЖОО",
+                "selection": "Іріктеу кезеңдері",
+                "contacts": "Байланыстар",
+                "logic": "Іріктеу шарттары",
+                "gpa": "Ең төмен GPA",
+                "language": "Тіл деңгейінің минимумы",
+                "bachelor": "Бакалавриат",
+                "master": "Магистратура",
+                "covered": "Студент төлейтін шығындар",
+                "tuition": "Оқу ақысы",
+                "credit_transfer": "Кредиттерді қайта есептеу қажет",
+            },
+            "en": {
+                "program_types": "Formats",
+                "eligibility": "Eligibility",
+                "financials": "Financial terms",
+                "deadlines": "Deadlines",
+                "documents": "Documents",
+                "required": "Required",
+                "optional": "Optional",
+                "partners": "Partner universities",
+                "selection": "Selection process",
+                "contacts": "Contacts",
+                "logic": "Selection logic",
+                "gpa": "Minimum GPA",
+                "language": "Minimum language level",
+                "bachelor": "Bachelor",
+                "master": "Master",
+                "covered": "Student-covered costs",
+                "tuition": "Tuition",
+                "credit_transfer": "Credit transfer required",
+            },
+        }
+        text = labels.get(lang, labels["en"])
         lines = [_text(lang, "academic_mobility_title")]
         if isinstance(program_info, dict):
             name = program_info.get("name")
             if name:
                 lines.append(str(name))
-            for key in ("university", "description", "duration"):
-                value = program_info.get(key)
-                if value:
-                    lines.append(f"- {key}: {value}")
+            university = program_info.get("university")
+            description = program_info.get("description")
+            duration = program_info.get("duration")
+            if university:
+                lines.append(f"- university: {university}")
+            if description:
+                lines.append(f"- description: {description}")
+            if duration:
+                lines.append(f"- duration: {duration}")
             types = program_info.get("types") or {}
             if isinstance(types, dict) and types:
-                lines.append("Types:")
+                lines.append(f"{text['program_types']}:")
                 for key, value in types.items():
                     lines.append(f"- {key}: {value}")
             if program_info.get("credit_transfer_required") is not None:
-                lines.append(f"- credit_transfer_required: {program_info.get('credit_transfer_required')}")
+                lines.append(f"- {text['credit_transfer']}: {program_info.get('credit_transfer_required')}")
 
         if isinstance(eligibility, dict) and eligibility:
-            lines.append("Eligibility:")
+            lines.append(f"{text['eligibility']}:")
             bachelor = eligibility.get("bachelor") or {}
             master = eligibility.get("master") or {}
             requirements = eligibility.get("requirements") or {}
             if isinstance(bachelor, dict) and bachelor:
-                lines.append(f"- bachelor: {bachelor}")
+                bachelor_parts = []
+                if bachelor.get("4_year_program"):
+                    bachelor_parts.append(f"4-year: {', '.join(str(item) for item in bachelor['4_year_program'])}")
+                if bachelor.get("5_year_program"):
+                    bachelor_parts.append(f"5-year: {', '.join(str(item) for item in bachelor['5_year_program'])}")
+                lines.append(f"- {text['bachelor']}: {'; '.join(bachelor_parts)}")
             if isinstance(master, dict) and master:
-                lines.append(f"- master: {master}")
+                master_parts = []
+                if master.get("allowed_courses"):
+                    master_parts.append(f"courses: {', '.join(str(item) for item in master['allowed_courses'])}")
+                if master.get("mode"):
+                    master_parts.append(f"mode: {master['mode']}")
+                lines.append(f"- {text['master']}: {'; '.join(master_parts)}")
             if isinstance(requirements, dict) and requirements:
-                for key, value in requirements.items():
-                    lines.append(f"- {key}: {value}")
+                if requirements.get("min_gpa") is not None:
+                    lines.append(f"- {text['gpa']}: {requirements['min_gpa']}")
+                if requirements.get("language_level_min"):
+                    lines.append(f"- {text['language']}: {requirements['language_level_min']}")
 
         if isinstance(financials, dict) and financials:
-            lines.append("Financials:")
+            lines.append(f"{text['financials']}:")
             tuition = financials.get("tuition")
             if tuition:
-                lines.append(f"- tuition: {tuition}")
+                lines.append(f"- {text['tuition']}: {tuition}")
             covered = financials.get("covered_by_student") or []
             if covered:
-                lines.append(f"- covered_by_student: {', '.join(str(item) for item in covered)}")
+                lines.append(f"- {text['covered']}: {', '.join(str(item) for item in covered)}")
 
         if isinstance(deadlines, dict) and deadlines:
-            lines.append("Deadlines:")
+            lines.append(f"{text['deadlines']}:")
             for key, value in deadlines.items():
                 lines.append(f"- {key}: {value}")
 
         if isinstance(documents, dict) and documents:
-            lines.append("Documents:")
+            lines.append(f"{text['documents']}:")
             required = documents.get("required") or []
             optional = documents.get("optional") or []
             if required:
-                lines.append(f"- required: {', '.join(str(item) for item in required)}")
+                lines.append(f"- {text['required']}: {', '.join(str(item) for item in required)}")
             if optional:
-                lines.append(f"- optional: {', '.join(str(item) for item in optional)}")
+                lines.append(f"- {text['optional']}: {', '.join(str(item) for item in optional)}")
 
         if partner_universities:
-            lines.append("Partner universities:")
+            lines.append(f"{text['partners']}:")
             for partner in partner_universities:
                 if isinstance(partner, dict):
                     name = partner.get("name") or _text(lang, "not_specified")
@@ -1188,17 +1268,17 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
                     lines.append(f"- {partner}")
 
         if selection_process:
-            lines.append("Selection process:")
+            lines.append(f"{text['selection']}:")
             for step in selection_process:
                 lines.append(f"- {step}")
 
         if isinstance(contacts, dict) and contacts:
-            lines.append("Contacts:")
+            lines.append(f"{text['contacts']}:")
             for key, value in contacts.items():
                 lines.append(f"- {key}: {value}")
         logic = mobility.get("logic") or {}
         if isinstance(logic, dict) and logic:
-            lines.append("Logic:")
+            lines.append(f"{text['logic']}:")
             for key, value in logic.items():
                 lines.append(f"- {key}: {value}")
         return "\n".join(lines)

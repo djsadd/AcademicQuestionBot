@@ -200,25 +200,7 @@ class ResponseAggregator:
         if not answer:
             return False
 
-        if len(answer) >= 2500 or answer.count("\n") >= 25:
-            return True
-
-        if not context:
-            return False
-
-        metadata = context[0].get("metadata") or {}
-        tool_name = str(metadata.get("tool") or "")
-        return tool_name in {
-            "programs",
-            "prices",
-            "passing_scores",
-            "documents",
-            "contacts",
-            "durations",
-            "academic_cooperation",
-            "scholarships",
-            "management",
-        }
+        return len(answer) >= 5000 or answer.count("\n") >= 60
 
     def _render_prompt(
         self,
