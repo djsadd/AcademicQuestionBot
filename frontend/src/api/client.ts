@@ -107,6 +107,11 @@ export const apiClient = {
       method: "PUT",
       body,
     }),
+  patch: <T>(url: string, body?: BodyInit | null) =>
+    request<T>(url, {
+      method: "PATCH",
+      body,
+    }),
   delete: <T>(url: string) =>
     request<T>(url, {
       method: "DELETE",

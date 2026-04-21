@@ -335,6 +335,36 @@ export type ChatAnalyticsUserListResponse = {
   limit: number;
 };
 
+export type AdminUser = {
+  telegram_id: number;
+  username: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  platonus_auth: boolean;
+  platonus_role: string | null;
+  platonus_person_id: string | null;
+  platonus_iin: string | null;
+  platonus_fullname: string | null;
+  platonus_status_name: string | null;
+  platonus_email: string | null;
+  platonus_birth_date: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  event_count: number;
+  session_count: number;
+  last_seen: string | null;
+};
+
+export type AdminUserListResponse = {
+  items: AdminUser[];
+  limit: number;
+};
+
+export type AdminUserRoleUpdateResponse = {
+  status: string;
+  user: AdminUser;
+};
+
 export type ChatAnalyticsEvent = {
   id: string;
   session_key: string;

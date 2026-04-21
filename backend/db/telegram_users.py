@@ -306,6 +306,115 @@ def get_user(telegram_id: int) -> dict | None:
         }
 
 
+def list_users(*, limit: int = 100) -> list[dict]:
+    safe_limit = max(1, min(limit, 500))
+
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT
+                u.telegram_id,
+                u.username,
+                u.first_name,
+                u.last_name,
+                u.platonus_auth,
+                u.platonus_role,
+                u.platonus_person_id,
+                u.platonus_iin,
+                u.platonus_fullname,
+                u.platonus_status_name,
+                u.platonus_email,
+                u.platonus_birth_date,
+                u.created_at,
+                u.updated_at,
+                COALESCE(a.event_count, 0) AS event_count,
+                COALESCE(a.session_count, 0) AS session_count,
+                a.last_seen
+            FROM telegram_users AS u
+            LEFT JOIN (
+                SELECT
+                    telegram_id,
+                    COUNT(*) AS event_count,
+                    COUNT(DISTINCT COALESCE(NULLIF(session_id, ''), id)) AS session_count,
+                    MAX(created_at) AS last_seen
+                FROM chat_analytics
+                WHERE telegram_id IS NOT NULL
+                GROUP BY telegram_id
+            ) AS a
+                ON a.telegram_id = u.telegram_id
+            ORDER BY COALESCE(a.last_seen, u.updated_at, u.created_at) DESC, u.telegram_id DESC
+            LIMIT %s;
+            """,
+            (safe_limit,),
+        )
+        rows = cursor.fetchall()
+
+    items: list[dict] = []
+    for row in rows:
+        items.append(
+            {
+                "telegram_id": row[0],
+                "username": row[1],
+                "first_name": row[2],
+                "last_name": row[3],
+                "platonus_auth": row[4],
+                "platonus_role": row[5],
+                "platonus_person_id": row[6],
+                "platonus_iin": row[7],
+                "platonus_fullname": row[8],
+                "platonus_status_name": row[9],
+                "platonus_email": row[10],
+                "platonus_birth_date": row[11],
+                "created_at": row[12].isoformat() if row[12] else None,
+                "updated_at": row[13].isoformat() if row[13] else None,
+                "event_count": row[14] or 0,
+                "session_count": row[15] or 0,
+                "last_seen": row[16].isoformat() if row[16] else None,
+            }
+        )
+    return items
+
+
+def update_user_role(telegram_id: int, role: str | None) -> dict | None:
+    normalized_role = str(role or "").strip() or None
+
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            UPDATE telegram_users
+            SET platonus_role = %s,
+                updated_at = NOW()
+            WHERE telegram_id = %s
+            RETURNING telegram_id, username, first_name, last_name, platonus_auth, platonus_role,
+                      platonus_person_id, platonus_iin, platonus_fullname, platonus_status_name,
+                      platonus_email, platonus_birth_date, created_at, updated_at;
+            """,
+            (normalized_role, telegram_id),
+        )
+        row = cursor.fetchone()
+        conn.commit()
+
+    if not row:
+        return None
+
+    return {
+        "telegram_id": row[0],
+        "username": row[1],
+        "first_name": row[2],
+        "last_name": row[3],
+        "platonus_auth": row[4],
+        "platonus_role": row[5],
+        "platonus_person_id": row[6],
+        "platonus_iin": row[7],
+        "platonus_fullname": row[8],
+        "platonus_status_name": row[9],
+        "platonus_email": row[10],
+        "platonus_birth_date": row[11],
+        "created_at": row[12].isoformat() if row[12] else None,
+        "updated_at": row[13].isoformat() if row[13] else None,
+    }
+
+
 def set_platonus_auth(
     telegram_id: int,
     value: bool,

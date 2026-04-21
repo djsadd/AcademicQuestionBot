@@ -3,9 +3,9 @@ import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from ...db import admission_applications, chat_analytics
+from ...db import admission_applications, chat_analytics, telegram_users
 from ...services.admission_admin import (
     get_data_path,
     list_admission_programs_for_admin,
@@ -19,6 +19,10 @@ from ...services.platonus_client import (
 from ...services.permissions import require_admin
 
 router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
+
+
+class UserRoleUpdatePayload(BaseModel):
+    role: str | None = None
 
 
 @router.get("/health")
@@ -112,6 +116,19 @@ async def get_chat_analytics_sessions(
 @router.get("/chat-analytics/users")
 async def get_chat_analytics_users(limit: int = 100) -> dict[str, Any]:
     return chat_analytics.list_chat_users(limit=limit)
+
+
+@router.get("/users")
+async def get_users(limit: int = 100) -> dict[str, Any]:
+    return {"items": telegram_users.list_users(limit=limit), "limit": max(1, min(limit, 500))}
+
+
+@router.put("/users/{telegram_id}/role")
+async def update_user_role(telegram_id: int, payload: UserRoleUpdatePayload) -> dict[str, Any]:
+    user = telegram_users.update_user_role(telegram_id, payload.role)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return {"status": "ok", "user": user}
 
 
 @router.get("/chat-analytics/sessions/{session_key}")

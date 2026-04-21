@@ -1,5 +1,7 @@
 import { apiClient } from "./client";
 import type {
+  AdminUserListResponse,
+  AdminUserRoleUpdateResponse,
   AdmissionApplicationListResponse,
   AdmissionInfoPayload,
   AdmissionInfoResponse,
@@ -67,6 +69,21 @@ export function fetchChatAnalyticsSessions(
 export function fetchChatAnalyticsUsers(limit = 100): Promise<ChatAnalyticsUserListResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
   return apiClient.get<ChatAnalyticsUserListResponse>(`/admin/chat-analytics/users?${params.toString()}`);
+}
+
+export function fetchAdminUsers(limit = 100): Promise<AdminUserListResponse> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return apiClient.get<AdminUserListResponse>(`/admin/users?${params.toString()}`);
+}
+
+export function updateAdminUserRole(
+  telegramId: number,
+  role: string | null,
+): Promise<AdminUserRoleUpdateResponse> {
+  return apiClient.put<AdminUserRoleUpdateResponse>(
+    `/admin/users/${telegramId}/role`,
+    JSON.stringify({ role }),
+  );
 }
 
 export function fetchChatAnalyticsSessionEvents(sessionKey: string): Promise<ChatAnalyticsEventListResponse> {
