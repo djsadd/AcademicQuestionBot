@@ -741,7 +741,7 @@ def extract_programs(
             continue
 
         best_score = 0
-        for variant in _program_candidates(program):
+        for variant in _program_candidates(program, include_topic_aliases=True):
             if not variant:
                 continue
             normalized_variant = _normalize_text(variant)
@@ -755,6 +755,9 @@ def extract_programs(
 
         seen.add(canonical_key)
         matches.append((best_score, canonical_name))
+
+    if not matches:
+        matches.extend(_match_programs_by_topics(normalized_query, source, seen))
 
     matches.sort(key=lambda item: (-item[0], item[1]))
     return [name for _, name in matches[:limit]]
@@ -782,21 +785,17 @@ def build_minimal_admission_overview(
             prices = get_current_prices(program=program_name, level=level, language=lang)
             scores = get_passing_scores(program=program_name, level=level, language=lang)
             durations = get_study_durations(program=program_name, level=level, language=lang)
-
-            block_parts = [program_name]
-            if prices.get("status") == "ok" and prices.get("results"):
-                block_parts.append(format_admission_tool_result(prices, language=lang))
-            if scores.get("status") == "ok" and scores.get("results"):
-                block_parts.append(format_admission_tool_result(scores, language=lang))
-            if durations.get("status") == "ok" and (
-                durations.get("results") or durations.get("duration_rules")
-            ):
-                block_parts.append(format_admission_tool_result(durations, language=lang))
-
-            blocks.append("\n".join(block_parts))
+            block_text, summary_item = _build_program_overview_block(
+                program_name=program_name,
+                prices=prices,
+                scores=scores,
+                durations=durations,
+                language=lang,
+            )
+            blocks.append(block_text)
             summary_items.append(
                 {
-                    "program": program_name,
+                    **summary_item,
                     "has_prices": bool(prices.get("results")),
                     "has_scores": bool(scores.get("results")),
                     "has_durations": bool(durations.get("results") or durations.get("duration_rules")),
@@ -1250,6 +1249,114 @@ def _build_compact_context_content(result: Dict[str, Any], language: Optional[st
     return format_admission_tool_result(result, language=lang)[:400]
 
 
+def _build_program_overview_block(
+    *,
+    program_name: str,
+    prices: Dict[str, Any],
+    scores: Dict[str, Any],
+    durations: Dict[str, Any],
+    language: str,
+) -> tuple[str, Dict[str, Any]]:
+    lang = normalize_language(language)
+    labels = {
+        "ru": {
+            "title": "Кратко по программе",
+            "tuition": "Стоимость",
+            "scores": "Порог / проходной балл",
+            "duration": "Срок обучения",
+            "subjects": "Профильные предметы",
+            "basis": "Основание",
+            "details": "Если нужно, могу отдельно расписать документы, гранты, формат обучения и контакты приемной комиссии.",
+        },
+        "kk": {
+            "title": "Бағдарлама бойынша қысқаша",
+            "tuition": "Оқу құны",
+            "scores": "Өту балы",
+            "duration": "Оқу мерзімі",
+            "subjects": "Бейіндік пәндер",
+            "basis": "Негізі",
+            "details": "Қажет болса, құжаттар, гранттар, оқу форматы және қабылдау комиссиясының байланыстарын бөлек көрсете аламын.",
+        },
+        "en": {
+            "title": "Program summary",
+            "tuition": "Tuition",
+            "scores": "Passing score",
+            "duration": "Duration",
+            "subjects": "Profile subjects",
+            "basis": "Basis",
+            "details": "If needed, I can also provide documents, grants, study format, and admissions contacts separately.",
+        },
+    }
+    text = labels.get(lang, labels["en"])
+
+    price_rows = _program_specific_rows(prices, program_name)
+    score_rows = _program_specific_rows(scores, program_name)
+    duration_rows = _program_specific_rows(durations, program_name)
+
+    lines = [f"{text['title']}: {program_name}"]
+    levels: List[str] = []
+
+    for item in price_rows[:3]:
+        level_value = str(item.get("level") or "")
+        if level_value and level_value not in levels:
+            levels.append(level_value)
+        amount = item.get("amount")
+        amount_text = f"{int(amount):,}".replace(",", " ") if isinstance(amount, (int, float)) else _text(lang, "not_specified")
+        period = str(item.get("period") or "").strip()
+        price_text = f"{amount_text} {item.get('currency') or 'KZT'}".strip()
+        if period:
+            price_text = f"{price_text} {period}".strip()
+        lines.append(f"- {text['tuition']} ({level_value}): {price_text}")
+
+    for item in score_rows[:3]:
+        level_value = str(item.get("level") or "")
+        if level_value and level_value not in levels:
+            levels.append(level_value)
+        score_value = item.get("grant_full")
+        if score_value is None:
+            score_value = item.get("grant")
+        if score_value is None:
+            score_value = item.get("paid")
+        score_text = str(score_value) if score_value not in (None, "") else _text(lang, "not_specified")
+        basis = str(item.get("exam") or _text(lang, "not_specified"))
+        lines.append(f"- {text['scores']} ({level_value}): {score_text}")
+        subject_parts = [
+            str(item.get("profile_subject_1") or "").strip(),
+            str(item.get("profile_subject_2") or "").strip(),
+        ]
+        subjects = ", ".join(part for part in subject_parts if part)
+        if subjects:
+            lines.append(f"- {text['subjects']}: {subjects}")
+        lines.append(f"- {text['basis']}: {basis}")
+
+    for item in duration_rows[:3]:
+        level_value = str(item.get("level") or "")
+        if level_value and level_value not in levels:
+            levels.append(level_value)
+        duration_value = str(item.get("duration") or _text(lang, "not_specified"))
+        lines.append(f"- {text['duration']} ({level_value}): {duration_value}")
+
+    lines.append(text["details"])
+    return "\n".join(lines), {
+        "program": program_name,
+        "levels": levels,
+        "price_count": len(price_rows),
+        "score_count": len(score_rows),
+        "duration_count": len(duration_rows),
+    }
+
+
+def _program_specific_rows(result: Dict[str, Any], program_name: str) -> List[Dict[str, Any]]:
+    normalized_program = _normalize_text(program_name)
+    rows = result.get("results") or []
+    matched: List[Dict[str, Any]] = []
+    for item in rows:
+        candidate = str(item.get("program") or "")
+        if _normalize_text(candidate) == normalized_program:
+            matched.append(item)
+    return matched
+
+
 def _match_programs(
     data: Dict[str, Any],
     *,
@@ -1271,7 +1378,7 @@ def _match_programs(
     return matches
 
 
-def _program_candidates(program: Dict[str, Any]) -> List[str]:
+def _program_candidates(program: Dict[str, Any], *, include_topic_aliases: bool = False) -> List[str]:
     candidates: List[Any] = [
         program.get("name"),
         program.get("name_ru"),
@@ -1283,7 +1390,8 @@ def _program_candidates(program: Dict[str, Any]) -> List[str]:
         candidates.extend(aliases)
     elif aliases is not None:
         candidates.append(aliases)
-    candidates.extend(_program_topic_aliases(program))
+    if include_topic_aliases:
+        candidates.extend(_program_topic_aliases(program))
     result: List[str] = []
     seen: set[str] = set()
     for candidate in candidates:
@@ -1361,6 +1469,41 @@ def _program_topic_aliases(program: Dict[str, Any]) -> List[str]:
         )
 
     return topic_aliases
+
+
+def _match_programs_by_topics(
+    normalized_query: str,
+    source: Dict[str, Any],
+    seen: set[str],
+) -> List[tuple[int, str]]:
+    query_words = set(normalized_query.split())
+    if not query_words:
+        return []
+
+    matches: List[tuple[int, str]] = []
+    for program in source.get("programs") or []:
+        canonical_name = _program_display_name(program)
+        canonical_key = _normalize_text(canonical_name)
+        if not canonical_name or not canonical_key or canonical_key in seen:
+            continue
+
+        topic_aliases = _program_topic_aliases(program)
+        best_score = 0
+        for alias in topic_aliases:
+            normalized_alias = _normalize_text(alias)
+            if not normalized_alias:
+                continue
+            alias_words = set(normalized_alias.split())
+            if normalized_alias in normalized_query or query_words.intersection(alias_words):
+                best_score = max(best_score, len(normalized_alias))
+
+        if best_score <= 0:
+            continue
+
+        seen.add(canonical_key)
+        matches.append((best_score, canonical_name))
+
+    return matches
 
 
 def _program_display_name(program: Dict[str, Any], language: Optional[str] = None) -> str:
