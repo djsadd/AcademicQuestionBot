@@ -2268,5 +2268,201 @@
       }
     }
   },
-  "last_updated": "2026-04-17"
+  "last_updated": "2026-04-17",
+  "academic_mobility": {
+    "program": {
+      "name": "Академическая мобильность TAU",
+      "university": "Turan-Astana University",
+      "description": "Обучение или исследовательская деятельность в другом вузе (в РК или за рубежом)",
+      "duration": "1 семестр",
+      "types": {
+        "external": "зарубежные вузы",
+        "internal": "вузы Республики Казахстан"
+      },
+      "credit_transfer_required": true
+    },
+    "eligibility": {
+      "bachelor": {
+        "4_year_program": [
+          "2",
+          "3"
+        ],
+        "5_year_program": [
+          "2",
+          "3",
+          "4"
+        ]
+      },
+      "master": {
+        "allowed_courses": [
+          "1"
+        ],
+        "mode": "очное"
+      },
+      "requirements": {
+        "min_gpa": 2.67,
+        "language_level_min": "B2"
+      }
+    },
+    "financials": {
+      "tuition": "free",
+      "covered_by_student": [
+        "перелет",
+        "проживание",
+        "питание",
+        "виза",
+        "медицинская страховка"
+      ]
+    },
+    "deadlines": {
+      "spring_semester": "2025-11-24",
+      "autumn_semester": "2026-05-01"
+    },
+    "documents": {
+      "required": [
+        "заявление",
+        "копия паспорта РК",
+        "транскрипт (заверенный ОВПО)",
+        "сертификат языка или внутренний тест",
+        "медицинская справка 072/у"
+      ],
+      "optional": [
+        "согласие родителей (если <18 лет)",
+        "справка о составе семьи",
+        "документ о сиротстве",
+        "документ об инвалидности"
+      ]
+    },
+    "partner_universities": [
+      {
+        "name": "Rzesz?w University of Technology",
+        "country": "Польша",
+        "city": "Жешув",
+        "programs": [
+          "ГМУ",
+          "Менеджмент",
+          "Переводческое дело",
+          "ВТиПО"
+        ]
+      },
+      {
+        "name": "Pomeranian Academy in S?upsk",
+        "country": "Польша",
+        "city": "Слупск",
+        "programs": [
+          "Переводческое дело",
+          "Право",
+          "ИС",
+          "Психология",
+          "Менеджмент"
+        ]
+      },
+      {
+        "name": "Kadir Has University",
+        "country": "Турция",
+        "city": "Стамбул",
+        "programs": [
+          "Международное право"
+        ]
+      },
+      {
+        "name": "Chang?an University",
+        "country": "Китай",
+        "city": "Сиань",
+        "programs": [
+          "Переводческое дело"
+        ]
+      },
+      {
+        "name": "1 Decembrie 1918 University",
+        "country": "Румыния",
+        "city": "Алба-Юлия",
+        "programs": [
+          "Учёт и аудит",
+          "Туризм",
+          "РГБ"
+        ]
+      },
+      {
+        "name": "Horizon University College",
+        "country": "ОАЭ",
+        "city": "Аджман",
+        "programs": [
+          "Маркетинг",
+          "Туризм",
+          "РГБ",
+          "ВТиПО"
+        ]
+      },
+      {
+        "name": "Nanjing Vocational University of Industry Technology",
+        "country": "Китай",
+        "city": "Нанкин",
+        "programs": [
+          "ВТиПО",
+          "ИС"
+        ]
+      },
+      {
+        "name": "Universiti Teknologi MARA (UiTM)",
+        "country": "Малайзия",
+        "city": null,
+        "programs": [
+          "РГБ",
+          "ИС",
+          "ВТиПО",
+          "Учёт и аудит"
+        ]
+      },
+      {
+        "name": "Northwest University of Political Science and Law (NWUPL)",
+        "country": "Китай",
+        "city": "Сиань",
+        "programs": [
+          "Экономика",
+          "Менеджмент",
+          "Международное право"
+        ]
+      },
+      {
+        "name": "Kodol?nyi J?nos University",
+        "country": "Венгрия",
+        "city": "Будапешт",
+        "programs": [
+          "Туризм",
+          "ИС",
+          "Менеджмент"
+        ]
+      },
+      {
+        "name": "Alt?nba? University",
+        "country": "Турция",
+        "city": "Стамбул",
+        "programs": [
+          "Менеджмент",
+          "Право",
+          "Информационные системы",
+          "Психология"
+        ]
+      }
+    ],
+    "selection_process": [
+      "сбор заявок",
+      "первичный отбор",
+      "собеседование",
+      "регистрация"
+    ],
+    "contacts": {
+      "email": "international@tau-edu.kz",
+      "address": "Корпус А, кабинет 101",
+      "website": "https://tau-edu.kz"
+    },
+    "logic": {
+      "eligibility_check": "GPA >= 2.67 AND language_level >= B2 AND course_allowed = true",
+      "deadline_logic": {
+        "spring": "2025-11-24",
+        "autumn": "2026-05-01"
+      }
+    }
+  }
 }
