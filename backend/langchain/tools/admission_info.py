@@ -719,25 +719,155 @@ def extract_level(query: str) -> Optional[str]:
     return None
 
 
-def extract_program(query: str, *, data: Optional[Dict[str, Any]] = None) -> Optional[str]:
+def extract_programs(
+    query: str,
+    *,
+    data: Optional[Dict[str, Any]] = None,
+    limit: int = 5,
+) -> List[str]:
     normalized_query = _normalize_text(query)
     if not normalized_query:
-        return None
+        return []
 
     source = data if data is not None else load_admission_data()
-    best_match: tuple[int, str] | None = None
+    matches: list[tuple[int, str]] = []
+    seen: set[str] = set()
     for program in source.get("programs") or []:
-        variants = _program_candidates(program)
-        for variant in variants:
+        canonical_name = _program_display_name(program)
+        if not canonical_name:
+            continue
+        canonical_key = _normalize_text(canonical_name)
+        if not canonical_key or canonical_key in seen:
+            continue
+
+        best_score = 0
+        for variant in _program_candidates(program):
             if not variant:
                 continue
             normalized_variant = _normalize_text(variant)
+            if not normalized_variant:
+                continue
             if _term_matches_query(normalized_variant, normalized_query):
-                score = len(normalized_variant)
-                canonical_name = _program_display_name(program)
-                if canonical_name and (best_match is None or score > best_match[0]):
-                    best_match = (score, canonical_name)
-    return best_match[1] if best_match else None
+                best_score = max(best_score, len(normalized_variant))
+
+        if best_score <= 0:
+            continue
+
+        seen.add(canonical_key)
+        matches.append((best_score, canonical_name))
+
+    matches.sort(key=lambda item: (-item[0], item[1]))
+    return [name for _, name in matches[:limit]]
+
+
+def extract_program(query: str, *, data: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    matches = extract_programs(query, data=data, limit=1)
+    return matches[0] if matches else None
+
+
+def build_minimal_admission_overview(
+    *,
+    programs: Optional[List[str]] = None,
+    level: Optional[str] = None,
+    language: Optional[str] = None,
+) -> Dict[str, Any]:
+    lang = normalize_language(language)
+    requested_programs = [item for item in (programs or []) if item]
+    supported_topics = ["programs", "prices", "passing_scores", "durations", "documents", "contacts"]
+
+    if requested_programs:
+        blocks: List[str] = []
+        summary_items: List[Dict[str, Any]] = []
+        for program_name in requested_programs:
+            prices = get_current_prices(program=program_name, level=level, language=lang)
+            scores = get_passing_scores(program=program_name, level=level, language=lang)
+            durations = get_study_durations(program=program_name, level=level, language=lang)
+
+            block_parts = [program_name]
+            if prices.get("status") == "ok" and prices.get("results"):
+                block_parts.append(format_admission_tool_result(prices, language=lang))
+            if scores.get("status") == "ok" and scores.get("results"):
+                block_parts.append(format_admission_tool_result(scores, language=lang))
+            if durations.get("status") == "ok" and (
+                durations.get("results") or durations.get("duration_rules")
+            ):
+                block_parts.append(format_admission_tool_result(durations, language=lang))
+
+            blocks.append("\n".join(block_parts))
+            summary_items.append(
+                {
+                    "program": program_name,
+                    "has_prices": bool(prices.get("results")),
+                    "has_scores": bool(scores.get("results")),
+                    "has_durations": bool(durations.get("results") or durations.get("duration_rules")),
+                }
+            )
+
+        answer = "\n\n".join(blocks)
+        return {
+            "status": "ok",
+            "tool": "overview",
+            "language": lang,
+            "answer": answer,
+            "summary": {
+                "mode": "program_details",
+                "requested_programs": requested_programs,
+                "level": _normalize_level(level),
+                "items": summary_items,
+                "supported_topics": supported_topics,
+            },
+            "source_path": _source_path(),
+        }
+
+    programs_result = get_available_programs(level=level, language=lang)
+    program_items = programs_result.get("results") or []
+    preview = [str(item.get("program")) for item in program_items[:8] if item.get("program")]
+    level_name = _normalize_level(level)
+
+    intro_map = {
+        "ru": "Даю краткий обзор без лишних данных. Если нужна конкретная специальность, напишите её название, и я отдельно подтяну стоимость, проходной балл, срок обучения и другие детали.",
+        "kk": "Артық дерексіз қысқа шолу беремін. Егер нақты мамандық керек болса, атауын жазыңыз, сонда құнын, өту балын, оқу мерзімін және басқа деректерді жеке шығарамын.",
+        "en": "Here is a short overview without extra context. If you need a specific program, send its name and I will fetch tuition, passing score, duration, and other details separately.",
+    }
+    programs_map = {
+        "ru": "Доступные специальности",
+        "kk": "Қолжетімді мамандықтар",
+        "en": "Available programs",
+    }
+    more_map = {
+        "ru": "и другие",
+        "kk": "тағы басқалары",
+        "en": "and others",
+    }
+    tools_map = {
+        "ru": "По запросу могу отдельно показать: стоимость, проходной балл, срок обучения, документы, контакты.",
+        "kk": "Сұрау бойынша мыналарды бөлек көрсете аламын: оқу құны, өту балы, оқу мерзімі, құжаттар, байланыстар.",
+        "en": "On request I can show separately: tuition, passing scores, duration, documents, contacts.",
+    }
+
+    answer_lines = [intro_map.get(lang, intro_map["en"])]
+    if preview:
+        preview_text = ", ".join(preview)
+        if len(program_items) > len(preview):
+            preview_text = f"{preview_text}, {more_map.get(lang, more_map['en'])}"
+        answer_lines.append(f"{programs_map.get(lang, programs_map['en'])}: {preview_text}.")
+    answer_lines.append(tools_map.get(lang, tools_map["en"]))
+
+    return {
+        "status": "ok",
+        "tool": "overview",
+        "language": lang,
+        "answer": "\n".join(answer_lines),
+        "summary": {
+            "mode": "catalog",
+            "level": level_name,
+            "program_count": len(program_items),
+            "programs_preview": preview,
+            "supported_topics": supported_topics,
+        },
+        "source_path": _source_path(),
+        "data_updated_at": programs_result.get("data_updated_at"),
+    }
 
 
 def format_admission_tool_result(result: Dict[str, Any], language: Optional[str] = None) -> str:
@@ -1030,7 +1160,7 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
 
 def build_context_entries(result: Dict[str, Any], language: Optional[str] = None) -> List[Dict[str, Any]]:
     lang = normalize_language(language or result.get("language"))
-    content = format_admission_tool_result(result, language=lang)
+    content = _build_compact_context_content(result, language=lang)
     return [
         {
             "content": content,
@@ -1042,6 +1172,82 @@ def build_context_entries(result: Dict[str, Any], language: Optional[str] = None
             },
         }
     ]
+
+
+def _build_compact_context_content(result: Dict[str, Any], language: Optional[str] = None) -> str:
+    lang = normalize_language(language or result.get("language"))
+    status = result.get("status")
+    if status in {"missing_data_file", "invalid_data_file", "not_found"}:
+        return format_admission_tool_result(result, language=lang)
+
+    tool = result.get("tool")
+    if tool == "overview":
+        summary = result.get("summary") or {}
+        requested_programs = summary.get("requested_programs") or []
+        preview = summary.get("programs_preview") or []
+        topics = summary.get("supported_topics") or []
+        lines = ["Admission overview."]
+        if summary.get("mode"):
+            lines.append(f"Mode: {summary['mode']}.")
+        if summary.get("level"):
+            lines.append(f"Level: {summary['level']}.")
+        if requested_programs:
+            lines.append(f"Requested programs: {', '.join(str(item) for item in requested_programs[:5])}.")
+        if preview:
+            lines.append(f"Programs preview: {', '.join(str(item) for item in preview[:6])}.")
+        if summary.get("program_count") is not None:
+            lines.append(f"Program count: {summary['program_count']}.")
+        if topics:
+            lines.append(f"Extra data can be fetched for: {', '.join(str(item) for item in topics)}.")
+        return " ".join(lines)
+
+    if tool == "programs":
+        items = [str(item.get("program")) for item in result.get("results") or [] if item.get("program")]
+        return f"Programs list. Count: {len(items)}. Sample: {', '.join(items[:6])}."
+
+    if tool == "prices":
+        items = [str(item.get("program")) for item in result.get("results") or [] if item.get("program")]
+        return f"Tuition data. Matched programs: {', '.join(items[:5])}. Result count: {len(items)}."
+
+    if tool == "passing_scores":
+        items = [str(item.get("program")) for item in result.get("results") or [] if item.get("program")]
+        return f"Passing scores data. Matched programs: {', '.join(items[:5])}. Result count: {len(items)}."
+
+    if tool == "durations":
+        items = [str(item.get("program")) for item in result.get("results") or [] if item.get("program")]
+        rules_count = len(result.get("duration_rules") or [])
+        return f"Duration data. Programs: {', '.join(items[:5])}. Rules: {rules_count}."
+
+    if tool == "documents":
+        levels = [str(item.get("level")) for item in result.get("results") or [] if item.get("level")]
+        return f"Required documents data. Levels: {', '.join(levels[:5])}."
+
+    if tool == "contacts":
+        contacts = result.get("contacts") or {}
+        phones = contacts.get("phone") or []
+        emails = contacts.get("email") or []
+        return (
+            f"Admission contacts. Phones: {len(phones)}. Emails: {len(emails)}. "
+            f"Department: {contacts.get('department') or 'Admissions Office'}."
+        )
+
+    if tool == "academic_cooperation":
+        items = [str(item.get("name")) for item in result.get("results") or [] if item.get("name")]
+        return f"Academic cooperation data. Programs: {', '.join(items[:5])}. Result count: {len(items)}."
+
+    if tool == "scholarships":
+        sections = (result.get("scholarships") or {}).get("sections") or []
+        return f"Scholarship data. Sections: {len(sections)}."
+
+    if tool == "management":
+        leadership = (result.get("management") or {}).get("leadership") or []
+        rector = ((result.get("management") or {}).get("rector") or {}).get("name")
+        return f"Management data. Rector: {rector or 'n/a'}. Leaders: {len(leadership)}."
+
+    if tool == "application_form":
+        return f"Application flow state: {result.get('status') or 'unknown'}."
+
+    return format_admission_tool_result(result, language=lang)[:400]
 
 
 def _match_programs(

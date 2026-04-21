@@ -6,10 +6,12 @@ from typing import Any, Dict
 
 from ..db import admission_applications
 from ..langchain.tools.admission_info import (
+    build_minimal_admission_overview,
     build_context_entries,
     detect_requested_tool,
     extract_level,
     extract_program,
+    extract_programs,
     format_admission_tool_result,
     get_academic_cooperation,
     get_admission_contacts,
@@ -39,6 +41,7 @@ class AdmissionAgent(BaseAgent):
         data = load_admission_data()
         level = payload.get("level") or extract_level(query)
         program = payload.get("program") or extract_program(query, data=data)
+        programs = extract_programs(query, data=data)
         requested_tool = detect_requested_tool(query)
 
         if requested_tool == "programs":
@@ -60,7 +63,7 @@ class AdmissionAgent(BaseAgent):
         elif requested_tool == "management":
             result = get_management(language=language)
         else:
-            result = _build_overview(program=program, level=level, language=language)
+            result = _build_overview(program=program, programs=programs, level=level, language=language)
 
         return AgentResult(
             answer=format_admission_tool_result(result, language=language),
@@ -70,35 +73,21 @@ class AdmissionAgent(BaseAgent):
         )
 
 
-def _build_overview(*, program: str | None, level: str | None, language: str) -> Dict[str, Any]:
-    programs = get_available_programs(level=level, language=language)
-    prices = get_current_prices(program=program, level=level, language=language)
-    scores = get_passing_scores(program=program, level=level, language=language)
-    durations = get_study_durations(program=program, level=level, language=language)
-    scholarships = get_scholarships(language=language)
-    management = get_management(language=language)
-    contacts = get_admission_contacts(language=language)
-
-    answer = "\n\n".join(
-        [
-            _app_text(language, "overview_title"),
-            format_admission_tool_result(programs, language=language),
-            format_admission_tool_result(prices, language=language),
-            format_admission_tool_result(scores, language=language),
-            format_admission_tool_result(durations, language=language),
-            format_admission_tool_result(scholarships, language=language),
-            format_admission_tool_result(management, language=language),
-            format_admission_tool_result(contacts, language=language),
-        ]
+def _build_overview(
+    *,
+    program: str | None,
+    programs: list[str] | None,
+    level: str | None,
+    language: str,
+) -> Dict[str, Any]:
+    requested_programs = [item for item in (programs or []) if item]
+    if program and program not in requested_programs:
+        requested_programs.insert(0, program)
+    return build_minimal_admission_overview(
+        programs=requested_programs,
+        level=level,
+        language=language,
     )
-    return {
-        "status": "ok",
-        "tool": "overview",
-        "language": language,
-        "answer": answer,
-        "source_path": prices.get("source_path") or contacts.get("source_path"),
-        "data_updated_at": prices.get("data_updated_at") or contacts.get("data_updated_at"),
-    }
 
 
 APP_TEXTS: dict[str, dict[str, str]] = {

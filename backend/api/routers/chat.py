@@ -13,10 +13,12 @@ from pydantic import BaseModel
 from ...db import chat_analytics
 from ...langchain.llm import llm_client
 from ...langchain.tools.admission_info import (
+    build_minimal_admission_overview,
     build_context_entries,
     detect_requested_tool,
     extract_level,
     extract_program,
+    extract_programs,
     format_admission_tool_result,
     get_academic_cooperation,
     get_admission_contacts,
@@ -55,12 +57,6 @@ class ChatPayload(BaseModel):
 PUBLIC_ADMISSION_PLAN = [
     {"agent": "admission", "description": "Admission Agent"},
 ]
-
-PUBLIC_OVERVIEW_TITLES = {
-    "ru": "Информация приемной комиссии:",
-    "kk": "Қабылдау комиссиясы туралы ақпарат:",
-    "en": "Admissions information:",
-}
 
 def _normalize_history_item(item: Any) -> dict[str, str] | None:
     if not isinstance(item, dict):
@@ -248,37 +244,6 @@ def _print_public_request(endpoint: str, request_payload: dict[str, Any]) -> Non
         print(f"[public-request] {endpoint} :: {safe_payload}", flush=True)
 
 
-def _build_public_admission_overview(*, program: str | None, level: str | None, language: str) -> dict[str, Any]:
-    programs = get_available_programs(level=level, language=language)
-    prices = get_current_prices(program=program, level=level, language=language)
-    scores = get_passing_scores(program=program, level=level, language=language)
-    durations = get_study_durations(program=program, level=level, language=language)
-    scholarships = get_scholarships(language=language)
-    management = get_management(language=language)
-    contacts = get_admission_contacts(language=language)
-
-    answer = "\n\n".join(
-        [
-            PUBLIC_OVERVIEW_TITLES.get(language, PUBLIC_OVERVIEW_TITLES["ru"]),
-            format_admission_tool_result(programs, language=language),
-            format_admission_tool_result(prices, language=language),
-            format_admission_tool_result(scores, language=language),
-            format_admission_tool_result(durations, language=language),
-            format_admission_tool_result(scholarships, language=language),
-            format_admission_tool_result(management, language=language),
-            format_admission_tool_result(contacts, language=language),
-        ]
-    )
-    return {
-        "status": "ok",
-        "tool": "overview",
-        "language": language,
-        "answer": answer,
-        "source_path": prices.get("source_path") or contacts.get("source_path"),
-        "data_updated_at": prices.get("data_updated_at") or contacts.get("data_updated_at"),
-    }
-
-
 def _synthesize_public_admission_answer(
     *,
     payload: ChatPayload,
@@ -334,6 +299,7 @@ def _build_public_admission_response(
     data = load_admission_data()
     level = extract_level(query)
     program = extract_program(query, data=data)
+    programs = extract_programs(query, data=data)
     requested_tool = detect_requested_tool(query)
 
     if requested_tool == "programs":
@@ -355,7 +321,14 @@ def _build_public_admission_response(
     elif requested_tool == "management":
         tool_result = get_management(language=language)
     else:
-        tool_result = _build_public_admission_overview(program=program, level=level, language=language)
+        requested_programs = [item for item in programs if item]
+        if program and program not in requested_programs:
+            requested_programs.insert(0, program)
+        tool_result = build_minimal_admission_overview(
+            programs=requested_programs,
+            level=level,
+            language=language,
+        )
 
     fallback_answer = format_admission_tool_result(tool_result, language=language)
     return tool_result, fallback_answer
