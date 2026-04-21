@@ -505,7 +505,7 @@
         "Economics"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1200000,
         "period": "за 1 учебный год",
@@ -528,7 +528,11 @@
         "updated_at": "2026-04-21"
       },
       "profile_subject_1": "Математика",
-      "profile_subject_2": "География"
+      "profile_subject_2": "География",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "management-bachelor",
@@ -541,7 +545,7 @@
         "Management"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1200000,
         "period": "за 1 учебный год",
@@ -564,7 +568,11 @@
         "updated_at": "2026-04-21"
       },
       "profile_subject_1": "Математика",
-      "profile_subject_2": "География"
+      "profile_subject_2": "География",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "accounting-and-audit-bachelor",
@@ -578,7 +586,7 @@
         "Accounting and Audit"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1200000,
         "period": "за 1 учебный год",
@@ -601,7 +609,11 @@
         "updated_at": "2026-04-21"
       },
       "profile_subject_1": "Математика",
-      "profile_subject_2": "География"
+      "profile_subject_2": "География",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "finance-bachelor",
@@ -614,7 +626,7 @@
         "Finance"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1200000,
         "period": "за 1 учебный год",
@@ -636,7 +648,11 @@
         "updated_at": "2026-04-21"
       },
       "profile_subject_1": "Математика",
-      "profile_subject_2": "География"
+      "profile_subject_2": "География",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "digital-marketing-bachelor",
@@ -649,7 +665,7 @@
         "Digital Marketing"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1200000,
         "period": "за 1 учебный год",
@@ -675,7 +691,11 @@
         "grant_short": 29
       },
       "profile_subject_1": "Математика",
-      "profile_subject_2": "География"
+      "profile_subject_2": "География",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "design-bachelor",
@@ -688,7 +708,7 @@
         "Design"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 5 ???; ???? ? 3 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -719,7 +739,11 @@
         "grant_short": 49
       },
       "profile_subject_1": "Творческий экзамен 1",
-      "profile_subject_2": "Творческий экзамен 2"
+      "profile_subject_2": "Творческий экзамен 2",
+      "duration_by_basis": {
+        "school": "5 ???",
+        "college": "3 ????"
+      }
     },
     {
       "id": "environment-and-interior-design-bachelor",
@@ -732,7 +756,7 @@
         "Design of Environment and Interior"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 5 ???; ???? ? 3 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -763,7 +787,11 @@
         "grant_short": 49
       },
       "profile_subject_1": "Творческий экзамен 1",
-      "profile_subject_2": "Творческий экзамен 2"
+      "profile_subject_2": "Творческий экзамен 2",
+      "duration_by_basis": {
+        "school": "5 ???",
+        "college": "3 ????"
+      }
     },
     {
       "id": "ethnodesign-bachelor",
@@ -777,7 +805,7 @@
         "Decorative Art and Ethnodesign"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 5 ???; ???? ? 3 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -808,7 +836,11 @@
         "grant_short": 49
       },
       "profile_subject_1": "Творческий экзамен 1",
-      "profile_subject_2": "Творческий экзамен 2"
+      "profile_subject_2": "Творческий экзамен 2",
+      "duration_by_basis": {
+        "school": "5 ???",
+        "college": "3 ????"
+      }
     },
     {
       "id": "directing-bachelor",
@@ -821,7 +853,7 @@
         "Directing"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -848,7 +880,11 @@
         "updated_at": "2026-04-21"
       },
       "profile_subject_1": "Творческий экзамен 1",
-      "profile_subject_2": "Творческий экзамен 2"
+      "profile_subject_2": "Творческий экзамен 2",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "philology-bachelor",
@@ -861,7 +897,7 @@
         "Philology"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -884,7 +920,11 @@
         "updated_at": "2026-04-21"
       },
       "profile_subject_1": "Язык обучения",
-      "profile_subject_2": "Литература"
+      "profile_subject_2": "Литература",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "international-law-bachelor",
@@ -897,7 +937,7 @@
         "International Law"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -919,7 +959,11 @@
         "updated_at": "2026-04-21"
       },
       "profile_subject_1": "Всемирная история",
-      "profile_subject_2": "Основы права"
+      "profile_subject_2": "Основы права",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "digital-law-bachelor",
@@ -933,7 +977,7 @@
         "Digital Law"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -955,7 +999,11 @@
         "updated_at": "2026-04-21"
       },
       "profile_subject_1": "Всемирная история",
-      "profile_subject_2": "Основы права"
+      "profile_subject_2": "Основы права",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "legal-regulation-of-economics-bachelor",
@@ -968,7 +1016,7 @@
         "Legal Regulation of Economics"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -989,7 +1037,11 @@
         "updated_at": "2026-04-16"
       },
       "profile_subject_1": "Всемирная история",
-      "profile_subject_2": "Основы права"
+      "profile_subject_2": "Основы права",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "information-systems-bachelor",
@@ -1003,7 +1055,7 @@
         "Information Systems"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -1027,7 +1079,11 @@
         "grant_short": 29
       },
       "profile_subject_1": "Математика",
-      "profile_subject_2": "Информатика"
+      "profile_subject_2": "Информатика",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "computer-engineering-and-software-bachelor",
@@ -1041,7 +1097,7 @@
         "Computer Engineering and Software"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -1065,7 +1121,11 @@
         "grant_short": 29
       },
       "profile_subject_1": "Математика",
-      "profile_subject_2": "Информатика"
+      "profile_subject_2": "Информатика",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "tourism-bachelor",
@@ -1078,7 +1138,7 @@
         "Tourism"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -1102,7 +1162,11 @@
         "grant_short": 28
       },
       "profile_subject_1": "География",
-      "profile_subject_2": "Иностранный язык"
+      "profile_subject_2": "Иностранный язык",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "hotel-and-restaurant-business-bachelor",
@@ -1116,7 +1180,7 @@
         "Hotel and Restaurant Business"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -1140,7 +1204,11 @@
         "grant_short": 26
       },
       "profile_subject_1": "География",
-      "profile_subject_2": "Иностранный язык"
+      "profile_subject_2": "Иностранный язык",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "translation-studies-bachelor",
@@ -1153,7 +1221,7 @@
         "Translation Studies"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1500000,
         "period": "за 1 учебный год",
@@ -1178,7 +1246,11 @@
         "grant_short": 50
       },
       "profile_subject_1": "Иностранный язык",
-      "profile_subject_2": "Всемирная история"
+      "profile_subject_2": "Всемирная история",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "jurisprudence-bachelor",
@@ -1192,7 +1264,7 @@
         "Law"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1500000,
         "period": "за 1 учебный год",
@@ -1214,7 +1286,11 @@
         "updated_at": "2026-04-21"
       },
       "profile_subject_1": "Всемирная история",
-      "profile_subject_2": "Основы права"
+      "profile_subject_2": "Основы права",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "psychology-bachelor",
@@ -1227,7 +1303,7 @@
         "Psychology"
       ],
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1500000,
         "period": "за 1 учебный год",
@@ -1252,7 +1328,11 @@
         "grant_short": 25
       },
       "profile_subject_1": "Биология",
-      "profile_subject_2": "География"
+      "profile_subject_2": "География",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "state-and-local-administration-bachelor",
@@ -1267,7 +1347,7 @@
       ],
       "source": "https://tau-edu.kz/specialty/ekonomika",
       "level": "bachelor",
-      "duration": "Уточняйте в приемной комиссии",
+      "duration": "?? ? 4 ????; ???? ? 3 ????.",
       "tuition": {
         "amount": 1200000,
         "period": "за 1 учебный год",
@@ -1290,7 +1370,11 @@
         "updated_at": "2026-04-21"
       },
       "profile_subject_1": "Творческий экзамен 1",
-      "profile_subject_2": "Творческий экзамен 2"
+      "profile_subject_2": "Творческий экзамен 2",
+      "duration_by_basis": {
+        "school": "4 ????",
+        "college": "3 ????"
+      }
     },
     {
       "id": "pedagogy-and-psychology-master",
@@ -1897,7 +1981,7 @@
         "Design"
       ],
       "level": "second_higher",
-      "duration": "2 года",
+      "duration": "?? ? 2 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -1918,7 +2002,10 @@
         "updated_at": "2026-04-16"
       },
       "profile_subject_1": "Творческий экзамен 1",
-      "profile_subject_2": "Творческий экзамен 2"
+      "profile_subject_2": "Творческий экзамен 2",
+      "duration_by_basis": {
+        "higher_education": "2 ????"
+      }
     },
     {
       "id": "translation-studies-second-higher",
@@ -1931,7 +2018,7 @@
         "Translation Studies"
       ],
       "level": "second_higher",
-      "duration": "2 года",
+      "duration": "?? ? 2 ????.",
       "tuition": {
         "amount": 1500000,
         "period": "за 1 учебный год",
@@ -1952,7 +2039,10 @@
         "updated_at": "2026-04-16"
       },
       "profile_subject_1": "Иностранный язык",
-      "profile_subject_2": "Всемирная история"
+      "profile_subject_2": "Всемирная история",
+      "duration_by_basis": {
+        "higher_education": "2 ????"
+      }
     },
     {
       "id": "psychology-second-higher",
@@ -1965,7 +2055,7 @@
         "Psychology"
       ],
       "level": "second_higher",
-      "duration": "2 года",
+      "duration": "?? ? 2 ????.",
       "tuition": {
         "amount": 1500000,
         "period": "за 1 учебный год",
@@ -1986,7 +2076,10 @@
         "updated_at": "2026-04-16"
       },
       "profile_subject_1": "Биология",
-      "profile_subject_2": "География"
+      "profile_subject_2": "География",
+      "duration_by_basis": {
+        "higher_education": "2 ????"
+      }
     },
     {
       "id": "management-second-higher",
@@ -1999,7 +2092,7 @@
         "Management"
       ],
       "level": "second_higher",
-      "duration": "2 года",
+      "duration": "?? ? 2 ????.",
       "tuition": {
         "amount": 1200000,
         "period": "за 1 учебный год",
@@ -2020,7 +2113,10 @@
         "updated_at": "2026-04-16"
       },
       "profile_subject_1": "Математика",
-      "profile_subject_2": "География"
+      "profile_subject_2": "География",
+      "duration_by_basis": {
+        "higher_education": "2 ????"
+      }
     },
     {
       "id": "jurisprudence-second-higher",
@@ -2034,7 +2130,7 @@
         "Law"
       ],
       "level": "second_higher",
-      "duration": "2 года",
+      "duration": "?? ? 2 ????.",
       "tuition": {
         "amount": 1500000,
         "period": "за 1 учебный год",
@@ -2055,7 +2151,10 @@
         "updated_at": "2026-04-16"
       },
       "profile_subject_1": "Всемирная история",
-      "profile_subject_2": "Основы права"
+      "profile_subject_2": "Основы права",
+      "duration_by_basis": {
+        "higher_education": "2 ????"
+      }
     },
     {
       "id": "international-law-second-higher",
@@ -2068,7 +2167,7 @@
         "International Law"
       ],
       "level": "second_higher",
-      "duration": "2 года",
+      "duration": "?? ? 2 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -2089,7 +2188,10 @@
         "updated_at": "2026-04-16"
       },
       "profile_subject_1": "Всемирная история",
-      "profile_subject_2": "Основы права"
+      "profile_subject_2": "Основы права",
+      "duration_by_basis": {
+        "higher_education": "2 ????"
+      }
     },
     {
       "id": "information-systems-second-higher",
@@ -2103,7 +2205,7 @@
         "Information Systems"
       ],
       "level": "second_higher",
-      "duration": "2 года",
+      "duration": "?? ? 2 ????.",
       "tuition": {
         "amount": 1300000,
         "period": "за 1 учебный год",
@@ -2124,7 +2226,10 @@
         "updated_at": "2026-04-16"
       },
       "profile_subject_1": "Математика",
-      "profile_subject_2": "Информатика"
+      "profile_subject_2": "Информатика",
+      "duration_by_basis": {
+        "higher_education": "2 ????"
+      }
     }
   ],
   "duration_rules": {

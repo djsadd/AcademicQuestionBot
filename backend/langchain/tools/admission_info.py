@@ -353,6 +353,53 @@ def _as_text(value: Any, language: Optional[str]) -> str:
     return str(resolved)
 
 
+def _duration_basis_labels(language: Optional[str]) -> Dict[str, str]:
+    lang = normalize_language(language)
+    labels = {
+        "ru": {
+            "school": "СО",
+            "college": "ТИПО",
+            "higher_education": "ВО",
+        },
+        "kk": {
+            "school": "ЖОБ",
+            "college": "ТжКБ",
+            "higher_education": "ЖБ",
+        },
+        "en": {
+            "school": "School",
+            "college": "College",
+            "higher_education": "Higher education",
+        },
+    }
+    return labels.get(lang, labels["ru"])
+
+
+def _format_duration_summary(
+    duration: Any,
+    duration_by_basis: Any,
+    *,
+    language: Optional[str],
+) -> str:
+    resolved_duration = _resolve_localized_value(duration, language)
+    resolved_by_basis = _resolve_localized_value(duration_by_basis, language)
+
+    if isinstance(resolved_by_basis, dict) and resolved_by_basis:
+        labels = _duration_basis_labels(language)
+        parts: List[str] = []
+        for key in ("school", "college", "higher_education"):
+            value = resolved_by_basis.get(key)
+            if value in (None, "", [], {}):
+                continue
+            parts.append(f"{labels.get(key, key)} — {value}")
+        if parts:
+            return "; ".join(parts)
+
+    if resolved_duration in (None, "", [], {}):
+        return _text(language, "not_specified")
+    return str(resolved_duration)
+
+
 def get_current_prices(
     *,
     program: Optional[str] = None,
@@ -408,6 +455,7 @@ def get_available_programs(*, level: Optional[str] = None, language: Optional[st
                 "program": _program_display_name(item, language=lang),
                 "level": item.get("level"),
                 "duration": _resolve_localized_value(item.get("duration"), lang),
+                "duration_by_basis": _resolve_localized_value(item.get("duration_by_basis"), lang),
                 "profile_subject_1": _resolve_localized_value(item.get("profile_subject_1"), lang),
                 "profile_subject_2": _resolve_localized_value(item.get("profile_subject_2"), lang),
                 "gop_code": (item.get("passing_score") or {}).get("gop_code"),
@@ -568,6 +616,7 @@ def get_study_durations(
                 "program": _program_display_name(item, language=lang),
                 "level": item.get("level"),
                 "duration": _resolve_localized_value(item.get("duration"), lang),
+                "duration_by_basis": _resolve_localized_value(item.get("duration_by_basis"), lang),
             }
         )
     return {
@@ -993,6 +1042,13 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
                 gop_code = item.get("gop_code")
                 suffix = f" (GOP {gop_code})" if gop_code and lang == "en" else f" (ГОП {gop_code})" if gop_code else ""
                 lines.append(f"- {item.get('program')}{suffix}")
+                duration_text = _format_duration_summary(
+                    item.get("duration"),
+                    item.get("duration_by_basis"),
+                    language=lang,
+                )
+                if duration_text and duration_text != _text(lang, "not_specified"):
+                    lines.append(f"  {_text(lang, 'durations_title')} {duration_text}")
                 profile_subjects = _format_profile_subjects(
                     item.get("profile_subject_1"),
                     item.get("profile_subject_2"),
@@ -1095,8 +1151,13 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
     if tool == "durations":
         lines = [_text(lang, "durations_title")]
         for item in result.get("results") or []:
+            duration_text = _format_duration_summary(
+                item.get("duration"),
+                item.get("duration_by_basis"),
+                language=lang,
+            )
             lines.append(
-                f"- {item.get('program')} ({item.get('level')}): {item.get('duration') or _text(lang, 'not_specified')}."
+                f"- {item.get('program')} ({item.get('level')}): {duration_text}."
             )
         for rule in result.get("duration_rules") or []:
             lines.append(f"{rule.get('title')}:")
@@ -1579,7 +1640,11 @@ def _build_program_overview_block(
         level_value = str(item.get("level") or "")
         if level_value and level_value not in levels:
             levels.append(level_value)
-        duration_value = str(item.get("duration") or _text(lang, "not_specified"))
+        duration_value = _format_duration_summary(
+            item.get("duration"),
+            item.get("duration_by_basis"),
+            language=lang,
+        )
         lines.append(f"- {text['duration']} ({level_value}): {duration_value}")
 
     lines.append(text["details"])
