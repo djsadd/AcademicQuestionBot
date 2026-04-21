@@ -170,6 +170,8 @@ class ResponseAggregator:
     ) -> str:
         if not llm_client.is_configured or not answers:
             return ""
+        if self._should_skip_llm_synthesis(answers=answers, context=context, citations=citations):
+            return ""
 
         formatted_prompt = self._render_prompt(
             user_payload=user_payload,
@@ -183,6 +185,40 @@ class ResponseAggregator:
             {"role": "user", "content": formatted_prompt},
         ]
         return llm_client.chat(messages)
+
+    def _should_skip_llm_synthesis(
+        self,
+        *,
+        answers: List[str],
+        context: List[Dict[str, Any]],
+        citations: List[Dict[str, Any]],
+    ) -> bool:
+        if citations or len(answers) != 1:
+            return False
+
+        answer = (answers[0] or "").strip()
+        if not answer:
+            return False
+
+        if len(answer) >= 2500 or answer.count("\n") >= 25:
+            return True
+
+        if not context:
+            return False
+
+        metadata = context[0].get("metadata") or {}
+        tool_name = str(metadata.get("tool") or "")
+        return tool_name in {
+            "programs",
+            "prices",
+            "passing_scores",
+            "documents",
+            "contacts",
+            "durations",
+            "academic_cooperation",
+            "scholarships",
+            "management",
+        }
 
     def _render_prompt(
         self,

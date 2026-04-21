@@ -15,6 +15,7 @@ class LLMClient:
         self.api_key = os.getenv("OPENAI_API_KEY")
         self.model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
         self.team = os.getenv("OPENAI_TEAM")
+        self.default_max_tokens = self._read_int_env("OPENAI_MAX_TOKENS", 1600)
         self.last_error: Optional[str] = None
 
     @property
@@ -28,7 +29,7 @@ class LLMClient:
             self.last_error = "OPENAI_API_KEY is not configured"
             return ""
         temperature = kwargs.get("temperature", 0.2)
-        max_tokens = kwargs.get("max_tokens", 600)
+        max_tokens = kwargs.get("max_tokens", self.default_max_tokens)
         payload = {
             "model": self.model,
             "messages": messages,
@@ -80,7 +81,7 @@ class LLMClient:
             return iter(())
 
         temperature = kwargs.get("temperature", 0.2)
-        max_tokens = kwargs.get("max_tokens", 600)
+        max_tokens = kwargs.get("max_tokens", self.default_max_tokens)
         payload = {
             "model": self.model,
             "messages": messages,
@@ -168,6 +169,16 @@ class LLMClient:
         if content is None:
             return ""
         return str(content).strip()
+
+    def _read_int_env(self, key: str, default: int) -> int:
+        raw_value = os.getenv(key, "").strip()
+        if not raw_value:
+            return default
+        try:
+            value = int(raw_value)
+        except ValueError:
+            return default
+        return value if value > 0 else default
 
 
 llm_client = LLMClient()

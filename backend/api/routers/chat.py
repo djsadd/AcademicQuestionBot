@@ -253,6 +253,8 @@ def _synthesize_public_admission_answer(
 ) -> tuple[str, dict[str, Any]]:
     language = normalize_language(payload.language)
     context_entries = build_context_entries(tool_result, language=language)
+    if _should_skip_public_admission_llm(tool_result=tool_result, fallback_answer=fallback_answer):
+        return fallback_answer, {"used": False, "model": None, "error": None, "raw_request": None}
     if not llm_client.is_configured:
         return fallback_answer, {"used": False, "model": None, "error": None, "raw_request": None}
 
@@ -287,6 +289,23 @@ def _synthesize_public_admission_answer(
             "plan": ["admission"],
         },
     }
+
+
+def _should_skip_public_admission_llm(*, tool_result: dict[str, Any], fallback_answer: str) -> bool:
+    tool_name = str(tool_result.get("tool") or "")
+    if tool_name in {
+        "programs",
+        "prices",
+        "passing_scores",
+        "documents",
+        "contacts",
+        "durations",
+        "academic_cooperation",
+        "scholarships",
+        "management",
+    }:
+        return True
+    return len((fallback_answer or "").strip()) >= 2500 or fallback_answer.count("\n") >= 25
 
 
 def _build_public_admission_response(
