@@ -353,29 +353,7 @@ def _as_text(value: Any, language: Optional[str]) -> str:
     return str(resolved)
 
 
-def _duration_basis_labels(language: Optional[str]) -> Dict[str, str]:
-    lang = normalize_language(language)
-    labels = {
-        "ru": {
-            "school": "СО",
-            "college": "ТИПО",
-            "higher_education": "ВО",
-        },
-        "kk": {
-            "school": "ЖОБ",
-            "college": "ТжКБ",
-            "higher_education": "ЖБ",
-        },
-        "en": {
-            "school": "School",
-            "college": "College",
-            "higher_education": "Higher education",
-        },
-    }
-    return labels.get(lang, labels["ru"])
-
-
-def _format_duration_summary(
+def _format_duration_summary_clean(
     duration: Any,
     duration_by_basis: Any,
     *,
@@ -385,7 +363,27 @@ def _format_duration_summary(
     resolved_by_basis = _resolve_localized_value(duration_by_basis, language)
 
     if isinstance(resolved_by_basis, dict) and resolved_by_basis:
-        labels = _duration_basis_labels(language)
+        labels = {
+            "ru": {
+                "school": "После школы",
+                "college": "На базе колледжа",
+                "higher_education": "Второе высшее",
+            },
+            "kk": {
+                "school": "ЖОБ",
+                "college": "ТжКБ",
+                "higher_education": "ЖБ",
+            },
+            "en": {
+                "school": "School",
+                "college": "College",
+                "higher_education": "Higher education",
+            },
+        }.get(normalize_language(language), {
+            "school": "После школы",
+            "college": "На базе колледжа",
+            "higher_education": "Второе высшее",
+        })
         parts: List[str] = []
         for key in ("school", "college", "higher_education"):
             value = resolved_by_basis.get(key)
@@ -398,6 +396,8 @@ def _format_duration_summary(
     if resolved_duration in (None, "", [], {}):
         return _text(language, "not_specified")
     return str(resolved_duration)
+
+
 
 
 def get_current_prices(
@@ -1042,7 +1042,7 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
                 gop_code = item.get("gop_code")
                 suffix = f" (GOP {gop_code})" if gop_code and lang == "en" else f" (ГОП {gop_code})" if gop_code else ""
                 lines.append(f"- {item.get('program')}{suffix}")
-                duration_text = _format_duration_summary(
+                duration_text = _format_duration_summary_clean(
                     item.get("duration"),
                     item.get("duration_by_basis"),
                     language=lang,
@@ -1151,7 +1151,7 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
     if tool == "durations":
         lines = [_text(lang, "durations_title")]
         for item in result.get("results") or []:
-            duration_text = _format_duration_summary(
+            duration_text = _format_duration_summary_clean(
                 item.get("duration"),
                 item.get("duration_by_basis"),
                 language=lang,
@@ -1640,7 +1640,7 @@ def _build_program_overview_block(
         level_value = str(item.get("level") or "")
         if level_value and level_value not in levels:
             levels.append(level_value)
-        duration_value = _format_duration_summary(
+        duration_value = _format_duration_summary_clean(
             item.get("duration"),
             item.get("duration_by_basis"),
             language=lang,
