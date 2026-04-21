@@ -1283,6 +1283,7 @@ def _program_candidates(program: Dict[str, Any]) -> List[str]:
         candidates.extend(aliases)
     elif aliases is not None:
         candidates.append(aliases)
+    candidates.extend(_program_topic_aliases(program))
     result: List[str] = []
     seen: set[str] = set()
     for candidate in candidates:
@@ -1295,6 +1296,71 @@ def _program_candidates(program: Dict[str, Any]) -> List[str]:
             seen.add(normalized)
             result.append(str(value))
     return result
+
+
+def _program_topic_aliases(program: Dict[str, Any]) -> List[str]:
+    program_text = " ".join(
+        str(value or "")
+        for value in (
+            program.get("id"),
+            program.get("name"),
+            program.get("name_ru"),
+            program.get("name_kk"),
+            program.get("name_en"),
+        )
+    )
+    normalized_text = _normalize_text(program_text)
+    if not normalized_text:
+        return []
+
+    topic_aliases: List[str] = []
+
+    if (
+        "информационные системы" in normalized_text
+        or "information systems" in normalized_text
+    ):
+        topic_aliases.extend(
+            [
+                "айти",
+                "айт",
+                "it",
+                "ит",
+                "информационные технологии",
+                "информацион",
+                "технолог",
+                "it специальности",
+                "it направления",
+                "технологии",
+                "digital technologies",
+            ]
+        )
+
+    if (
+        "вычислительная техника" in normalized_text
+        or "программное обеспечение" in normalized_text
+        or "computer engineering" in normalized_text
+        or "software" in normalized_text
+    ):
+        topic_aliases.extend(
+            [
+                "айти",
+                "айт",
+                "it",
+                "ит",
+                "информационные технологии",
+                "информацион",
+                "технолог",
+                "программирование",
+                "программир",
+                "разработка",
+                "разработк",
+                "software engineering",
+                "computer science",
+                "computer engineering",
+            ]
+        )
+
+    return topic_aliases
 
 
 def _program_display_name(program: Dict[str, Any], language: Optional[str] = None) -> str:
