@@ -62,7 +62,7 @@ class AdmissionAgent(BaseAgent):
         elif requested_tool == "academic_cooperation":
             result = get_academic_cooperation(program=program, query=query, language=language)
         elif requested_tool == "scholarships":
-            result = get_scholarships(language=language)
+            result = get_scholarships(language=language, query=query)
         elif requested_tool == "management":
             result = get_management(language=language)
         else:

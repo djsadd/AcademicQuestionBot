@@ -326,7 +326,7 @@ def _build_public_admission_response(
     elif requested_tool == "academic_cooperation":
         tool_result = get_academic_cooperation(program=program, query=query, language=language)
     elif requested_tool == "scholarships":
-        tool_result = get_scholarships(language=language)
+        tool_result = get_scholarships(language=language, query=query)
     elif requested_tool == "management":
         tool_result = get_management(language=language)
     else:

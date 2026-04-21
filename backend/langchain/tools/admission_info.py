@@ -58,7 +58,11 @@ TEXTS = {
         "durations_title": "Сроки обучения:",
         "academic_mobility_title": "Академическая мобильность:",
         "academic_cooperation_title": "Академическое сотрудничество:",
-        "scholarships_title": "Стипендии и государственные гранты:",
+        "scholarships_title": "Гранты и стипендии:",
+        "scholarships_state_grant_title": "Государственный грант и связанные стипендии:",
+        "scholarships_rector_grant_title": "Ректорский грант:",
+        "scholarships_category_missing": "Отдельная информация по {label} пока не заполнена.",
+        "scholarships_available_types": "Доступные разделы: {items}.",
         "management_title": "Руководство университета:",
         "fallback_answer": "Данные по поступлению загружены, но формат ответа для этого инструмента не настроен.",
     },
@@ -105,7 +109,11 @@ TEXTS = {
         "durations_title": "Оқу мерзімдері:",
         "academic_mobility_title": "Академиялық ұтқырлық:",
         "academic_cooperation_title": "Академиялық ынтымақтастық:",
-        "scholarships_title": "Стипендиялар және мемлекеттік гранттар:",
+        "scholarships_title": "Гранттар мен стипендиялар:",
+        "scholarships_state_grant_title": "Мемлекеттік грант және онымен байланысты стипендиялар:",
+        "scholarships_rector_grant_title": "Ректор гранты:",
+        "scholarships_category_missing": "{label} бойынша жеке ақпарат әлі толықтырылмаған.",
+        "scholarships_available_types": "Қолжетімді бөлімдер: {items}.",
         "management_title": "Университет басшылығы:",
         "fallback_answer": "Оқуға түсу деректері жүктелді, бірақ бұл құрал үшін жауап форматы бапталмаған.",
     },
@@ -152,9 +160,54 @@ TEXTS = {
         "durations_title": "Study durations:",
         "academic_mobility_title": "Academic mobility:",
         "academic_cooperation_title": "Academic cooperation:",
-        "scholarships_title": "Scholarships and state grants:",
+        "scholarships_title": "Grants and scholarships:",
+        "scholarships_state_grant_title": "State grant and related scholarships:",
+        "scholarships_rector_grant_title": "Rector's grant:",
+        "scholarships_category_missing": "Separate information for {label} has not been filled in yet.",
+        "scholarships_available_types": "Available sections: {items}.",
         "management_title": "University leadership:",
         "fallback_answer": "Admission data is loaded, but the response format for this tool is not configured.",
+    },
+}
+
+SCHOLARSHIP_TYPE_ALIASES = {
+    "state_grant": {
+        "гос грант",
+        "госгрант",
+        "государственный грант",
+        "образовательный грант",
+        "grant funding",
+        "state grant",
+        "government grant",
+        "мемлекеттік грант",
+        "білім гранты",
+    },
+    "rector_grant": {
+        "ректорский грант",
+        "грант ректора",
+        "ректор грант",
+        "rector grant",
+        "rector's grant",
+        "ректор гранты",
+    },
+}
+
+SCHOLARSHIP_TYPE_KEY_ALIASES = {
+    "state_grant": {
+        "state_grant",
+        "state",
+        "government_grant",
+        "government",
+        "gos_grant",
+        "gosgrant",
+        "grant_state",
+    },
+    "rector_grant": {
+        "rector_grant",
+        "rector",
+        "rectoral_grant",
+        "grant_rector",
+        "rectors_grant",
     },
 }
 
@@ -706,21 +759,34 @@ def get_academic_mobility(
     }
 
 
-def get_scholarships(*, language: Optional[str] = None) -> Dict[str, Any]:
+def get_scholarships(
+    *,
+    language: Optional[str] = None,
+    query: Optional[str] = None,
+) -> Dict[str, Any]:
     data = load_admission_data()
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
     lang = normalize_language(language)
     scholarships = _resolve_localized_value(data.get("scholarships") or {}, lang)
+    requested_type = detect_requested_scholarship_type(query)
+    selected_scholarships, resolved_type, available_types, missing_requested_type = _select_scholarship_payload(
+        scholarships,
+        requested_type=requested_type,
+    )
     return {
         "status": "ok",
         "tool": "scholarships",
         "language": lang,
-        "scholarships": scholarships,
+        "scholarships": selected_scholarships,
+        "scholarship_type": resolved_type,
+        "requested_scholarship_type": requested_type,
+        "available_scholarship_types": available_types,
+        "scholarship_type_missing": missing_requested_type,
         "data_updated_at": (
-            scholarships.get("updated_at")
-            if isinstance(scholarships, dict)
+            selected_scholarships.get("updated_at")
+            if isinstance(selected_scholarships, dict)
             else data.get("last_updated")
         ) or data.get("last_updated"),
         "source_path": _source_path(),
@@ -751,6 +817,7 @@ def get_management(*, language: Optional[str] = None) -> Dict[str, Any]:
 def detect_requested_tool(query: str) -> str:
     normalized_query = _normalize_text(query)
     raw_query = (query or "").casefold()
+    passing_score_priority_terms = {"проход", "балл", "ент", "score", "scores"}
     scholarship_terms = {
         "стипенд",
         "стипендия",
@@ -763,11 +830,12 @@ def detect_requested_tool(query: str) -> str:
         "stipend",
         "шәкіртақы",
     }
-    if any(
-        _term_matches_query(term, normalized_query)
-        or _normalize_text(term) in normalized_query
-        or term.casefold() in raw_query
-        for term in scholarship_terms
+    for terms in SCHOLARSHIP_TYPE_ALIASES.values():
+        scholarship_terms.update(terms)
+    if _matches_any_term(scholarship_terms, normalized_query, raw_query) and not _matches_any_term(
+        passing_score_priority_terms,
+        normalized_query,
+        raw_query,
     ):
         return "scholarships"
 
@@ -783,39 +851,28 @@ def detect_requested_tool(query: str) -> str:
         "management",
         "rector",
     }
-    if any(
-        _term_matches_query(term, normalized_query)
-        or _normalize_text(term) in normalized_query
-        or term.casefold() in raw_query
-        for term in management_terms
-    ):
+    if _matches_any_term(management_terms, normalized_query, raw_query):
         return "management"
 
-    if any(
-        _term_matches_query(term, normalized_query)
-        or _normalize_text(term) in normalized_query
-        or term.casefold() in raw_query
-        for term in TOOL_TERMS["academic_mobility"]
-    ):
+    if _matches_any_term(TOOL_TERMS["academic_mobility"], normalized_query, raw_query):
         return "academic_mobility"
 
-    if any(
-        _term_matches_query(term, normalized_query)
-        or _normalize_text(term) in normalized_query
-        or term.casefold() in raw_query
-        for term in TOOL_TERMS["academic_cooperation"]
-    ):
+    if _matches_any_term(TOOL_TERMS["academic_cooperation"], normalized_query, raw_query):
         return "academic_cooperation"
 
     for tool_name in ("programs", "documents", "contacts", "prices", "passing_scores", "durations"):
-        if any(
-            _term_matches_query(term, normalized_query)
-            or _normalize_text(term) in normalized_query
-            or term.casefold() in raw_query
-            for term in TOOL_TERMS[tool_name]
-        ):
+        if _matches_any_term(TOOL_TERMS[tool_name], normalized_query, raw_query):
             return tool_name
     return "overview"
+
+
+def detect_requested_scholarship_type(query: Optional[str]) -> Optional[str]:
+    normalized_query = _normalize_text(query)
+    raw_query = (query or "").casefold()
+    for scholarship_type, terms in SCHOLARSHIP_TYPE_ALIASES.items():
+        if _matches_any_term(terms, normalized_query, raw_query):
+            return scholarship_type
+    return None
 
 
 def extract_level(query: str) -> Optional[str]:
@@ -1415,15 +1472,41 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
         if not isinstance(scholarships, dict):
             return str(scholarships or _text(lang, "not_specified"))
 
-        lines = [_text(lang, "scholarships_title")]
-        for section in scholarships.get("sections") or []:
-            title = section.get("title")
-            if title:
-                lines.append(title)
-            for note in section.get("notes") or []:
-                lines.append(f"- {note}")
-            for item in section.get("items") or []:
-                lines.append(f"- {item}")
+        scholarship_type = result.get("scholarship_type")
+        title_key = {
+            "state_grant": "scholarships_state_grant_title",
+            "rector_grant": "scholarships_rector_grant_title",
+        }.get(scholarship_type, "scholarships_title")
+        lines = [_text(lang, title_key)]
+
+        if result.get("scholarship_type_missing") and scholarship_type:
+            lines.append(
+                _text(
+                    lang,
+                    "scholarships_category_missing",
+                    label=_scholarship_type_label(scholarship_type, language=lang),
+                )
+            )
+            available_types = result.get("available_scholarship_types") or []
+            if available_types:
+                available_labels = ", ".join(
+                    _scholarship_type_label(str(item), language=lang)
+                    for item in available_types
+                )
+                lines.append(_text(lang, "scholarships_available_types", items=available_labels))
+            return "\n".join(lines)
+
+        categories = _extract_scholarship_categories(scholarships)
+        if categories and not scholarship_type:
+            for category_type in ("state_grant", "rector_grant"):
+                category = categories.get(category_type)
+                if not category:
+                    continue
+                lines.append(_scholarship_type_label(category_type, language=lang))
+                _append_scholarship_sections(lines, category)
+            return "\n".join(lines)
+
+        _append_scholarship_sections(lines, scholarships)
         return "\n".join(lines)
 
     if tool == "management":
@@ -1543,7 +1626,8 @@ def _build_compact_context_content(result: Dict[str, Any], language: Optional[st
 
     if tool == "scholarships":
         sections = (result.get("scholarships") or {}).get("sections") or []
-        return f"Scholarship data. Sections: {len(sections)}."
+        scholarship_type = result.get("scholarship_type") or "all"
+        return f"Scholarship data. Type: {scholarship_type}. Sections: {len(sections)}."
 
     if tool == "management":
         leadership = (result.get("management") or {}).get("leadership") or []
@@ -1926,6 +2010,113 @@ def _format_profile_subjects(
     if subject_2 not in (None, "", [], {}):
         parts.append(f"{right_label}: {subject_2}")
     return ", ".join(parts)
+
+
+def _matches_any_term(terms: set[str], normalized_query: str, raw_query: str) -> bool:
+    return any(
+        _term_matches_query(term, normalized_query)
+        or _normalize_text(term) in normalized_query
+        or term.casefold() in raw_query
+        for term in terms
+    )
+
+
+def _extract_scholarship_categories(scholarships: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    if not isinstance(scholarships, dict):
+        return {}
+
+    categories = scholarships.get("categories")
+    source = categories if isinstance(categories, dict) else scholarships
+    extracted: Dict[str, Dict[str, Any]] = {}
+    for scholarship_type, aliases in SCHOLARSHIP_TYPE_KEY_ALIASES.items():
+        for alias in aliases:
+            entry = source.get(alias)
+            normalized_entry = _normalize_scholarship_entry(entry)
+            if normalized_entry is None:
+                continue
+            extracted[scholarship_type] = normalized_entry
+            break
+
+    if "state_grant" not in extracted:
+        legacy_sections = scholarships.get("sections")
+        if isinstance(legacy_sections, list) and legacy_sections:
+            extracted["state_grant"] = {"sections": legacy_sections}
+    return extracted
+
+
+def _normalize_scholarship_entry(entry: Any) -> Optional[Dict[str, Any]]:
+    if isinstance(entry, dict):
+        return dict(entry)
+    if isinstance(entry, list):
+        return {"sections": entry}
+    return None
+
+
+def _select_scholarship_payload(
+    scholarships: Any,
+    *,
+    requested_type: Optional[str],
+) -> tuple[Dict[str, Any], Optional[str], List[str], bool]:
+    normalized = _normalize_scholarship_entry(scholarships) or {}
+    categories = _extract_scholarship_categories(normalized)
+    available_types = list(categories.keys())
+
+    if requested_type:
+        if categories:
+            selected = categories.get(requested_type)
+            if selected is not None:
+                return selected, requested_type, available_types, False
+            return {"sections": []}, requested_type, available_types, True
+
+        inferred_type = _infer_scholarship_type(normalized)
+        if inferred_type == requested_type or (inferred_type is None and requested_type == "state_grant"):
+            fallback_types = [inferred_type] if inferred_type else (["state_grant"] if normalized else [])
+            return normalized, requested_type, fallback_types, False
+        return {"sections": []}, requested_type, [inferred_type] if inferred_type else [], True
+
+    return normalized, None, available_types, False
+
+
+def _infer_scholarship_type(scholarships: Dict[str, Any]) -> Optional[str]:
+    chunks: List[str] = []
+    for section in scholarships.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        for key in ("title", "notes", "items"):
+            value = section.get(key)
+            if isinstance(value, list):
+                chunks.extend(str(item) for item in value)
+            elif value:
+                chunks.append(str(value))
+    haystack = _normalize_text(" ".join(chunks))
+    for scholarship_type, terms in SCHOLARSHIP_TYPE_ALIASES.items():
+        if any(_normalize_text(term) in haystack for term in terms):
+            return scholarship_type
+    return None
+
+
+def _append_scholarship_sections(lines: List[str], scholarships: Dict[str, Any]) -> None:
+    for section in scholarships.get("sections") or []:
+        if not isinstance(section, dict):
+            continue
+        title = section.get("title")
+        if title:
+            lines.append(str(title))
+        for note in section.get("notes") or []:
+            lines.append(f"- {note}")
+        for item in section.get("items") or []:
+            lines.append(f"- {item}")
+
+
+def _scholarship_type_label(scholarship_type: str, *, language: Optional[str]) -> str:
+    lang = normalize_language(language)
+    label_key = {
+        "state_grant": "scholarships_state_grant_title",
+        "rector_grant": "scholarships_rector_grant_title",
+    }.get(scholarship_type)
+    if not label_key:
+        return scholarship_type
+    return _text(lang, label_key).rstrip(":")
 
 
 def _normalize_level(level: Optional[str]) -> Optional[str]:
