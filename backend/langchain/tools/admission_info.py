@@ -1076,46 +1076,15 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
 
     tool = result.get("tool")
     if tool == "programs":
-        grouped: Dict[str, List[Dict[str, Any]]] = {}
-        for item in result.get("results") or []:
-            level = str(item.get("level") or "other")
-            grouped.setdefault(level, []).append(item)
-
-        level_titles = {
-            "bachelor": _text(lang, "programs_level_bachelor"),
-            "master": _text(lang, "programs_level_master"),
-            "doctorate": _text(lang, "programs_level_doctorate"),
-            "second_higher": _text(lang, "programs_level_second_higher"),
-            "other": _text(lang, "programs_level_other"),
-        }
-
         lines = [_text(lang, "programs_title")]
-        for level in ("bachelor", "master", "doctorate", "second_higher", "other"):
-            items = grouped.get(level) or []
-            if not items:
+        seen_programs: set[str] = set()
+        for item in result.get("results") or []:
+            program_name = str(item.get("program") or "").strip()
+            normalized_name = _normalize_text(program_name)
+            if not normalized_name or normalized_name in seen_programs:
                 continue
-            lines.append(f"{level_titles.get(level, level)}:")
-            for item in items:
-                gop_code = item.get("gop_code")
-                suffix = f" (GOP {gop_code})" if gop_code and lang == "en" else f" (ГОП {gop_code})" if gop_code else ""
-                lines.append(f"- {item.get('program')}{suffix}")
-                duration_text = _format_duration_summary_clean(
-                    item.get("duration"),
-                    item.get("duration_by_basis"),
-                    language=lang,
-                )
-                if duration_text and duration_text != _text(lang, "not_specified"):
-                    lines.append(f"  {_text(lang, 'durations_title')} {duration_text}")
-                profile_subjects = _format_profile_subjects(
-                    item.get("profile_subject_1"),
-                    item.get("profile_subject_2"),
-                    language=lang,
-                )
-                if profile_subjects:
-                    lines.append(f"  {profile_subjects}")
-                source = item.get("source")
-                if source:
-                    lines.append(f"  {_text(lang, 'source_label')}: {source}")
+            seen_programs.add(normalized_name)
+            lines.append(f"- {program_name}")
         return "\n".join(lines)
 
     if tool == "prices":
