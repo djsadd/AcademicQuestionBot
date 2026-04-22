@@ -934,6 +934,35 @@ def extract_program(query: str, *, data: Optional[Dict[str, Any]] = None) -> Opt
     return matches[0] if matches else None
 
 
+def extract_programs_with_history(
+    query: str,
+    *,
+    history: Any = None,
+    data: Optional[Dict[str, Any]] = None,
+    limit: int = 5,
+) -> List[str]:
+    source = data if data is not None else load_admission_data()
+    current_matches = extract_programs(query, data=source, limit=limit)
+    if current_matches:
+        return current_matches
+
+    for roles in ({"user"}, {"assistant"}):
+        history_matches = _extract_programs_from_history(history, data=source, roles=roles, limit=limit)
+        if history_matches:
+            return history_matches
+    return []
+
+
+def extract_program_with_history(
+    query: str,
+    *,
+    history: Any = None,
+    data: Optional[Dict[str, Any]] = None,
+) -> Optional[str]:
+    matches = extract_programs_with_history(query, history=history, data=data, limit=1)
+    return matches[0] if matches else None
+
+
 def build_minimal_admission_overview(
     *,
     programs: Optional[List[str]] = None,
@@ -1534,6 +1563,8 @@ def _build_compact_context_content(result: Dict[str, Any], language: Optional[st
     tool = result.get("tool")
     if tool == "overview":
         summary = result.get("summary") or {}
+        if summary.get("mode") == "program_details" and result.get("answer"):
+            return str(result.get("answer"))
         requested_programs = summary.get("requested_programs") or []
         preview = summary.get("programs_preview") or []
         topics = summary.get("supported_topics") or []
@@ -1905,6 +1936,42 @@ def _match_programs_by_topics(
         seen.add(canonical_key)
         matches.append((best_score, canonical_name))
 
+    return matches
+
+
+def _extract_programs_from_history(
+    history: Any,
+    *,
+    data: Dict[str, Any],
+    roles: set[str],
+    limit: int,
+) -> List[str]:
+    if not isinstance(history, list):
+        return []
+
+    matches: List[str] = []
+    seen: set[str] = set()
+    for item in reversed(history[-12:]):
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "").strip().lower()
+        if role == "bot":
+            role = "assistant"
+        if role not in roles:
+            continue
+
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+
+        for program_name in extract_programs(content, data=data, limit=limit):
+            normalized_name = _normalize_text(program_name)
+            if not normalized_name or normalized_name in seen:
+                continue
+            seen.add(normalized_name)
+            matches.append(program_name)
+            if len(matches) >= limit:
+                return matches
     return matches
 
 

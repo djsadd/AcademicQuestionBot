@@ -17,8 +17,8 @@ from ...langchain.tools.admission_info import (
     build_context_entries,
     detect_requested_tool,
     extract_level,
-    extract_program,
-    extract_programs,
+    extract_program_with_history,
+    extract_programs_with_history,
     format_admission_tool_result,
     get_academic_mobility,
     get_academic_cooperation,
@@ -295,7 +295,10 @@ def _synthesize_public_admission_answer(
 
 
 def _should_skip_public_admission_llm(*, tool_result: dict[str, Any], fallback_answer: str) -> bool:
-    return tool_result.get("tool") == "application_form"
+    if tool_result.get("tool") == "application_form":
+        return True
+    summary = tool_result.get("summary") or {}
+    return tool_result.get("tool") == "overview" and summary.get("mode") == "program_details"
 
 
 def _build_public_admission_response(
@@ -307,8 +310,8 @@ def _build_public_admission_response(
     language = normalize_language(payload.language)
     data = load_admission_data()
     level = extract_level(query)
-    program = extract_program(query, data=data)
-    programs = extract_programs(query, data=data)
+    program = extract_program_with_history(query, history=history, data=data)
+    programs = extract_programs_with_history(query, history=history, data=data)
     requested_tool = detect_requested_tool(query)
     force_ai_answer = _should_force_grant_ai_answer(query)
 
