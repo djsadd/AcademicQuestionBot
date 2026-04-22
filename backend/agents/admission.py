@@ -76,36 +76,20 @@ class AdmissionAgent(BaseAgent):
 
         context_entries = build_context_entries(result, language=language)
         fallback_answer = format_admission_tool_result(result, language=language)
-        if _should_use_admission_ai_answer(tool_result=result, fallback_answer=fallback_answer):
-            ai_answer = _generate_admission_ai_answer(
-                query=query,
-                history=payload.get("history"),
-                context_entries=context_entries,
-                language=language,
-                grant_only=force_ai_answer,
-            )
-            if ai_answer:
-                return AgentResult(
-                    answer=ai_answer,
-                    intent="admission",
-                    tool_data=result,
-                    context=context_entries,
-                    direct_response=True,
-                )
-            if force_ai_answer:
-                return AgentResult(
-                    answer=_grant_ai_unavailable_message(language),
-                    intent="admission",
-                    tool_data=result,
-                    context=context_entries,
-                    direct_response=True,
-                )
-
+        answer = _render_admission_answer(
+            query=query,
+            history=payload.get("history"),
+            result=result,
+            language=language,
+            fallback_answer=fallback_answer,
+            grant_only=force_ai_answer,
+        )
         return AgentResult(
-            answer=fallback_answer,
+            answer=answer,
             intent="admission",
             tool_data=result,
             context=context_entries,
+            direct_response=llm_client.is_configured,
         )
 
 
@@ -181,11 +165,6 @@ def _generate_grant_ai_answer(
 
 
 def _should_use_admission_ai_answer(*, tool_result: dict[str, Any], fallback_answer: str) -> bool:
-    if tool_result.get("tool") == "application_form":
-        return False
-    summary = tool_result.get("summary") or {}
-    if tool_result.get("tool") == "overview" and summary.get("mode") == "program_details":
-        return False
     return llm_client.is_configured
 
 
@@ -212,6 +191,32 @@ def _generate_admission_ai_answer(
         {"role": "user", "content": prompt},
     ]
     return llm_client.chat(messages).strip()
+
+
+def _render_admission_answer(
+    *,
+    query: str,
+    history: Any,
+    result: dict[str, Any],
+    language: str,
+    fallback_answer: str | None = None,
+    grant_only: bool = False,
+) -> str:
+    context_entries = build_context_entries(result, language=language)
+    resolved_fallback = fallback_answer or format_admission_tool_result(result, language=language)
+    if not llm_client.is_configured:
+        return _grant_ai_unavailable_message(language) if grant_only else resolved_fallback
+
+    ai_answer = _generate_admission_ai_answer(
+        query=query,
+        history=history,
+        context_entries=context_entries,
+        language=language,
+        grant_only=grant_only,
+    )
+    if ai_answer:
+        return ai_answer
+    return _grant_ai_unavailable_message(language) if grant_only else resolved_fallback
 
 
 def _build_admission_ai_prompt(
@@ -430,7 +435,13 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str, language
             "answer": _app_text(language, "already_saved"),
         }
         return AgentResult(
-            answer=result["answer"],
+            answer=_render_admission_answer(
+                query=query,
+                history=history,
+                result=result,
+                language=language,
+                fallback_answer=result["answer"],
+            ),
             intent="admission",
             tool_data=result,
             context=build_context_entries(result, language=language),
@@ -453,7 +464,13 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str, language
             "answer": answer,
         }
         return AgentResult(
-            answer=answer,
+            answer=_render_admission_answer(
+                query=query,
+                history=history,
+                result=result,
+                language=language,
+                fallback_answer=answer,
+            ),
             intent="admission",
             tool_data=result,
             context=build_context_entries(result, language=language),
@@ -475,7 +492,13 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str, language
             "answer": answer,
         }
         return AgentResult(
-            answer=answer,
+            answer=_render_admission_answer(
+                query=query,
+                history=history,
+                result=result,
+                language=language,
+                fallback_answer=answer,
+            ),
             intent="admission",
             tool_data=result,
             context=build_context_entries(result, language=language),
@@ -493,7 +516,13 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str, language
             "answer": answer,
         }
         return AgentResult(
-            answer=answer,
+            answer=_render_admission_answer(
+                query=query,
+                history=history,
+                result=result,
+                language=language,
+                fallback_answer=answer,
+            ),
             intent="admission",
             tool_data=result,
             context=build_context_entries(result, language=language),
@@ -510,7 +539,13 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str, language
             "answer": answer,
         }
         return AgentResult(
-            answer=answer,
+            answer=_render_admission_answer(
+                query=query,
+                history=history,
+                result=result,
+                language=language,
+                fallback_answer=answer,
+            ),
             intent="admission",
             tool_data=result,
             context=build_context_entries(result, language=language),
@@ -552,7 +587,13 @@ def _maybe_handle_application_flow(payload: Dict[str, Any], query: str, language
         "answer": answer,
     }
     return AgentResult(
-        answer=answer,
+        answer=_render_admission_answer(
+            query=query,
+            history=history,
+            result=result,
+            language=language,
+            fallback_answer=answer,
+        ),
         intent="admission",
         tool_data=result,
         context=build_context_entries(result, language=language),

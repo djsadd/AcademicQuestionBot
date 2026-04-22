@@ -295,10 +295,7 @@ def _synthesize_public_admission_answer(
 
 
 def _should_skip_public_admission_llm(*, tool_result: dict[str, Any], fallback_answer: str) -> bool:
-    if tool_result.get("tool") == "application_form":
-        return True
-    summary = tool_result.get("summary") or {}
-    return tool_result.get("tool") == "overview" and summary.get("mode") == "program_details"
+    return False
 
 
 def _build_public_admission_response(
