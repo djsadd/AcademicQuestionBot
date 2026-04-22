@@ -20,6 +20,7 @@ from ...langchain.tools.admission_info import (
     extract_program_with_history,
     extract_programs_with_history,
     format_admission_tool_result,
+    get_admission_address,
     get_academic_mobility,
     get_academic_cooperation,
     get_admission_contacts,
@@ -320,6 +321,8 @@ def _build_public_admission_response(
         tool_result = get_passing_scores(program=program, level=level, language=language)
     elif requested_tool == "documents":
         tool_result = get_required_documents(level=level, language=language)
+    elif requested_tool == "address":
+        tool_result = get_admission_address(language=language)
     elif requested_tool == "contacts":
         tool_result = get_admission_contacts(language=language)
     elif requested_tool == "durations":

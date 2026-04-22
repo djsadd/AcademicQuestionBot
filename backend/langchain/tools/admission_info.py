@@ -26,6 +26,8 @@ TEXTS = {
         "contacts_department_fallback": "Приемная комиссия",
         "contacts_postal_address": "Почтовый адрес:",
         "contacts_address": "Адрес: {value}",
+        "address_title": "Адрес приемной комиссии:",
+        "address_missing": "Адрес приемной комиссии не указан.",
         "contacts_bachelor": "Бакалавриат:",
         "contacts_graduate": "Магистратура и докторантура:",
         "contacts_schedule": "График работы: {value}",
@@ -77,6 +79,8 @@ TEXTS = {
         "contacts_department_fallback": "Қабылдау комиссиясы",
         "contacts_postal_address": "Пошта мекенжайы:",
         "contacts_address": "Мекенжайы: {value}",
+        "address_title": "Қабылдау комиссиясының мекенжайы:",
+        "address_missing": "Қабылдау комиссиясының мекенжайы көрсетілмеген.",
         "contacts_bachelor": "Бакалавриат:",
         "contacts_graduate": "Магистратура және докторантура:",
         "contacts_schedule": "Жұмыс кестесі: {value}",
@@ -128,6 +132,8 @@ TEXTS = {
         "contacts_department_fallback": "Admissions Office",
         "contacts_postal_address": "Postal address:",
         "contacts_address": "Address: {value}",
+        "address_title": "Admissions office address:",
+        "address_missing": "The admissions office address is not specified.",
         "contacts_bachelor": "Bachelor programs:",
         "contacts_graduate": "Master's and doctoral programs:",
         "contacts_schedule": "Working hours: {value}",
@@ -265,6 +271,18 @@ TOOL_TERMS = {
     "prices": {"цена", "стоимость", "оплата", "tuition", "price", "cost"},
     "passing_scores": {"проход", "балл", "ент", "грант", "score", "scores"},
     "documents": {"документ", "справк", "что нужно", "что надо", "document", "documents"},
+    "address": {
+        "адрес приемной комиссии",
+        "где находится приемная комиссия",
+        "адрес университета",
+        "где находится университет",
+        "куда подойти",
+        "куда приехать",
+        "местонахождение",
+        "location",
+        "where is the admissions office",
+        "address",
+    },
     "contacts": {"контакт", "телефон", "почта", "email", "адрес", "contact", "contacts", "phone", "mail"},
     "durations": {"срок", "длительность", "сколько уч", "duration", "study period", "how long"},
     "academic_mobility": {
@@ -631,6 +649,27 @@ def get_admission_contacts(*, language: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
+def get_admission_address(*, language: Optional[str] = None) -> Dict[str, Any]:
+    data = load_admission_data()
+    if data.get("status") in {"missing_data_file", "invalid_data_file"}:
+        return data
+
+    lang = normalize_language(language)
+    contacts = _resolve_localized_value(data.get("contacts") or {}, lang)
+    if not isinstance(contacts, dict):
+        contacts = {}
+    return {
+        "status": "ok",
+        "tool": "address",
+        "language": lang,
+        "department": contacts.get("department"),
+        "address": contacts.get("address"),
+        "working_hours": contacts.get("working_hours"),
+        "data_updated_at": data.get("last_updated"),
+        "source_path": _source_path(),
+    }
+
+
 def get_study_durations(
     *,
     program: Optional[str] = None,
@@ -862,7 +901,7 @@ def detect_requested_tool(query: str) -> str:
     if _matches_any_term(TOOL_TERMS["academic_cooperation"], normalized_query, raw_query):
         return "academic_cooperation"
 
-    for tool_name in ("programs", "documents", "contacts", "prices", "passing_scores", "durations"):
+    for tool_name in ("programs", "documents", "address", "contacts", "prices", "passing_scores", "durations"):
         if _matches_any_term(TOOL_TERMS[tool_name], normalized_query, raw_query):
             return tool_name
     return "overview"
@@ -1204,6 +1243,21 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
             f"{_text(lang, 'contacts_website', value=contacts.get('website') or _text(lang, 'not_specified'))}"
             f"{technical_block}"
         )
+
+    if tool == "address":
+        address = result.get("address")
+        department = result.get("department") or _text(lang, "contacts_department_fallback")
+        if not address:
+            return _text(lang, "address_missing")
+        working_hours = result.get("working_hours")
+        lines = [
+            _text(lang, "address_title"),
+            f"{department}",
+            _text(lang, "contacts_address", value=address),
+        ]
+        if working_hours:
+            lines.append(_text(lang, "contacts_working_hours", value=working_hours))
+        return "\n".join(lines)
 
     if tool == "durations":
         lines = [_text(lang, "durations_title")]
