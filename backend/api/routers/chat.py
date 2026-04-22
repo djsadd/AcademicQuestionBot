@@ -493,6 +493,8 @@ def _build_public_admission_ai_prompt(
         f"{scope}\n"
         "Use only the context below.\n"
         "Do not copy template headings. Do not reproduce the tool output mechanically.\n"
+        "For short direct questions, start with a direct answer in the first sentence.\n"
+        "Example style: 'Да, для этой программы нужен ЕНТ.' or 'Нет, здесь нужно комплексное тестирование.'\n"
         "If the question is broad, answer the main point first and then suggest what to clarify for a more exact answer.\n"
         "Response format: short HTML fragment without Markdown.\n\n"
         f"Response language: {language}\n"

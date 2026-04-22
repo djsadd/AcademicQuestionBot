@@ -1561,8 +1561,44 @@ def _build_compact_context_content(result: Dict[str, Any], language: Optional[st
         return f"Tuition data. Matched programs: {', '.join(items[:5])}. Result count: {len(items)}."
 
     if tool == "passing_scores":
-        items = [str(item.get("program")) for item in result.get("results") or [] if item.get("program")]
-        return f"Passing scores data. Matched programs: {', '.join(items[:5])}. Result count: {len(items)}."
+        rows = []
+        for item in (result.get("results") or [])[:5]:
+            if not isinstance(item, dict):
+                continue
+            parts = []
+            program = item.get("program")
+            if program:
+                parts.append(f"program: {program}")
+            level = item.get("level")
+            if level:
+                parts.append(f"level: {level}")
+            exam = item.get("exam")
+            if exam:
+                parts.append(f"exam: {exam}")
+            grant = item.get("grant_full") or item.get("grant_short") or item.get("grant")
+            if grant not in (None, "", [], {}):
+                parts.append(f"grant_score: {grant}")
+            paid = item.get("paid")
+            if paid not in (None, "", [], {}):
+                parts.append(f"paid_score: {paid}")
+            subject_1 = item.get("profile_subject_1")
+            subject_2 = item.get("profile_subject_2")
+            if subject_1 or subject_2:
+                parts.append(
+                    "profile_subjects: "
+                    + " / ".join(str(subject) for subject in (subject_1, subject_2) if subject)
+                )
+            notes = item.get("notes") or []
+            if isinstance(notes, list) and notes:
+                parts.append(f"notes: {'; '.join(str(note) for note in notes[:3])}")
+            elif notes:
+                parts.append(f"notes: {notes}")
+            if parts:
+                rows.append(" | ".join(parts))
+        return (
+            f"Passing scores data. Result count: {len(result.get('results') or [])}. "
+            + " ".join(rows)
+        ).strip()
 
     if tool == "durations":
         items = [str(item.get("program")) for item in result.get("results") or [] if item.get("program")]
