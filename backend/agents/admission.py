@@ -166,10 +166,6 @@ def _generate_grant_ai_answer(
 def _should_use_admission_ai_answer(*, tool_result: dict[str, Any], fallback_answer: str) -> bool:
     if tool_result.get("tool") == "application_form":
         return False
-    if len((fallback_answer or "").strip()) >= 5000:
-        return False
-    if fallback_answer.count("\n") >= 60:
-        return False
     return llm_client.is_configured
 
 
