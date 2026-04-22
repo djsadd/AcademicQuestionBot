@@ -74,23 +74,34 @@ class AdmissionAgent(BaseAgent):
                 result = _build_overview(program=program, programs=programs, level=level, language=language)
 
         context_entries = build_context_entries(result, language=language)
-        if force_ai_answer:
-            ai_answer = _generate_grant_ai_answer(
+        fallback_answer = format_admission_tool_result(result, language=language)
+        if _should_use_admission_ai_answer(tool_result=result, fallback_answer=fallback_answer):
+            ai_answer = _generate_admission_ai_answer(
                 query=query,
                 history=payload.get("history"),
                 context_entries=context_entries,
                 language=language,
+                grant_only=force_ai_answer,
             )
-            return AgentResult(
-                answer=ai_answer or _grant_ai_unavailable_message(language),
-                intent="admission",
-                tool_data=result,
-                context=context_entries,
-                direct_response=True,
-            )
+            if ai_answer:
+                return AgentResult(
+                    answer=ai_answer,
+                    intent="admission",
+                    tool_data=result,
+                    context=context_entries,
+                    direct_response=True,
+                )
+            if force_ai_answer:
+                return AgentResult(
+                    answer=_grant_ai_unavailable_message(language),
+                    intent="admission",
+                    tool_data=result,
+                    context=context_entries,
+                    direct_response=True,
+                )
 
         return AgentResult(
-            answer=format_admission_tool_result(result, language=language),
+            answer=fallback_answer,
             intent="admission",
             tool_data=result,
             context=context_entries,
@@ -150,6 +161,70 @@ def _generate_grant_ai_answer(
         {"role": "user", "content": prompt},
     ]
     return llm_client.chat(messages).strip()
+
+
+def _should_use_admission_ai_answer(*, tool_result: dict[str, Any], fallback_answer: str) -> bool:
+    if tool_result.get("tool") == "application_form":
+        return False
+    if len((fallback_answer or "").strip()) >= 5000:
+        return False
+    if fallback_answer.count("\n") >= 60:
+        return False
+    return llm_client.is_configured
+
+
+def _generate_admission_ai_answer(
+    *,
+    query: str,
+    history: Any,
+    context_entries: list[dict[str, Any]],
+    language: str,
+    grant_only: bool = False,
+) -> str:
+    if not llm_client.is_configured:
+        return ""
+
+    prompt = _build_admission_ai_prompt(
+        query=query,
+        history=history,
+        context_entries=context_entries,
+        language=language,
+        grant_only=grant_only,
+    )
+    messages = [
+        {"role": "system", "content": "You are an admissions assistant. Answer only from the provided context."},
+        {"role": "user", "content": prompt},
+    ]
+    return llm_client.chat(messages).strip()
+
+
+def _build_admission_ai_prompt(
+    *,
+    query: str,
+    history: Any,
+    context_entries: list[dict[str, Any]],
+    language: str,
+    grant_only: bool = False,
+) -> str:
+    history_text = _format_llm_history(history)
+    context_text = _format_llm_context(context_entries)
+    scope = (
+        "The question is specifically about scholarships or grants."
+        if grant_only
+        else "The question is about admission."
+    )
+    return (
+        "Write a concise and natural reply for a prospective student.\n"
+        f"{scope}\n"
+        "Use only the context below.\n"
+        "Do not copy template headings. Do not reproduce the tool output mechanically.\n"
+        "If the question is broad, answer the main point first and then suggest what to clarify for a more exact answer.\n"
+        "Response format: short HTML fragment without Markdown.\n\n"
+        f"Response language: {language}\n"
+        f"User question: {query}\n"
+        f"History:\n{history_text}\n\n"
+        f"Context:\n{context_text}"
+    )
 
 
 def _format_llm_history(history: Any) -> str:

@@ -264,24 +264,13 @@ def _synthesize_public_admission_answer(
             return _grant_ai_unavailable_message(language), {"used": False, "model": None, "error": None, "raw_request": None}
         return fallback_answer, {"used": False, "model": None, "error": None, "raw_request": None}
 
-    if force_ai_answer:
-        prompt = _build_grant_ai_prompt(
-            query=payload.message.strip(),
-            history=history or payload.history or [],
-            context_entries=context_entries,
-            language=language,
-        )
-    else:
-        prompt = agent_router.aggregator._render_prompt(
-            user_payload={
-                **payload.model_dump(),
-                "history": history or payload.history or [],
-            },
-            intents={"intents": ["admission"]},
-            answers=[fallback_answer],
-            context=context_entries,
-            citations=[],
-        )
+    prompt = _build_public_admission_ai_prompt(
+        query=payload.message.strip(),
+        history=history or payload.history or [],
+        context_entries=context_entries,
+        language=language,
+        grant_only=force_ai_answer,
+    )
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -460,6 +449,56 @@ def _build_grant_ai_prompt(
         f"Вопрос пользователя: {query}\n"
         f"История:\n{history_text}\n\n"
         f"Контекст:\n{context_text}"
+    )
+
+
+def _build_public_admission_ai_prompt(
+    *,
+    query: str,
+    history: list[dict[str, Any]] | None,
+    context_entries: list[dict[str, Any]],
+    language: str,
+    grant_only: bool = False,
+) -> str:
+    history_lines: list[str] = []
+    for item in (history or [])[-8:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "user").strip().lower()
+        if role == "bot":
+            role = "assistant"
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        history_lines.append(f"- {role}: {content[:300]}")
+
+    context_lines: list[str] = []
+    for item in context_entries[:12]:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        context_lines.append(f"- {content[:500]}")
+
+    history_text = "\n".join(history_lines) if history_lines else "- no history"
+    context_text = "\n".join(context_lines) if context_lines else "- no context"
+    scope = (
+        "The question is specifically about scholarships or grants."
+        if grant_only
+        else "The question is about admission."
+    )
+    return (
+        "Write a concise and natural reply for a prospective student.\n"
+        f"{scope}\n"
+        "Use only the context below.\n"
+        "Do not copy template headings. Do not reproduce the tool output mechanically.\n"
+        "If the question is broad, answer the main point first and then suggest what to clarify for a more exact answer.\n"
+        "Response format: short HTML fragment without Markdown.\n\n"
+        f"Response language: {language}\n"
+        f"User question: {query}\n"
+        f"History:\n{history_text}\n\n"
+        f"Context:\n{context_text}"
     )
 
 
