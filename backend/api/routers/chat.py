@@ -296,7 +296,7 @@ def _synthesize_public_admission_answer(
 
 
 def _should_skip_public_admission_llm(*, tool_result: dict[str, Any], fallback_answer: str) -> bool:
-    return False
+    return str(tool_result.get("tool") or "") in {"contacts", "address"}
 
 
 def _build_public_admission_response(

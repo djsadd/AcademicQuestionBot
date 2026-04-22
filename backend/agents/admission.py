@@ -207,6 +207,8 @@ def _render_admission_answer(
 ) -> str:
     context_entries = build_context_entries(result, language=language)
     resolved_fallback = fallback_answer or format_admission_tool_result(result, language=language)
+    if _should_skip_admission_llm(result):
+        return resolved_fallback
     if not llm_client.is_configured:
         return _grant_ai_unavailable_message(language) if grant_only else resolved_fallback
 
@@ -220,6 +222,10 @@ def _render_admission_answer(
     if ai_answer:
         return ai_answer
     return _grant_ai_unavailable_message(language) if grant_only else resolved_fallback
+
+
+def _should_skip_admission_llm(result: dict[str, Any]) -> bool:
+    return str(result.get("tool") or "") in {"contacts", "address"}
 
 
 def _build_admission_ai_prompt(
