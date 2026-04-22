@@ -817,6 +817,8 @@ def get_management(*, language: Optional[str] = None) -> Dict[str, Any]:
 def detect_requested_tool(query: str) -> str:
     normalized_query = _normalize_text(query)
     raw_query = (query or "").casefold()
+    if normalized_query in {"грант", "гранты", "grant", "grants"}:
+        return "overview"
     passing_score_priority_terms = {"проход", "балл", "ент", "score", "scores"}
     scholarship_terms = {
         "стипенд",
