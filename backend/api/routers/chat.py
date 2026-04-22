@@ -254,21 +254,34 @@ def _synthesize_public_admission_answer(
 ) -> tuple[str, dict[str, Any]]:
     language = normalize_language(payload.language)
     context_entries = build_context_entries(tool_result, language=language)
+    force_ai_answer = _should_force_grant_ai_answer(payload.message)
     if _should_skip_public_admission_llm(tool_result=tool_result, fallback_answer=fallback_answer):
+        if force_ai_answer:
+            return _grant_ai_unavailable_message(language), {"used": False, "model": None, "error": None, "raw_request": None}
         return fallback_answer, {"used": False, "model": None, "error": None, "raw_request": None}
     if not llm_client.is_configured:
+        if force_ai_answer:
+            return _grant_ai_unavailable_message(language), {"used": False, "model": None, "error": None, "raw_request": None}
         return fallback_answer, {"used": False, "model": None, "error": None, "raw_request": None}
 
-    prompt = agent_router.aggregator._render_prompt(
-        user_payload={
-            **payload.model_dump(),
-            "history": history or payload.history or [],
-        },
-        intents={"intents": ["admission"]},
-        answers=[fallback_answer],
-        context=context_entries,
-        citations=[],
-    )
+    if force_ai_answer:
+        prompt = _build_grant_ai_prompt(
+            query=payload.message.strip(),
+            history=history or payload.history or [],
+            context_entries=context_entries,
+            language=language,
+        )
+    else:
+        prompt = agent_router.aggregator._render_prompt(
+            user_payload={
+                **payload.model_dump(),
+                "history": history or payload.history or [],
+            },
+            intents={"intents": ["admission"]},
+            answers=[fallback_answer],
+            context=context_entries,
+            citations=[],
+        )
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": prompt},
@@ -281,7 +294,7 @@ def _synthesize_public_admission_answer(
             "error": getattr(llm_client, "last_error", None),
             "raw_request": None,
         }
-    return fallback_answer, {
+    return (_grant_ai_unavailable_message(language) if force_ai_answer else fallback_answer), {
         "used": False,
         "model": getattr(llm_client, "model", None),
         "error": getattr(llm_client, "last_error", None),
@@ -308,6 +321,7 @@ def _build_public_admission_response(
     program = extract_program(query, data=data)
     programs = extract_programs(query, data=data)
     requested_tool = detect_requested_tool(query)
+    force_ai_answer = _should_force_grant_ai_answer(query)
 
     if requested_tool == "programs":
         tool_result = get_available_programs(level=level, language=language)
@@ -330,14 +344,17 @@ def _build_public_admission_response(
     elif requested_tool == "management":
         tool_result = get_management(language=language)
     else:
-        requested_programs = [item for item in programs if item]
-        if program and program not in requested_programs:
-            requested_programs.insert(0, program)
-        tool_result = build_minimal_admission_overview(
-            programs=requested_programs,
-            level=level,
-            language=language,
-        )
+        if force_ai_answer:
+            tool_result = get_scholarships(language=language, query=query)
+        else:
+            requested_programs = [item for item in programs if item]
+            if program and program not in requested_programs:
+                requested_programs.insert(0, program)
+            tool_result = build_minimal_admission_overview(
+                programs=requested_programs,
+                level=level,
+                language=language,
+            )
 
     fallback_answer = format_admission_tool_result(tool_result, language=language)
     return tool_result, fallback_answer
@@ -393,6 +410,66 @@ def _run_public_admission_chat(
         final_answer=final_answer,
         llm_info=llm_info,
     )
+
+
+def _should_force_grant_ai_answer(query: str) -> bool:
+    normalized = " ".join((query or "").strip().lower().split())
+    if not normalized:
+        return False
+    terms = {"грант", "гранты", "госгрант", "гос грант", "grant", "grants"}
+    return any(term in normalized for term in terms)
+
+
+def _build_grant_ai_prompt(
+    *,
+    query: str,
+    history: list[dict[str, Any]] | None,
+    context_entries: list[dict[str, Any]],
+    language: str,
+) -> str:
+    history_lines: list[str] = []
+    for item in (history or [])[-8:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "user").strip().lower()
+        if role == "bot":
+            role = "assistant"
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        history_lines.append(f"- {role}: {content[:300]}")
+
+    context_lines: list[str] = []
+    for item in context_entries[:12]:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        context_lines.append(f"- {content[:500]}")
+
+    history_text = "\n".join(history_lines) if history_lines else "- нет истории"
+    context_text = "\n".join(context_lines) if context_lines else "- контекст отсутствует"
+    return (
+        "Сформируй ответ пользователю по вопросам поступления, связанным с грантами.\n"
+        "Отвечай только по контексту ниже.\n"
+        "Не копируй шаблонные заголовки и не воспроизводи структурированный шаблон ответа.\n"
+        "Если вопрос общий, например только про грант, кратко объясни доступные варианты и предложи уточнить программу или уровень для точного ответа.\n"
+        "Формат ответа: короткий HTML-фрагмент без Markdown.\n\n"
+        f"Язык ответа: {language}\n"
+        f"Вопрос пользователя: {query}\n"
+        f"История:\n{history_text}\n\n"
+        f"Контекст:\n{context_text}"
+    )
+
+
+def _grant_ai_unavailable_message(language: str) -> str:
+    messages = {
+        "ru": "Не удалось сформировать ответ через ИИ. Попробуйте повторить запрос.",
+        "kk": "ЖИ арқылы жауап құрастыру мүмкін болмады. Сұрауды қайта жіберіп көріңіз.",
+        "en": "Could not generate an AI answer. Please try again.",
+    }
+    return messages.get(language, messages["ru"])
 
 
 def _save_public_admission_analytics(

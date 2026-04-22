@@ -5,6 +5,7 @@ import re
 from typing import Any, Dict
 
 from ..db import admission_applications
+from ..langchain.llm import llm_client
 from ..langchain.tools.admission_info import (
     build_minimal_admission_overview,
     build_context_entries,
@@ -44,6 +45,7 @@ class AdmissionAgent(BaseAgent):
         program = payload.get("program") or extract_program(query, data=data)
         programs = extract_programs(query, data=data)
         requested_tool = detect_requested_tool(query)
+        force_ai_answer = _should_force_grant_ai_answer(query)
 
         if requested_tool == "programs":
             result = get_available_programs(level=level, language=language)
@@ -66,13 +68,32 @@ class AdmissionAgent(BaseAgent):
         elif requested_tool == "management":
             result = get_management(language=language)
         else:
-            result = _build_overview(program=program, programs=programs, level=level, language=language)
+            if force_ai_answer:
+                result = get_scholarships(language=language, query=query)
+            else:
+                result = _build_overview(program=program, programs=programs, level=level, language=language)
+
+        context_entries = build_context_entries(result, language=language)
+        if force_ai_answer:
+            ai_answer = _generate_grant_ai_answer(
+                query=query,
+                history=payload.get("history"),
+                context_entries=context_entries,
+                language=language,
+            )
+            return AgentResult(
+                answer=ai_answer or _grant_ai_unavailable_message(language),
+                intent="admission",
+                tool_data=result,
+                context=context_entries,
+                direct_response=True,
+            )
 
         return AgentResult(
             answer=format_admission_tool_result(result, language=language),
             intent="admission",
             tool_data=result,
-            context=build_context_entries(result, language=language),
+            context=context_entries,
         )
 
 
@@ -91,6 +112,86 @@ def _build_overview(
         level=level,
         language=language,
     )
+
+
+def _should_force_grant_ai_answer(query: str) -> bool:
+    normalized = _normalize_text(query)
+    if not normalized:
+        return False
+    terms = {"грант", "гранты", "госгрант", "гос грант", "grant", "grants"}
+    return any(term in normalized for term in terms)
+
+
+def _generate_grant_ai_answer(
+    *,
+    query: str,
+    history: Any,
+    context_entries: list[dict[str, Any]],
+    language: str,
+) -> str:
+    if not llm_client.is_configured:
+        return ""
+
+    history_text = _format_llm_history(history)
+    context_text = _format_llm_context(context_entries)
+    prompt = (
+        "Сформируй ответ пользователю по вопросам поступления, связанным с грантами.\n"
+        "Отвечай только по контексту ниже.\n"
+        "Не копируй шаблонные заголовки и не выдавай механически структурированный ответ инструмента.\n"
+        "Если вопрос общий, например только про грант, кратко объясни доступные варианты и предложи уточнить программу или уровень для точного ответа.\n"
+        "Формат ответа: короткий HTML-фрагмент без Markdown.\n\n"
+        f"Язык ответа: {language}\n"
+        f"Вопрос пользователя: {query}\n"
+        f"История:\n{history_text}\n\n"
+        f"Контекст:\n{context_text}"
+    )
+    messages = [
+        {"role": "system", "content": "Ты помощник приёмной комиссии. Отвечай только по предоставленному контексту."},
+        {"role": "user", "content": prompt},
+    ]
+    return llm_client.chat(messages).strip()
+
+
+def _format_llm_history(history: Any) -> str:
+    if not isinstance(history, list) or not history:
+        return "- нет истории"
+
+    lines: list[str] = []
+    for item in history[-8:]:
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "user").strip().lower()
+        if role == "bot":
+            role = "assistant"
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        lines.append(f"- {role}: {content[:300]}")
+    return "\n".join(lines) if lines else "- нет истории"
+
+
+def _format_llm_context(context_entries: list[dict[str, Any]]) -> str:
+    if not context_entries:
+        return "- контекст отсутствует"
+
+    lines: list[str] = []
+    for item in context_entries[:12]:
+        if not isinstance(item, dict):
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        lines.append(f"- {content[:500]}")
+    return "\n".join(lines) if lines else "- контекст отсутствует"
+
+
+def _grant_ai_unavailable_message(language: str) -> str:
+    messages = {
+        "ru": "Не удалось сформировать ответ через ИИ. Попробуйте повторить запрос.",
+        "kk": "ЖИ арқылы жауап құрастыру мүмкін болмады. Сұрауды қайта жіберіп көріңіз.",
+        "en": "Could not generate an AI answer. Please try again.",
+    }
+    return messages.get(language, messages["ru"])
 
 
 APP_TEXTS: dict[str, dict[str, str]] = {
