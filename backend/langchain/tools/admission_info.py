@@ -268,7 +268,19 @@ TOOL_TERMS = {
         "specialties",
         "degrees",
     },
-    "prices": {"цена", "стоимость", "оплата", "tuition", "price", "cost"},
+    "prices": {
+        "цена",
+        "цены",
+        "стоимость",
+        "стоит",
+        "сколько стоит",
+        "оплата",
+        "платно",
+        "платное",
+        "tuition",
+        "price",
+        "cost",
+    },
     "passing_scores": {"проход", "балл", "ент", "грант", "score", "scores"},
     "documents": {"документ", "справк", "что нужно", "что надо", "document", "documents"},
     "address": {
@@ -873,10 +885,10 @@ def get_management(*, language: Optional[str] = None) -> Dict[str, Any]:
 def detect_requested_tool(query: str) -> str:
     normalized_query = _normalize_text(query)
     raw_query = (query or "").casefold()
-    if normalized_query in {"грант", "гранты", "grant", "grants"}:
-        return "overview"
     passing_score_priority_terms = {"проход", "балл", "ент", "score", "scores"}
     scholarship_terms = {
+        "грант",
+        "гранты",
         "стипенд",
         "стипендия",
         "стипендии",
@@ -884,6 +896,8 @@ def detect_requested_tool(query: str) -> str:
         "государственная стипендия",
         "повышенная стипендия",
         "президентская стипендия",
+        "grant",
+        "grants",
         "scholarship",
         "stipend",
         "шәкіртақы",
@@ -1853,6 +1867,34 @@ def _program_topic_aliases(program: Dict[str, Any]) -> List[str]:
             ]
         )
 
+    if (
+        "цифровая юриспруденция" in normalized_text
+        or "digital jurisprudence" in normalized_text
+        or "digital law" in normalized_text
+    ):
+        topic_aliases.extend(
+            [
+                "цифровая юриспруденция",
+                "цифровой юрист",
+                "digital law",
+                "digital jurisprudence",
+            ]
+        )
+    elif "юриспруденция" in normalized_text or "jurisprudence" in normalized_text:
+        topic_aliases.extend(
+            [
+                "юрист",
+                "юриста",
+                "юриспруденция",
+                "право",
+                "law",
+                "lawyer",
+                "jurisprudence",
+            ]
+        )
+    elif "право" in normalized_text or "law" in normalized_text:
+        topic_aliases.extend(["право", "law"])
+
     return topic_aliases
 
 
@@ -1861,8 +1903,7 @@ def _match_programs_by_topics(
     source: Dict[str, Any],
     seen: set[str],
 ) -> List[tuple[int, str]]:
-    query_words = set(normalized_query.split())
-    if not query_words:
+    if not normalized_query.split():
         return []
 
     matches: List[tuple[int, str]] = []
@@ -1878,8 +1919,7 @@ def _match_programs_by_topics(
             normalized_alias = _normalize_text(alias)
             if not normalized_alias:
                 continue
-            alias_words = set(normalized_alias.split())
-            if normalized_alias in normalized_query or query_words.intersection(alias_words):
+            if _term_matches_query(normalized_alias, normalized_query):
                 best_score = max(best_score, len(normalized_alias))
 
         if best_score <= 0:
