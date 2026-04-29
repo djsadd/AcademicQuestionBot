@@ -345,7 +345,22 @@ TOOL_TERMS = {
     },
 }
 
-LEVEL_ALIASES["bachelor"].update({"бакалавриат", "бакалавр", "бакалаврият", "бакалавриатқа", "бакалавриатта"})
+LEVEL_ALIASES["bachelor"].update(
+    {
+        "бакалавриат",
+        "бакалавр",
+        "бакалаврият",
+        "бакалавриатқа",
+        "бакалавриатта",
+        "после школы",
+        "выпускник школы",
+        "выпускников школ",
+        "после колледжа",
+        "на базе колледжа",
+        "выпускник колледжа",
+        "выпускников колледжей",
+    }
+)
 LEVEL_ALIASES["master"].update({"магистратура", "магистратураға", "магистратурада", "магистрлік"})
 LEVEL_ALIASES["doctorate"].update({"докторантура", "докторантураға", "докторантурада", "докторлық"})
 LEVEL_ALIASES["second_higher"].update({"екінші жоғары", "екінші білім", "екінші жоғары білім"})
@@ -904,11 +919,11 @@ def detect_requested_tool(query: str) -> str:
     }
     for terms in SCHOLARSHIP_TYPE_ALIASES.values():
         scholarship_terms.update(terms)
-    if _matches_any_term(scholarship_terms, normalized_query, raw_query) and not _matches_any_term(
-        passing_score_priority_terms,
-        normalized_query,
-        raw_query,
-    ):
+    is_scholarship_query = _matches_any_term(scholarship_terms, normalized_query, raw_query)
+    is_passing_score_query = _matches_any_term(passing_score_priority_terms, normalized_query, raw_query)
+    if is_scholarship_query:
+        if is_passing_score_query or _looks_like_grant_score_query(normalized_query):
+            return "passing_scores"
         return "scholarships"
 
     management_terms = {
@@ -936,6 +951,31 @@ def detect_requested_tool(query: str) -> str:
         if _matches_any_term(TOOL_TERMS[tool_name], normalized_query, raw_query):
             return tool_name
     return "overview"
+
+
+def _looks_like_grant_score_query(normalized_query: str) -> bool:
+    if not normalized_query:
+        return False
+
+    basis_terms = {
+        "после школы",
+        "выпускник школы",
+        "выпускников школ",
+        "после колледжа",
+        "на базе колледжа",
+        "выпускник колледжа",
+        "выпускников колледжей",
+        "school",
+        "college",
+    }
+    if any(term in normalized_query for term in basis_terms):
+        return True
+
+    try:
+        data = load_admission_data()
+        return bool(extract_programs(normalized_query, data=data, limit=1))
+    except Exception:
+        return False
 
 
 def detect_requested_scholarship_type(query: Optional[str]) -> Optional[str]:
@@ -1766,15 +1806,20 @@ def _match_programs(
     normalized_level = _normalize_level(level)
     normalized_program = _normalize_text(program)
     matches: List[Dict[str, Any]] = []
+    exact_matches: List[Dict[str, Any]] = []
     for item in programs:
         if normalized_level and item.get("level") != normalized_level:
             continue
         if normalized_program:
             candidates = _program_candidates(item)
+            normalized_candidates = [_normalize_text(candidate) for candidate in candidates if candidate]
+            if any(candidate == normalized_program for candidate in normalized_candidates):
+                exact_matches.append(item)
+                continue
             if not any(_program_matches(normalized_program, candidate) for candidate in candidates if candidate):
                 continue
         matches.append(item)
-    return matches
+    return exact_matches or matches
 
 
 def _program_candidates(program: Dict[str, Any], *, include_topic_aliases: bool = False) -> List[str]:
