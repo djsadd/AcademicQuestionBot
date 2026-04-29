@@ -33,7 +33,6 @@ from ...langchain.tools.admission_info import (
     get_study_durations,
     load_admission_data,
     normalize_language,
-    should_route_to_passing_scores,
 )
 from ...services.permissions import require_user
 
@@ -297,7 +296,7 @@ def _synthesize_public_admission_answer(
 
 
 def _should_skip_public_admission_llm(*, tool_result: dict[str, Any], fallback_answer: str) -> bool:
-    return str(tool_result.get("tool") or "") in {"contacts", "address", "passing_scores"}
+    return str(tool_result.get("tool") or "") in {"contacts", "address"}
 
 
 def _build_public_admission_response(
@@ -312,8 +311,6 @@ def _build_public_admission_response(
     program = extract_program_with_history(query, history=history, data=data)
     programs = extract_programs_with_history(query, history=history, data=data)
     requested_tool = detect_requested_tool(query)
-    if should_route_to_passing_scores(query, requested_tool=requested_tool, program=program):
-        requested_tool = "passing_scores"
     force_ai_answer = _should_force_grant_ai_answer(query)
 
     if requested_tool == "programs":

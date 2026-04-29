@@ -953,56 +953,6 @@ def detect_requested_tool(query: str) -> str:
     return "overview"
 
 
-def should_route_to_passing_scores(
-    query: str,
-    *,
-    requested_tool: str,
-    program: Optional[str] = None,
-) -> bool:
-    normalized_query = _normalize_text(query)
-    if not normalized_query:
-        return False
-
-    if requested_tool == "passing_scores":
-        return True
-
-    has_score_value = re.search(r"\b\d{1,3}\b", normalized_query) is not None
-    has_program_context = bool(program)
-    if not has_program_context:
-        return False
-
-    payment_terms = {
-        "платное",
-        "платную",
-        "платно",
-        "платной основе",
-        "на платное",
-        "ақылы",
-        "paid",
-    }
-    cost_terms = {
-        "стоимость",
-        "стоит",
-        "цена",
-        "цены",
-        "оплата",
-        "сколько стоит",
-        "құны",
-        "бағасы",
-        "tuition",
-        "price",
-        "cost",
-    }
-    has_payment_term = any(term in normalized_query for term in payment_terms)
-    has_cost_term = any(term in normalized_query for term in cost_terms)
-
-    if has_score_value and requested_tool in {"overview", "prices"}:
-        return True
-    if has_payment_term and not has_cost_term:
-        return True
-    return False
-
-
 def _looks_like_grant_score_query(normalized_query: str) -> bool:
     if not normalized_query:
         return False
