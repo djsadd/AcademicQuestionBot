@@ -81,13 +81,45 @@ def _normalize_history_item(item: Any) -> dict[str, str] | None:
 def _merge_history(
     request_history: list[dict[str, Any]] | None,
     stored_history: list[dict[str, Any]] | None,
+    current_message: str | None = None,
     limit: int = 20,
 ) -> list[dict[str, str]]:
-    merged: list[dict[str, str]] = []
-    seen: set[tuple[str, str, str]] = set()
+    stored_items = [
+        item
+        for item in (_normalize_history_item(raw_item) for raw_item in (stored_history or []))
+        if item
+    ]
+    request_items = [
+        item
+        for item in (_normalize_history_item(raw_item) for raw_item in (request_history or []))
+        if item
+    ]
 
-    for raw_item in [*(stored_history or []), *(request_history or [])]:
-        item = _normalize_history_item(raw_item)
+    merged: list[dict[str, str]] = []
+    request_signatures = {
+        (item["role"], item["content"])
+        for item in request_items
+    }
+
+    for item in stored_items:
+        if (item["role"], item["content"]) in request_signatures:
+            continue
+        merged.append(item)
+
+    merged.extend(request_items)
+
+    current_text = (current_message or "").strip()
+    if current_text:
+        merged = [
+            item
+            for item in merged
+            if not (item.get("role") == "user" and item.get("content") == current_text)
+        ]
+        merged.append({"role": "user", "content": current_text})
+
+    compacted: list[dict[str, str]] = []
+    seen: set[tuple[str, str, str]] = set()
+    for item in merged:
         if not item:
             continue
         signature = (
@@ -98,9 +130,9 @@ def _merge_history(
         if signature in seen:
             continue
         seen.add(signature)
-        merged.append(item)
+        compacted.append(item)
 
-    return merged[-limit:]
+    return compacted[-limit:]
 
 
 def _compact_metadata(value: Any) -> Any:
@@ -565,7 +597,11 @@ def _prepare_public_router_payload(
         stored_history = chat_analytics.fetch_public_session_history(session_id)
 
     router_payload = payload.model_dump()
-    router_payload["history"] = _merge_history(payload.history, stored_history)
+    router_payload["history"] = _merge_history(
+        payload.history,
+        stored_history,
+        current_message=payload.message,
+    )
     if router_payload.get("metadata") is None:
         router_payload["metadata"] = metadata
     else:
@@ -596,7 +632,11 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
     stored_history: list[dict[str, Any]] = []
     if session_id:
         stored_history = chat_analytics.fetch_session_history(session_id)
-    router_payload["history"] = _merge_history(payload.history, stored_history)
+    router_payload["history"] = _merge_history(
+        payload.history,
+        stored_history,
+        current_message=payload.message,
+    )
 
     response = await agent_router.route(router_payload)
     request_payload = _build_request_log_payload(
@@ -733,7 +773,11 @@ async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_
     stored_history: list[dict[str, Any]] = []
     if session_id:
         stored_history = chat_analytics.fetch_session_history(session_id)
-    router_payload["history"] = _merge_history(payload.history, stored_history)
+    router_payload["history"] = _merge_history(
+        payload.history,
+        stored_history,
+        current_message=payload.message,
+    )
     request_payload = _build_request_log_payload(
         payload=payload,
         router_payload=router_payload,

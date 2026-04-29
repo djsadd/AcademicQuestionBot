@@ -641,7 +641,11 @@ def _reconstruct_application_state(history: Any, current_query: str) -> dict[str
             content = str(item.get("content") or "").strip()
             if role in {"user", "assistant"} and content:
                 messages.append({"role": role, "content": content})
-    if current_query.strip():
+    if current_query.strip() and not (
+        messages
+        and messages[-1].get("role") == "user"
+        and messages[-1].get("content") == current_query.strip()
+    ):
         messages.append({"role": "user", "content": current_query.strip()})
 
     collected: dict[str, str] = {}
