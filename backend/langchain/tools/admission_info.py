@@ -1681,7 +1681,39 @@ def build_context_entries(result: Dict[str, Any], language: Optional[str] = None
 
 def _build_compact_context_content(result: Dict[str, Any], language: Optional[str] = None) -> str:
     lang = normalize_language(language or result.get("language"))
+    if result.get("tool") == "passing_scores":
+        return _format_passing_scores_context(result, language=lang)
     return format_admission_tool_result(result, language=lang)
+
+
+def _format_passing_scores_context(result: Dict[str, Any], language: Optional[str] = None) -> str:
+    lang = normalize_language(language or result.get("language"))
+    lines = [_text(lang, "passing_scores_title")]
+    for item in result.get("results") or []:
+        score_parts: List[str] = []
+        if item.get("gop_code"):
+            score_parts.append(_text(lang, "passing_gop", value=item.get("gop_code")))
+        grant_full = item.get("grant_full")
+        grant = item.get("grant")
+        grant_short = item.get("grant_short")
+        paid = item.get("paid")
+        if grant_full is not None:
+            score_parts.append(_text(lang, "passing_grant_full", value=grant_full))
+        elif grant is not None:
+            score_parts.append(_text(lang, "passing_grant", value=grant))
+        if grant_short is not None:
+            score_parts.append(_text(lang, "passing_grant_short", value=grant_short))
+        score_parts.append(_text(lang, "passing_paid", value=paid if paid is not None else _text(lang, "not_specified")))
+        score_parts.append(_text(lang, "passing_exam", value=item.get("exam") or _text(lang, "not_specified")))
+        profile_subjects = _format_profile_subjects(
+            item.get("profile_subject_1"),
+            item.get("profile_subject_2"),
+            language=lang,
+        )
+        if profile_subjects:
+            score_parts.append(profile_subjects)
+        lines.append(f"- {item.get('program')} ({item.get('level')}): " + ", ".join(score_parts) + ".")
+    return "\n".join(lines)
 
 
 def _build_program_overview_block(
@@ -1747,12 +1779,21 @@ def _build_program_overview_block(
         level_value = str(item.get("level") or "")
         if level_value and level_value not in levels:
             levels.append(level_value)
-        score_value = item.get("grant_full")
-        if score_value is None:
-            score_value = item.get("grant")
-        if score_value is None:
-            score_value = item.get("paid")
-        score_text = str(score_value) if score_value not in (None, "") else _text(lang, "not_specified")
+        score_parts: List[str] = []
+        if item.get("gop_code"):
+            score_parts.append(_text(lang, "passing_gop", value=item.get("gop_code")))
+        grant_full = item.get("grant_full")
+        grant = item.get("grant")
+        grant_short = item.get("grant_short")
+        paid = item.get("paid")
+        if grant_full is not None:
+            score_parts.append(_text(lang, "passing_grant_full", value=grant_full))
+        elif grant is not None:
+            score_parts.append(_text(lang, "passing_grant", value=grant))
+        if grant_short is not None:
+            score_parts.append(_text(lang, "passing_grant_short", value=grant_short))
+        score_parts.append(_text(lang, "passing_paid", value=paid if paid is not None else _text(lang, "not_specified")))
+        score_text = ", ".join(score_parts) if score_parts else _text(lang, "not_specified")
         basis = str(item.get("exam") or _text(lang, "not_specified"))
         lines.append(f"- {text['scores']} ({level_value}): {score_text}")
         subject_parts = [

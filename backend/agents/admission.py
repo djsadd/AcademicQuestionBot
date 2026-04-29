@@ -288,7 +288,7 @@ def _format_llm_context(context_entries: list[dict[str, Any]]) -> str:
         content = str(item.get("content") or "").strip()
         if not content:
             continue
-        lines.append(f"- {content[:500]}")
+        lines.append(f"- {content[:4000]}")
     return "\n".join(lines) if lines else "- контекст отсутствует"
 
 

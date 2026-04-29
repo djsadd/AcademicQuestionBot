@@ -438,7 +438,7 @@ def _build_grant_ai_prompt(
         content = str(item.get("content") or "").strip()
         if not content:
             continue
-        context_lines.append(f"- {content[:500]}")
+        context_lines.append(f"- {content[:4000]}")
 
     history_text = "\n".join(history_lines) if history_lines else "- нет истории"
     context_text = "\n".join(context_lines) if context_lines else "- контекст отсутствует"
@@ -482,7 +482,7 @@ def _build_public_admission_ai_prompt(
         content = str(item.get("content") or "").strip()
         if not content:
             continue
-        context_lines.append(f"- {content[:500]}")
+        context_lines.append(f"- {content[:4000]}")
 
     history_text = "\n".join(history_lines) if history_lines else "- no history"
     context_text = "\n".join(context_lines) if context_lines else "- no context"
