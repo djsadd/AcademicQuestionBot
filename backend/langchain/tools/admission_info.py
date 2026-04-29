@@ -65,6 +65,7 @@ TEXTS = {
         "scholarships_rector_grant_title": "Ректорский грант:",
         "scholarships_category_missing": "Отдельная информация по {label} пока не заполнена.",
         "scholarships_available_types": "Доступные разделы: {items}.",
+        "admission_exams_title": "ЕНТ, КТ и докторантура:",
         "management_title": "Руководство университета:",
         "fallback_answer": "Данные по поступлению загружены, но формат ответа для этого инструмента не настроен.",
     },
@@ -118,6 +119,7 @@ TEXTS = {
         "scholarships_rector_grant_title": "Ректор гранты:",
         "scholarships_category_missing": "{label} бойынша жеке ақпарат әлі толықтырылмаған.",
         "scholarships_available_types": "Қолжетімді бөлімдер: {items}.",
+        "admission_exams_title": "ҰБТ, КТ және докторантура:",
         "management_title": "Университет басшылығы:",
         "fallback_answer": "Оқуға түсу деректері жүктелді, бірақ бұл құрал үшін жауап форматы бапталмаған.",
     },
@@ -171,6 +173,7 @@ TEXTS = {
         "scholarships_rector_grant_title": "Rector's grant:",
         "scholarships_category_missing": "Separate information for {label} has not been filled in yet.",
         "scholarships_available_types": "Available sections: {items}.",
+        "admission_exams_title": "UNT, CT, and doctorate:",
         "management_title": "University leadership:",
         "fallback_answer": "Admission data is loaded, but the response format for this tool is not configured.",
     },
@@ -876,6 +879,43 @@ def get_scholarships(
     }
 
 
+def get_admission_exams(
+    *,
+    language: Optional[str] = None,
+    query: Optional[str] = None,
+) -> Dict[str, Any]:
+    data = load_admission_data()
+    if data.get("status") in {"missing_data_file", "invalid_data_file"}:
+        return data
+
+    lang = normalize_language(language)
+    exams = _resolve_localized_value(data.get("admission_exams") or {}, lang)
+    if not isinstance(exams, dict) or not exams:
+        return _not_found("admission_exams", data, level=None, program=query, language=lang)
+
+    selected_key = _detect_admission_exam_key(query)
+    sections = exams.get("sections") or []
+    if selected_key:
+        sections = [
+            section
+            for section in sections
+            if isinstance(section, dict) and str(section.get("key") or "") == selected_key
+        ]
+
+    return {
+        "status": "ok",
+        "tool": "admission_exams",
+        "language": lang,
+        "admission_exams": {
+            **exams,
+            "sections": sections,
+        },
+        "selected_exam": selected_key,
+        "data_updated_at": exams.get("updated_at") or data.get("last_updated"),
+        "source_path": _source_path(),
+    }
+
+
 def get_management(*, language: Optional[str] = None) -> Dict[str, Any]:
     data = load_admission_data()
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
@@ -926,6 +966,13 @@ def detect_requested_tool(query: str) -> str:
             return "passing_scores"
         return "scholarships"
 
+    if (
+        _is_admission_exam_query(normalized_query, raw_query)
+        and not _looks_like_score_query(normalized_query, raw_query)
+        and not _has_non_exam_tool_priority(normalized_query, raw_query)
+    ):
+        return "admission_exams"
+
     management_terms = {
         "руководство",
         "руководящий состав",
@@ -951,6 +998,64 @@ def detect_requested_tool(query: str) -> str:
         if _matches_any_term(TOOL_TERMS[tool_name], normalized_query, raw_query):
             return tool_name
     return "overview"
+
+
+def _is_admission_exam_query(normalized_query: str, raw_query: str) -> bool:
+    terms = {
+        "комплексное тестирование",
+        "магистратура тест",
+        "магистратура экзамен",
+        "app.testcenter.kz",
+        "докторантура",
+        "докторант",
+        "phd",
+        "doctoral",
+        "вступительный экзамен",
+        "прием заявлений",
+        "приём заявлений",
+    }
+    return _has_query_word(normalized_query, {"ент", "ұбт", "unt", "кт"}) or _matches_any_term(
+        terms,
+        normalized_query,
+        raw_query,
+    )
+
+
+def _looks_like_score_query(normalized_query: str, raw_query: str) -> bool:
+    terms = {
+        "проход",
+        "проходной",
+        "проходные",
+        "балл",
+        "баллы",
+        "сколько баллов",
+        "score",
+        "scores",
+        "passing score",
+    }
+    return _matches_any_term(terms, normalized_query, raw_query)
+
+
+def _has_non_exam_tool_priority(normalized_query: str, raw_query: str) -> bool:
+    explicit_document_terms = {"документ", "документы", "справк", "document", "documents", "құжат", "құжаттар"}
+    if _matches_any_term(explicit_document_terms, normalized_query, raw_query):
+        return True
+    explicit_duration_terms = {
+        "срок обучения",
+        "длительность",
+        "сколько уч",
+        "duration",
+        "study period",
+        "how long",
+        "оқу мерзімі",
+        "қанша жыл",
+    }
+    if _matches_any_term(explicit_duration_terms, normalized_query, raw_query):
+        return True
+    for tool_name in ("programs", "address", "contacts", "prices"):
+        if _matches_any_term(TOOL_TERMS[tool_name], normalized_query, raw_query):
+            return True
+    return False
 
 
 def _looks_like_grant_score_query(normalized_query: str) -> bool:
@@ -985,6 +1090,31 @@ def detect_requested_scholarship_type(query: Optional[str]) -> Optional[str]:
         if _matches_any_term(terms, normalized_query, raw_query):
             return scholarship_type
     return None
+
+
+def _detect_admission_exam_key(query: Optional[str]) -> Optional[str]:
+    normalized_query = _normalize_text(query)
+    raw_query = (query or "").casefold()
+    if _matches_any_term(
+        {"докторантура", "докторант", "phd", "doctoral", "doctorate"},
+        normalized_query,
+        raw_query,
+    ):
+        return "doctorate"
+    if _has_query_word(normalized_query, {"ент", "ұбт", "unt"}):
+        return "ent"
+    if _has_query_word(normalized_query, {"кт"}) or _matches_any_term(
+        {"комплексное тестирование", "магистратура", "master", "masters"},
+        normalized_query,
+        raw_query,
+    ):
+        return "kt"
+    return None
+
+
+def _has_query_word(normalized_query: str, words: set[str]) -> bool:
+    query_words = set(normalized_query.split())
+    return any(word in query_words for word in words)
 
 
 def extract_level(query: str) -> Optional[str]:
@@ -1632,6 +1762,22 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
             return "\n".join(lines)
 
         _append_scholarship_sections(lines, scholarships)
+        return "\n".join(lines)
+
+    if tool == "admission_exams":
+        exams = result.get("admission_exams") or {}
+        if not isinstance(exams, dict):
+            return str(exams or _text(lang, "not_specified"))
+
+        lines = [_text(lang, "admission_exams_title")]
+        for section in exams.get("sections") or []:
+            if not isinstance(section, dict):
+                continue
+            title = section.get("title")
+            if title:
+                lines.append(str(title))
+            for item in section.get("items") or []:
+                lines.append(f"- {item}")
         return "\n".join(lines)
 
     if tool == "management":
