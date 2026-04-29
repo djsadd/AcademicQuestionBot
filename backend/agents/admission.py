@@ -27,6 +27,7 @@ from ..langchain.tools.admission_info import (
     get_study_durations,
     load_admission_data,
     normalize_language,
+    should_route_to_passing_scores,
 )
 from .base import AgentResult, BaseAgent
 
@@ -47,6 +48,8 @@ class AdmissionAgent(BaseAgent):
         program = payload.get("program") or extract_program_with_history(query, history=history, data=data)
         programs = extract_programs_with_history(query, history=history, data=data)
         requested_tool = detect_requested_tool(query)
+        if should_route_to_passing_scores(query, requested_tool=requested_tool, program=program):
+            requested_tool = "passing_scores"
         force_ai_answer = _should_force_grant_ai_answer(query)
 
         if requested_tool == "programs":
@@ -225,7 +228,7 @@ def _render_admission_answer(
 
 
 def _should_skip_admission_llm(result: dict[str, Any]) -> bool:
-    return str(result.get("tool") or "") in {"contacts", "address"}
+    return str(result.get("tool") or "") in {"contacts", "address", "passing_scores"}
 
 
 def _build_admission_ai_prompt(
