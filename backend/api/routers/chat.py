@@ -329,7 +329,13 @@ def _synthesize_public_admission_answer(
 
 
 def _should_skip_public_admission_llm(*, tool_result: dict[str, Any], fallback_answer: str) -> bool:
-    return str(tool_result.get("tool") or "") in {"contacts", "address"}
+    tool = str(tool_result.get("tool") or "")
+    if tool in {"contacts", "address"}:
+        return True
+    if tool == "overview":
+        summary = tool_result.get("summary") or {}
+        return summary.get("mode") == "catalog"
+    return False
 
 
 def _build_public_admission_response(

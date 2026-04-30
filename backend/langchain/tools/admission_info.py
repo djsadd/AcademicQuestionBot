@@ -966,6 +966,9 @@ def detect_requested_tool(query: str) -> str:
             return "passing_scores"
         return "scholarships"
 
+    if _looks_like_profile_subject_query(normalized_query, raw_query):
+        return "passing_scores"
+
     if (
         _is_admission_exam_query(normalized_query, raw_query)
         and not _looks_like_score_query(normalized_query, raw_query)
@@ -998,6 +1001,20 @@ def detect_requested_tool(query: str) -> str:
         if _matches_any_term(TOOL_TERMS[tool_name], normalized_query, raw_query):
             return tool_name
     return "overview"
+
+
+def _looks_like_profile_subject_query(normalized_query: str, raw_query: str) -> bool:
+    terms = {
+        "профильный предмет",
+        "профильные предметы",
+        "предметы по специальности",
+        "какие профильные",
+        "какие предметы",
+        "комбинация предметов",
+        "profile subject",
+        "profile subjects",
+    }
+    return _matches_any_term(terms, normalized_query, raw_query)
 
 
 def _is_admission_exam_query(normalized_query: str, raw_query: str) -> bool:
@@ -1255,7 +1272,25 @@ def build_minimal_admission_overview(
 
     programs_result = get_available_programs(level=level, language=lang)
     program_items = programs_result.get("results") or []
-    preview = [str(item.get("program")) for item in program_items[:8] if item.get("program")]
+    program_entries: List[Dict[str, str]] = []
+    programs_by_level: Dict[str, List[str]] = {}
+    unique_program_names: List[str] = []
+    seen_entries: set[tuple[str, str]] = set()
+    seen_program_names: set[str] = set()
+    for item in program_items:
+        program_name = str(item.get("program") or "").strip()
+        program_level = str(item.get("level") or "other").strip() or "other"
+        normalized_name = _normalize_text(program_name)
+        normalized_level = _normalize_level(program_level) or "other"
+        entry_key = (normalized_name, normalized_level)
+        if not normalized_name or entry_key in seen_entries:
+            continue
+        seen_entries.add(entry_key)
+        program_entries.append({"program": program_name, "level": normalized_level})
+        programs_by_level.setdefault(normalized_level, []).append(program_name)
+        if normalized_name not in seen_program_names:
+            seen_program_names.add(normalized_name)
+            unique_program_names.append(program_name)
     level_name = _normalize_level(level)
 
     intro_map = {
@@ -1268,10 +1303,12 @@ def build_minimal_admission_overview(
         "kk": "Қолжетімді мамандықтар",
         "en": "Available programs",
     }
-    more_map = {
-        "ru": "и другие",
-        "kk": "тағы басқалары",
-        "en": "and others",
+    level_label_map = {
+        "bachelor": _text(lang, "programs_level_bachelor"),
+        "master": _text(lang, "programs_level_master"),
+        "doctorate": _text(lang, "programs_level_doctorate"),
+        "second_higher": _text(lang, "programs_level_second_higher"),
+        "other": _text(lang, "programs_level_other"),
     }
     tools_map = {
         "ru": "По запросу могу отдельно показать: стоимость, проходной балл, срок обучения, документы, контакты.",
@@ -1280,11 +1317,11 @@ def build_minimal_admission_overview(
     }
 
     answer_lines = [intro_map.get(lang, intro_map["en"])]
-    if preview:
-        preview_text = ", ".join(preview)
-        if len(program_items) > len(preview):
-            preview_text = f"{preview_text}, {more_map.get(lang, more_map['en'])}"
-        answer_lines.append(f"{programs_map.get(lang, programs_map['en'])}: {preview_text}.")
+    if program_entries:
+        answer_lines.append(f"{programs_map.get(lang, programs_map['en'])}:")
+        for program_level, names in programs_by_level.items():
+            answer_lines.append(f"{level_label_map.get(program_level, program_level)}:")
+            answer_lines.extend(f"- {program_name}" for program_name in names)
     answer_lines.append(tools_map.get(lang, tools_map["en"]))
 
     return {
@@ -1295,8 +1332,10 @@ def build_minimal_admission_overview(
         "summary": {
             "mode": "catalog",
             "level": level_name,
-            "program_count": len(program_items),
-            "programs_preview": preview,
+            "program_count": len(program_entries),
+            "unique_program_count": len(unique_program_names),
+            "programs": program_entries,
+            "programs_by_level": programs_by_level,
             "supported_topics": supported_topics,
         },
         "source_path": _source_path(),
@@ -1827,9 +1866,38 @@ def build_context_entries(result: Dict[str, Any], language: Optional[str] = None
 
 def _build_compact_context_content(result: Dict[str, Any], language: Optional[str] = None) -> str:
     lang = normalize_language(language or result.get("language"))
+    if result.get("tool") == "programs":
+        return _format_programs_context(result, language=lang)
     if result.get("tool") == "passing_scores":
         return _format_passing_scores_context(result, language=lang)
     return format_admission_tool_result(result, language=lang)
+
+
+def _format_programs_context(result: Dict[str, Any], language: Optional[str] = None) -> str:
+    lang = normalize_language(language or result.get("language"))
+    lines = [_text(lang, "programs_title")]
+    seen_programs: set[str] = set()
+    for item in result.get("results") or []:
+        program_name = str(item.get("program") or "").strip()
+        normalized_name = _normalize_text(program_name)
+        if not normalized_name or normalized_name in seen_programs:
+            continue
+        seen_programs.add(normalized_name)
+        details: List[str] = []
+        if item.get("level"):
+            details.append(str(item.get("level")))
+        profile_subjects = _format_profile_subjects(
+            item.get("profile_subject_1"),
+            item.get("profile_subject_2"),
+            language=lang,
+        )
+        if profile_subjects:
+            details.append(profile_subjects)
+        if item.get("gop_code"):
+            details.append(_text(lang, "passing_gop", value=item.get("gop_code")))
+        suffix = f": {', '.join(details)}" if details else ""
+        lines.append(f"- {program_name}{suffix}")
+    return "\n".join(lines)
 
 
 def _format_passing_scores_context(result: Dict[str, Any], language: Optional[str] = None) -> str:
