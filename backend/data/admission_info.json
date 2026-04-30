@@ -464,6 +464,116 @@
       "updated_at": "2026-04-16"
     }
   },
+  "foreign_admission": {
+    "ru": {
+      "title": "Прием иностранных граждан (Университет «Туран-Астана»)",
+      "format": [
+        "Поступление на платной основе.",
+        "Поступление проходит через собеседование с комиссией университета."
+      ],
+      "bachelor_documents": {
+        "title": "Основные документы для бакалавриата",
+        "items": [
+          "Оригинал аттестата/диплома + приложение.",
+          "Нотариально заверенные копии с переводом (2 экз.).",
+          "Паспорт + нотариально заверенный перевод (3 экз.).",
+          "Нострификация (признание документа об образовании).",
+          "ИИН (Казахстан).",
+          "Фото 3x4 (8 шт.).",
+          "Медсправка 075-у + флюорография."
+        ]
+      },
+      "nostrification": {
+        "title": "Нострификация (через ЦОН)",
+        "summary": "Требуется для всех иностранных документов об образовании.",
+        "documents": [
+          "Заявление.",
+          "Нотариально заверенные переводы диплома/аттестата.",
+          "Паспорт + нотариальный перевод.",
+          "Документы представителя (если есть).",
+          "Квитанция об оплате."
+        ]
+      },
+      "key_requirements": [
+        "Все переводы должны быть нотариально заверены в РК.",
+        "Нострификация обязательна.",
+        "Без ИИН подача невозможна."
+      ],
+      "updated_at": "2026-04-30"
+    },
+    "kk": {
+      "title": "Шетел азаматтарын қабылдау («Тұран-Астана» университеті)",
+      "format": [
+        "Оқу ақылы негізде.",
+        "Қабылдау университет комиссиясымен сұхбат арқылы өтеді."
+      ],
+      "bachelor_documents": {
+        "title": "Бакалавриатқа негізгі құжаттар",
+        "items": [
+          "Аттестат/диплом түпнұсқасы + қосымшасы.",
+          "Нотариалды куәландырылған аудармасы бар көшірмелер (2 дана).",
+          "Паспорт + нотариалды куәландырылған аударма (3 дана).",
+          "Нострификация (білім туралы құжатты тану).",
+          "ЖСН (Қазақстан).",
+          "3x4 фото (8 дана).",
+          "075-у медициналық анықтамасы + флюорография."
+        ]
+      },
+      "nostrification": {
+        "title": "Нострификация (ХҚКО арқылы)",
+        "summary": "Барлық шетелдік білім туралы құжаттар үшін қажет.",
+        "documents": [
+          "Өтініш.",
+          "Диплом/аттестаттың нотариалды куәландырылған аудармалары.",
+          "Паспорт + нотариалды аударма.",
+          "Өкілдің құжаттары (бар болса).",
+          "Төлем түбіртегі."
+        ]
+      },
+      "key_requirements": [
+        "Барлық аудармалар ҚР аумағында нотариалды куәландырылуы керек.",
+        "Нострификация міндетті.",
+        "ЖСН болмаса, құжат тапсыру мүмкін емес."
+      ],
+      "updated_at": "2026-04-30"
+    },
+    "en": {
+      "title": "Admission of Foreign Citizens (Turan-Astana University)",
+      "format": [
+        "Admission is on a paid basis.",
+        "Admission is conducted through an interview with the university commission."
+      ],
+      "bachelor_documents": {
+        "title": "Main documents for bachelor programs",
+        "items": [
+          "Original certificate/diploma + transcript.",
+          "Notarized copies with translation (2 copies).",
+          "Passport + notarized translation (3 copies).",
+          "Nostrification (recognition of the education document).",
+          "IIN (Kazakhstan).",
+          "3x4 photos (8 pcs.).",
+          "Medical certificate 075-u + fluorography."
+        ]
+      },
+      "nostrification": {
+        "title": "Nostrification (through PSC/Citizen Service Center)",
+        "summary": "Required for all foreign education documents.",
+        "documents": [
+          "Application.",
+          "Notarized translations of the diploma/certificate.",
+          "Passport + notarized translation.",
+          "Representative's documents, if applicable.",
+          "Payment receipt."
+        ]
+      },
+      "key_requirements": [
+        "All translations must be notarized in the Republic of Kazakhstan.",
+        "Nostrification is mandatory.",
+        "Submission is impossible without an IIN."
+      ],
+      "updated_at": "2026-04-30"
+    }
+  },
   "documents": {
     "bachelor": {
       "title": "Поступление 2026-2027",

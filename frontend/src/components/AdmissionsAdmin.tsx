@@ -24,6 +24,7 @@ const ADMISSION_SECTIONS = [
   { key: "contacts", label: "Контакты" },
   { key: "scholarships", label: "Стипендии" },
   { key: "management", label: "Руководство" },
+  { key: "foreign-admission", label: "Иностранцы" },
   { key: "programs", label: "Программы" },
   { key: "durations", label: "Сроки" },
   { key: "documents", label: "Документы" },
@@ -828,6 +829,7 @@ function AdmissionInfoEditor() {
   const [documentsText, setDocumentsText] = useState("{}");
   const [scholarshipsText, setScholarshipsText] = useState("{}");
   const [managementText, setManagementText] = useState("{}");
+  const [foreignAdmissionText, setForeignAdmissionText] = useState("{}");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -844,6 +846,7 @@ function AdmissionInfoEditor() {
     setDocumentsText(JSON.stringify(payload.documents ?? {}, null, 2));
     setScholarshipsText(JSON.stringify(payload.scholarships ?? {}, null, 2));
     setManagementText(JSON.stringify(payload.management ?? {}, null, 2));
+    setForeignAdmissionText(JSON.stringify(payload.foreign_admission ?? {}, null, 2));
     setErrorMessage(null);
   }, [admissionInfoQuery.data]);
 
@@ -935,6 +938,7 @@ function AdmissionInfoEditor() {
     setDocumentsText(JSON.stringify(payload.documents ?? {}, null, 2));
     setScholarshipsText(JSON.stringify(payload.scholarships ?? {}, null, 2));
     setManagementText(JSON.stringify(payload.management ?? {}, null, 2));
+    setForeignAdmissionText(JSON.stringify(payload.foreign_admission ?? {}, null, 2));
     setErrorMessage(null);
     setSuccessMessage(null);
   };
@@ -956,6 +960,7 @@ function AdmissionInfoEditor() {
         },
         scholarships: parseJsonSection("Блок scholarships", scholarshipsText),
         management: parseJsonSection("Блок management", managementText),
+        foreign_admission: parseJsonSection("Блок foreign_admission", foreignAdmissionText),
         duration_rules: parseJsonSection("Блок duration_rules", durationRulesText),
         documents: parseJsonSection("Блок documents", documentsText),
         programs: formState.programs.map((program) => ({
@@ -1018,6 +1023,15 @@ function AdmissionInfoEditor() {
         description="Отдельная страница для блока management."
         value={managementText}
         onChange={setManagementText}
+      />
+    );
+  } else if (section === "foreign-admission") {
+    content = (
+      <JsonSection
+        title="Прием иностранных граждан"
+        description="Отдельная страница для блока foreign_admission."
+        value={foreignAdmissionText}
+        onChange={setForeignAdmissionText}
       />
     );
   } else if (section === "programs") {

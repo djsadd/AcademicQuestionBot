@@ -27,6 +27,7 @@ from ...langchain.tools.admission_info import (
     get_admission_exams,
     get_available_programs,
     get_current_prices,
+    get_foreign_admission_info,
     get_management,
     get_passing_scores,
     get_required_documents,
@@ -374,6 +375,8 @@ def _build_public_admission_response(
         tool_result = get_scholarships(language=language, query=query)
     elif requested_tool == "admission_exams":
         tool_result = get_admission_exams(language=language, query=query)
+    elif requested_tool == "foreign_admission":
+        tool_result = get_foreign_admission_info(language=language)
     elif requested_tool == "management":
         tool_result = get_management(language=language)
     else:

@@ -244,6 +244,7 @@ export type AdmissionInfoPayload = {
   contacts: AdmissionContactSection;
   scholarships?: Record<string, unknown>;
   management?: Record<string, unknown>;
+  foreign_admission?: Record<string, unknown>;
   documents: Record<string, unknown>;
   programs: AdmissionProgram[];
   [key: string]: unknown;

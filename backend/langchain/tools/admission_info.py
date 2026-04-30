@@ -66,6 +66,7 @@ TEXTS = {
         "scholarships_category_missing": "Отдельная информация по {label} пока не заполнена.",
         "scholarships_available_types": "Доступные разделы: {items}.",
         "admission_exams_title": "ЕНТ, КТ и докторантура:",
+        "foreign_admission_title": "Прием иностранных граждан:",
         "management_title": "Руководство университета:",
         "fallback_answer": "Данные по поступлению загружены, но формат ответа для этого инструмента не настроен.",
     },
@@ -120,6 +121,7 @@ TEXTS = {
         "scholarships_category_missing": "{label} бойынша жеке ақпарат әлі толықтырылмаған.",
         "scholarships_available_types": "Қолжетімді бөлімдер: {items}.",
         "admission_exams_title": "ҰБТ, КТ және докторантура:",
+        "foreign_admission_title": "Шетел азаматтарын қабылдау:",
         "management_title": "Университет басшылығы:",
         "fallback_answer": "Оқуға түсу деректері жүктелді, бірақ бұл құрал үшін жауап форматы бапталмаған.",
     },
@@ -174,6 +176,7 @@ TEXTS = {
         "scholarships_category_missing": "Separate information for {label} has not been filled in yet.",
         "scholarships_available_types": "Available sections: {items}.",
         "admission_exams_title": "UNT, CT, and doctorate:",
+        "foreign_admission_title": "Admission of foreign citizens:",
         "management_title": "University leadership:",
         "fallback_answer": "Admission data is loaded, but the response format for this tool is not configured.",
     },
@@ -346,6 +349,43 @@ TOOL_TERMS = {
         "internal academic mobility",
         "international academic mobility",
     },
+    "foreign_admission": {
+        "иностранный гражданин",
+        "иностранные граждане",
+        "иностранным гражданам",
+        "иностранных граждан",
+        "иностранного гражданина",
+        "иностранный абитуриент",
+        "иностранные абитуриенты",
+        "иностранным абитуриентам",
+        "иностранных абитуриентов",
+        "иностранный студент",
+        "иностранные студенты",
+        "иностранным студентам",
+        "иностранных студентов",
+        "для иностранцев",
+        "иностранцам",
+        "иностранному гражданину",
+        "прием иностранных граждан",
+        "приём иностранных граждан",
+        "поступление иностранных граждан",
+        "поступление для иностранцев",
+        "нострификация",
+        "нострификац",
+        "иин иностран",
+        "foreign citizen",
+        "foreign citizens",
+        "foreign applicant",
+        "foreign applicants",
+        "international applicant",
+        "international applicants",
+        "international student",
+        "international students",
+        "foreign admission",
+        "admission of foreign citizens",
+        "nostrification",
+        "iin for foreign",
+    },
 }
 
 LEVEL_ALIASES["bachelor"].update(
@@ -405,6 +445,21 @@ TOOL_TERMS["academic_cooperation"].update(
         "ішкі академиялық ұтқырлық",
         "халықаралық академиялық ұтқырлық",
         "екі диплом",
+    }
+)
+TOOL_TERMS["foreign_admission"].update(
+    {
+        "шетел азаматы",
+        "шетел азаматтары",
+        "шетел азаматтарына",
+        "шетелдік талапкер",
+        "шетелдік талапкерлер",
+        "шетелдік талапкерлерге",
+        "шетелдіктерге",
+        "шетелдіктер үшін",
+        "шетел азаматтарын қабылдау",
+        "нострификация",
+        "жсн шетел",
     }
 )
 
@@ -916,6 +971,26 @@ def get_admission_exams(
     }
 
 
+def get_foreign_admission_info(*, language: Optional[str] = None) -> Dict[str, Any]:
+    data = load_admission_data()
+    if data.get("status") in {"missing_data_file", "invalid_data_file"}:
+        return data
+
+    lang = normalize_language(language)
+    foreign_admission = _resolve_localized_value(data.get("foreign_admission") or {}, lang)
+    if not isinstance(foreign_admission, dict) or not foreign_admission:
+        return _not_found("foreign_admission", data, level=None, program=None, language=lang)
+
+    return {
+        "status": "ok",
+        "tool": "foreign_admission",
+        "language": lang,
+        "foreign_admission": foreign_admission,
+        "data_updated_at": foreign_admission.get("updated_at") or data.get("last_updated"),
+        "source_path": _source_path(),
+    }
+
+
 def get_management(*, language: Optional[str] = None) -> Dict[str, Any]:
     data = load_admission_data()
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
@@ -965,6 +1040,9 @@ def detect_requested_tool(query: str) -> str:
         if is_passing_score_query or _looks_like_grant_score_query(normalized_query):
             return "passing_scores"
         return "scholarships"
+
+    if _matches_any_term(TOOL_TERMS["foreign_admission"], normalized_query, raw_query):
+        return "foreign_admission"
 
     if _looks_like_profile_subject_query(normalized_query, raw_query):
         return "passing_scores"
@@ -1816,6 +1894,51 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
             if title:
                 lines.append(str(title))
             for item in section.get("items") or []:
+                lines.append(f"- {item}")
+        return "\n".join(lines)
+
+    if tool == "foreign_admission":
+        info = result.get("foreign_admission") or {}
+        if not isinstance(info, dict):
+            return str(info or _text(lang, "not_specified"))
+
+        lines = [_text(lang, "foreign_admission_title")]
+        title = info.get("title")
+        if title:
+            lines.append(str(title))
+
+        format_items = info.get("format") or []
+        if format_items:
+            lines.append("Формат поступления:")
+            for item in format_items:
+                lines.append(f"- {item}")
+
+        bachelor_documents = info.get("bachelor_documents") or {}
+        if isinstance(bachelor_documents, dict) and bachelor_documents:
+            doc_title = bachelor_documents.get("title")
+            if doc_title:
+                lines.append(str(doc_title) + ":")
+            for item in bachelor_documents.get("items") or []:
+                lines.append(f"- {item}")
+
+        nostrification = info.get("nostrification") or {}
+        if isinstance(nostrification, dict) and nostrification:
+            nostrification_title = nostrification.get("title")
+            if nostrification_title:
+                lines.append(str(nostrification_title) + ":")
+            summary = nostrification.get("summary")
+            if summary:
+                lines.append(f"- {summary}")
+            documents = nostrification.get("documents") or []
+            if documents:
+                lines.append("Документы:")
+                for item in documents:
+                    lines.append(f"- {item}")
+
+        requirements = info.get("key_requirements") or []
+        if requirements:
+            lines.append("Ключевые требования:")
+            for item in requirements:
                 lines.append(f"- {item}")
         return "\n".join(lines)
 

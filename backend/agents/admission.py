@@ -21,6 +21,7 @@ from ..langchain.tools.admission_info import (
     get_admission_exams,
     get_available_programs,
     get_current_prices,
+    get_foreign_admission_info,
     get_management,
     get_passing_scores,
     get_required_documents,
@@ -72,6 +73,8 @@ class AdmissionAgent(BaseAgent):
             result = get_scholarships(language=language, query=query)
         elif requested_tool == "admission_exams":
             result = get_admission_exams(language=language, query=query)
+        elif requested_tool == "foreign_admission":
+            result = get_foreign_admission_info(language=language)
         elif requested_tool == "management":
             result = get_management(language=language)
         else:
@@ -241,6 +244,10 @@ def _build_admission_ai_prompt(
 ) -> str:
     history_text = _format_llm_history(history)
     context_text = _format_llm_context(context_entries)
+    clarification_contacts = format_admission_tool_result(
+        get_admission_contacts(language=language),
+        language=language,
+    )
     scope = (
         "The question is specifically about scholarships or grants."
         if grant_only
@@ -250,6 +257,11 @@ def _build_admission_ai_prompt(
         "Write a concise and natural reply for a prospective student.\n"
         f"{scope}\n"
         "Use only the context below.\n"
+        "Strict rule for missing information:\n"
+        "- If the context does not contain enough information to answer the user's question, do not invent facts.\n"
+        "- Never write phrases like 'there is no information', 'not specified', 'no data', 'I do not know', or similar wording.\n"
+        "- In that case, immediately route the user to the admissions office: give the admissions contacts below and say that they can clarify this question there.\n"
+        "- The final answer must sound like a referral to the admissions office, not like a refusal or a negative answer.\n"
         "Do not copy template headings. Do not reproduce the tool output mechanically.\n"
         "For short direct questions, start with a direct answer in the first sentence.\n"
         "Example style: 'Да, для этой программы нужен ЕНТ.' or 'Нет, здесь нужно комплексное тестирование.'\n"
@@ -258,7 +270,8 @@ def _build_admission_ai_prompt(
         f"Response language: {language}\n"
         f"User question: {query}\n"
         f"History:\n{history_text}\n\n"
-        f"Context:\n{context_text}"
+        f"Context:\n{context_text}\n\n"
+        f"Admissions contacts for clarification:\n{clarification_contacts}"
     )
 
 
