@@ -2,6 +2,7 @@ import { apiClient } from "./client";
 import type {
   AdminUserListResponse,
   AdminUserRoleUpdateResponse,
+  AdmissionContactLeadListResponse,
   AdmissionApplicationListResponse,
   AdmissionInfoPayload,
   AdmissionInfoResponse,
@@ -69,6 +70,11 @@ export function fetchChatAnalyticsSessions(
 export function fetchChatAnalyticsUsers(limit = 100): Promise<ChatAnalyticsUserListResponse> {
   const params = new URLSearchParams({ limit: String(limit) });
   return apiClient.get<ChatAnalyticsUserListResponse>(`/admin/chat-analytics/users?${params.toString()}`);
+}
+
+export function fetchAdmissionContactLeads(limit = 100): Promise<AdmissionContactLeadListResponse> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  return apiClient.get<AdmissionContactLeadListResponse>(`/admin/chat-analytics/admission-contacts?${params.toString()}`);
 }
 
 export function fetchAdminUsers(limit = 100): Promise<AdminUserListResponse> {

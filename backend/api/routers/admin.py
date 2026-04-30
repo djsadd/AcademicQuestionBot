@@ -118,6 +118,11 @@ async def get_chat_analytics_users(limit: int = 100) -> dict[str, Any]:
     return chat_analytics.list_chat_users(limit=limit)
 
 
+@router.get("/chat-analytics/admission-contacts")
+async def get_chat_analytics_admission_contacts(limit: int = 100) -> dict[str, Any]:
+    return chat_analytics.list_admission_contacts(limit=limit)
+
+
 @router.get("/users")
 async def get_users(limit: int = 100) -> dict[str, Any]:
     return {"items": telegram_users.list_users(limit=limit), "limit": max(1, min(limit, 500))}

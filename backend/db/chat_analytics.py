@@ -228,12 +228,13 @@ def _build_admin_filters(
                 OR COALESCE(channel, '') ILIKE %s
                 OR COALESCE(metadata->'user'->>'fullname', '') ILIKE %s
                 OR COALESCE(metadata->'user'->>'email', '') ILIKE %s
+                OR COALESCE(metadata->'user'->'contact'->>'value', '') ILIKE %s
                 OR COALESCE(session_id, '') ILIKE %s
                 OR COALESCE(telegram_id::text, '') ILIKE %s
             )
             """
         )
-        params.extend([like, like, like, like, like, like, like, like])
+        params.extend([like, like, like, like, like, like, like, like, like])
 
     where_sql = f"WHERE {' AND '.join(filters)}" if filters else ""
     return where_sql, params
@@ -310,6 +311,7 @@ def list_chat_sessions(
                     MAX(person_id) AS person_id,
                     MAX(metadata->'user'->>'fullname') AS full_name,
                     MAX(metadata->'user'->>'email') AS email,
+                    MAX(metadata->'user'->'contact'->>'value') AS admission_contact,
                     {_auth_mode_sql()} AS auth_mode,
                     COUNT(*) AS event_count,
                     MIN(created_at) AS started_at,
@@ -339,6 +341,7 @@ def list_chat_sessions(
                 person_id,
                 full_name,
                 email,
+                admission_contact,
                 auth_mode,
                 event_count,
                 started_at,
@@ -379,13 +382,14 @@ def list_chat_sessions(
                 "person_id": row[5],
                 "full_name": row[6],
                 "email": row[7],
-                "auth_mode": row[8],
-                "event_count": row[9],
-                "started_at": row[10].isoformat() if row[10] else None,
-                "updated_at": row[11].isoformat() if row[11] else None,
-                "last_query": row[12],
-                "last_response": row[13],
-                "questions": row[14] or [],
+                "admission_contact": row[8],
+                "auth_mode": row[9],
+                "event_count": row[10],
+                "started_at": row[11].isoformat() if row[11] else None,
+                "updated_at": row[12].isoformat() if row[12] else None,
+                "last_query": row[13],
+                "last_response": row[14],
+                "questions": row[15] or [],
             }
         )
 
@@ -397,6 +401,107 @@ def list_chat_sessions(
         "total": total,
         "pages": pages,
     }
+
+
+def list_admission_contacts(*, limit: int = 100) -> dict[str, Any]:
+    safe_limit = max(1, min(limit, 500))
+
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            f"""
+            WITH contact_events AS (
+                SELECT
+                    metadata->'user'->'contact'->>'value' AS contact_value,
+                    metadata->'user'->'contact'->>'type' AS contact_type,
+                    metadata->'user'->'contact'->>'preferred_channel' AS preferred_channel,
+                    COALESCE(NULLIF(session_id, ''), id) AS session_key,
+                    session_id,
+                    channel,
+                    query,
+                    response,
+                    created_at
+                FROM chat_analytics
+                WHERE {_auth_mode_sql()} = 'anonymous'
+                    AND COALESCE(metadata->'request'->>'chat_mode', '') = 'public_admission'
+                    AND COALESCE(metadata->'user'->'contact'->>'value', '') <> ''
+            ),
+            grouped AS (
+                SELECT
+                    contact_value,
+                    MAX(contact_type) AS contact_type,
+                    MAX(preferred_channel) AS preferred_channel,
+                    COUNT(*) AS event_count,
+                    COUNT(DISTINCT session_key) AS session_count,
+                    MIN(created_at) AS first_seen,
+                    MAX(created_at) AS last_seen,
+                    COALESCE(
+                        JSON_AGG(
+                            JSON_BUILD_OBJECT(
+                                'query', query,
+                                'created_at', created_at
+                            )
+                            ORDER BY created_at DESC
+                        ) FILTER (WHERE query IS NOT NULL AND query <> ''),
+                        '[]'::json
+                    ) AS recent_queries
+                FROM contact_events
+                GROUP BY contact_value
+            ),
+            latest AS (
+                SELECT DISTINCT ON (contact_value)
+                    contact_value,
+                    session_key,
+                    session_id,
+                    channel,
+                    query AS last_query,
+                    response AS last_response
+                FROM contact_events
+                ORDER BY contact_value, created_at DESC
+            )
+            SELECT
+                grouped.contact_value,
+                grouped.contact_type,
+                grouped.preferred_channel,
+                latest.session_key,
+                COALESCE(latest.session_id, latest.session_key) AS session_id,
+                latest.channel,
+                grouped.event_count,
+                grouped.session_count,
+                grouped.first_seen,
+                grouped.last_seen,
+                latest.last_query,
+                latest.last_response,
+                grouped.recent_queries
+            FROM grouped
+            JOIN latest ON latest.contact_value = grouped.contact_value
+            ORDER BY grouped.last_seen DESC
+            LIMIT %s;
+            """,
+            (safe_limit,),
+        )
+        rows = cursor.fetchall()
+
+    items = []
+    for row in rows:
+        items.append(
+            {
+                "contact": row[0],
+                "contact_type": row[1],
+                "preferred_channel": row[2],
+                "session_key": row[3],
+                "session_id": row[4],
+                "channel": row[5],
+                "event_count": row[6],
+                "session_count": row[7],
+                "first_seen": row[8].isoformat() if row[8] else None,
+                "last_seen": row[9].isoformat() if row[9] else None,
+                "last_query": row[10],
+                "last_response": row[11],
+                "recent_queries": row[12] or [],
+            }
+        )
+
+    return {"items": items, "limit": safe_limit}
 
 
 def list_chat_users(*, limit: int = 100) -> dict[str, Any]:

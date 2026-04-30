@@ -2,11 +2,13 @@ import { useMemo, useState } from "react";
 import { Navigate, useLocation } from "react-router-dom";
 import { useQuery, type UseQueryResult } from "@tanstack/react-query";
 import {
+  fetchAdmissionContactLeads,
   fetchChatAnalyticsSessionEvents,
   fetchChatAnalyticsSessions,
   fetchChatAnalyticsSummary,
 } from "../api/admin";
 import type {
+  AdmissionContactLead,
   ChatAnalyticsEvent,
   ChatAnalyticsSession,
   ChatAnalyticsSessionListResponse,
@@ -475,6 +477,7 @@ function ChatAnalyticsLogsPanel({
                     <td>
                       <div className="doc-name">
                         <strong>{item.full_name || item.email || (item.auth_mode === "anonymous" ? "Публичный анонимный пользователь" : "Авторизованный пользователь")}</strong>
+                        <small>Admission contact: {item.admission_contact || "-"}</small>
                         <small>Telegram ID: {item.telegram_id ?? "-"}</small>
                         <small>Person ID: {item.person_id ?? "-"}</small>
                       </div>
@@ -521,6 +524,88 @@ function ChatAnalyticsLogsPanel({
   );
 }
 
+function AdmissionContactsPanel({
+  contacts,
+  isLoading,
+  isError,
+  onOpenSession,
+}: {
+  contacts: AdmissionContactLead[];
+  isLoading: boolean;
+  isError: boolean;
+  onOpenSession: (lead: AdmissionContactLead) => void;
+}) {
+  return (
+    <div className="panel">
+      <div className="admin-toolbar">
+        <div className="admin-toolbar__summary">
+          <strong>Оставленные контакты: {contacts.length}</strong>
+          <span className="muted">Публичный чат приемной комиссии</span>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <p>Загрузка оставленных контактов...</p>
+      ) : isError ? (
+        <p className="error">Не удалось загрузить оставленные контакты.</p>
+      ) : contacts.length === 0 ? (
+        <p className="muted">Пока нет оставленных контактов.</p>
+      ) : (
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Контакт</th>
+                <th>Канал</th>
+                <th>Последний вопрос</th>
+                <th>Активность</th>
+              </tr>
+            </thead>
+            <tbody>
+              {contacts.map((item) => (
+                <tr key={`${item.contact}-${item.session_key}`}>
+                  <td>
+                    <div className="doc-name">
+                      <strong>{item.contact}</strong>
+                      <small>Тип: {item.contact_type || "-"}</small>
+                      <small>Session ID: {item.session_id}</small>
+                    </div>
+                  </td>
+                  <td>
+                    <span className="status-pill status-pending">
+                      {item.preferred_channel || "whatsapp"}
+                    </span>
+                  </td>
+                  <td>
+                    <div className="doc-name">
+                      <strong>{item.last_query || "-"}</strong>
+                      <small>Канал чата: {item.channel || "-"}</small>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="doc-name">
+                      <small>Первое обращение: {item.first_seen ? formatDate(item.first_seen) : "-"}</small>
+                      <small>Последнее обращение: {item.last_seen ? formatDate(item.last_seen) : "-"}</small>
+                      <small>Сессий: {item.session_count}; событий: {item.event_count}</small>
+                      <button
+                        type="button"
+                        className="ghost analytics-open-button"
+                        onClick={() => onOpenSession(item)}
+                      >
+                        Открыть логи
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function ChatAnalytics() {
   const location = useLocation();
   const [page, setPage] = useState(1);
@@ -542,6 +627,11 @@ export function ChatAnalytics() {
     placeholderData: (previousData) => previousData,
   });
 
+  const admissionContactsQuery = useQuery({
+    queryKey: ["chat-analytics-admission-contacts"],
+    queryFn: () => fetchAdmissionContactLeads(100),
+  });
+
   const summaryCards = useMemo(() => {
     const summary = summaryQuery.data;
     if (!summary) return [];
@@ -556,10 +646,33 @@ export function ChatAnalytics() {
   }, [summaryQuery.data]);
 
   const sessionItems = sessionsQuery.data?.items ?? [];
+  const admissionContacts = admissionContactsQuery.data?.items ?? [];
 
   const openSessionDetails = (session: ChatAnalyticsSession, question?: string) => {
     setSelectedSession(session);
     setSelectedQuery(question ?? null);
+  };
+
+  const openContactSession = (lead: AdmissionContactLead) => {
+    setSelectedSession({
+      session_key: lead.session_key,
+      session_id: lead.session_id,
+      request_uuid: null,
+      channel: lead.channel,
+      telegram_id: null,
+      person_id: null,
+      full_name: null,
+      email: null,
+      admission_contact: lead.contact,
+      auth_mode: "anonymous",
+      event_count: lead.event_count,
+      started_at: lead.first_seen,
+      updated_at: lead.last_seen,
+      last_query: lead.last_query,
+      last_response: lead.last_response,
+      questions: lead.recent_queries,
+    });
+    setSelectedQuery(lead.last_query ?? null);
   };
 
   if (location.pathname === "/chat-analytics" || location.pathname === "/chat-analytics/") {
@@ -591,6 +704,13 @@ export function ChatAnalytics() {
             </article>
           ))}
       </div>
+
+      <AdmissionContactsPanel
+        contacts={admissionContacts}
+        isLoading={admissionContactsQuery.isLoading}
+        isError={admissionContactsQuery.isError}
+        onOpenSession={openContactSession}
+      />
 
       <ChatAnalyticsLogsPanel
         sessionItems={sessionItems}

@@ -299,6 +299,7 @@ export type ChatAnalyticsSession = {
   person_id: string | null;
   full_name: string | null;
   email: string | null;
+  admission_contact?: string | null;
   auth_mode: "anonymous" | "authenticated";
   event_count: number;
   started_at: string | null;
@@ -314,6 +315,27 @@ export type ChatAnalyticsSessionListResponse = {
   per_page: number;
   total: number;
   pages: number;
+};
+
+export type AdmissionContactLead = {
+  contact: string;
+  contact_type: string | null;
+  preferred_channel: string | null;
+  session_key: string;
+  session_id: string;
+  channel: string | null;
+  event_count: number;
+  session_count: number;
+  first_seen: string | null;
+  last_seen: string | null;
+  last_query: string | null;
+  last_response: string | null;
+  recent_queries: ChatAnalyticsQuestion[];
+};
+
+export type AdmissionContactLeadListResponse = {
+  items: AdmissionContactLead[];
+  limit: number;
 };
 
 export type ChatAnalyticsUser = {

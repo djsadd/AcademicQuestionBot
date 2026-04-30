@@ -110,6 +110,7 @@ type ChatHistoryState = {
 const DEFAULT_CHAT_TITLE = "New chat";
 const CHAT_STORAGE_VERSION = "v1";
 const CHAT_STORAGE_PREFIX = "aqb_chat_history";
+const PUBLIC_CONTACT_STORAGE_KEY = "aqb_public_admission_contact";
 
 const createId = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -119,6 +120,32 @@ const createSessionId = () =>
     || createId("session");
 
 const createMessageId = (prefix: string) => createId(prefix);
+
+const getStoredPublicContact = () => {
+  if (typeof window === "undefined") return "";
+  try {
+    return localStorage.getItem(PUBLIC_CONTACT_STORAGE_KEY) ?? "";
+  } catch {
+    return "";
+  }
+};
+
+const saveStoredPublicContact = (value: string) => {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(PUBLIC_CONTACT_STORAGE_KEY, value);
+  } catch {
+    // Ignore storage write errors.
+  }
+};
+
+const getContactType = (value: string) => {
+  const normalized = value.trim();
+  if (!normalized) return null;
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return "email";
+  if (/^\+?[\d\s().-]{7,}$/.test(normalized)) return "whatsapp_phone";
+  return "contact";
+};
 
 const buildStorageKey = (mode: FakeChatMode, sessionKey?: string | number | null) =>
   `${CHAT_STORAGE_PREFIX}_${CHAT_STORAGE_VERSION}_${mode}_${sessionKey ?? "guest"}`;
@@ -318,6 +345,7 @@ const buildChatAnalyticsMetadata = ({
   channel,
   context,
   historyLength,
+  publicContact,
 }: {
   profile: AuthProfile | null;
   isPublicAdmission: boolean;
@@ -332,6 +360,7 @@ const buildChatAnalyticsMetadata = ({
     itp?: string;
   };
   historyLength: number;
+  publicContact?: string | null;
 }) => {
   const now = new Date().toISOString();
   const endpoint = isPublicAdmission ? "/chat/public/admission/stream" : "/chat/stream";
@@ -350,6 +379,9 @@ const buildChatAnalyticsMetadata = ({
   const screenSize = typeof window !== "undefined"
     ? { width: window.screen.width, height: window.screen.height }
     : null;
+
+  const normalizedPublicContact = publicContact?.trim() || null;
+  const publicContactType = normalizedPublicContact ? getContactType(normalizedPublicContact) : null;
 
   return {
     channel,
@@ -373,7 +405,16 @@ const buildChatAnalyticsMetadata = ({
       itp: context.itp,
     },
     user: isPublicAdmission
-      ? { kind: "anonymous" }
+      ? {
+        kind: "anonymous",
+        contact: normalizedPublicContact
+          ? {
+            value: normalizedPublicContact,
+            type: publicContactType,
+            preferred_channel: publicContactType === "email" ? "email" : "whatsapp",
+          }
+          : null,
+      }
       : {
         kind: "authenticated",
         telegram_id: profile?.telegram_id ?? null,
@@ -428,6 +469,10 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
   const publicSessionId = isPublicAdmission ? getPublicSessionId() : null;
   const profileConfig = isPublicAdmission ? PUBLIC_ADMISSION_PROFILE : DEFAULT_PROFILE;
   const [inputValue, setInputValue] = useState("");
+  const [publicContact, setPublicContact] = useState(() => (
+    isPublicAdmission ? getStoredPublicContact() : ""
+  ));
+  const [publicContactError, setPublicContactError] = useState<string | null>(null);
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -655,6 +700,17 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
   }, [isPublicAdmission]);
 
   useEffect(() => {
+    if (!isPublicAdmission) return;
+    const normalized = publicContact.trim();
+    if (normalized) {
+      saveStoredPublicContact(normalized);
+    }
+    if (normalized && publicContactError) {
+      setPublicContactError(null);
+    }
+  }, [isPublicAdmission, publicContact, publicContactError]);
+
+  useEffect(() => {
     return () => {
       if (highlightTimeoutRef.current) {
         window.clearTimeout(highlightTimeoutRef.current);
@@ -787,6 +843,11 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
     const trimmed = inputValue.trim();
     if (!trimmed) return;
     if (isStreaming) return;
+    const normalizedPublicContact = publicContact.trim();
+    if (isPublicAdmission && !normalizedPublicContact) {
+      setPublicContactError("Введите почту или номер телефона WhatsApp для связи.");
+      return;
+    }
     if (!isPublicAdmission && !profile?.telegram_id) {
       const chatId = activeChat?.id ?? createId("chat");
       const errorMessage: ChatMessage = {
@@ -890,7 +951,16 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
       uuid: isPublicAdmission ? requestMeta.session : undefined,
       message: trimmed,
       language: profileConfig.language,
-      context: profileConfig.context,
+      context: isPublicAdmission
+        ? {
+          ...profileConfig.context,
+          contact: {
+            value: normalizedPublicContact,
+            type: getContactType(normalizedPublicContact),
+            preferred_channel: getContactType(normalizedPublicContact) === "email" ? "email" : "whatsapp",
+          },
+        }
+        : profileConfig.context,
       metadata: buildChatAnalyticsMetadata({
         profile,
         isPublicAdmission,
@@ -900,6 +970,7 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
         channel: requestMeta.channel,
         context: profileConfig.context,
         historyLength: requestHistory.length,
+        publicContact: normalizedPublicContact,
       }),
       history: requestHistory,
     };
@@ -1017,6 +1088,31 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
       setIsLoggingOut(false);
       navigate("/telegram-login", { replace: true });
     }
+  };
+
+  const renderPublicContactField = () => {
+    if (!isPublicAdmission) return null;
+    return (
+      <label className="chat-contact-field">
+        <span className="chat-contact-field__label">Средство связи</span>
+        <input
+          className="chat-contact-field__input"
+          type="text"
+          inputMode="text"
+          autoComplete="email tel"
+          value={publicContact}
+          onChange={(event) => setPublicContact(event.target.value)}
+          placeholder="Почта или телефон WhatsApp"
+        />
+        {publicContactError ? (
+          <span className="chat-contact-field__error">{publicContactError}</span>
+        ) : (
+          <span className="chat-contact-field__hint">
+            Контакт сохранится вместе с обращением, чтобы приемная комиссия могла ответить.
+          </span>
+        )}
+      </label>
+    );
   };
 
   return (
@@ -1197,6 +1293,7 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
             <h1 className="chat-empty__title">{config.emptyTitle}</h1>
             <div className="chat-composer chat-composer--center" role="form" aria-label="Chat composer">
               {profileError ? <p className="error chat-composer__error">{profileError}</p> : null}
+              {renderPublicContactField()}
               <div className="chat-composer__bar">
                 <textarea
                   className="chat-composer__textarea"
@@ -1275,6 +1372,7 @@ export function FakeChat({ mode = "private" }: { mode?: FakeChatMode }) {
 
             <div className="chat-composer chat-composer--bottom chat-composer--sticky" role="form" aria-label="Chat composer">
               {profileError ? <p className="error chat-composer__error">{profileError}</p> : null}
+              {renderPublicContactField()}
               <div className="chat-composer__bar">
                 <textarea
                   className="chat-composer__textarea"

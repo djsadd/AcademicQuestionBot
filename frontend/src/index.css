@@ -1897,6 +1897,55 @@ td {
   box-shadow: 0 20px 55px rgba(99, 102, 241, 0.18);
 }
 
+.chat-contact-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.chat-contact-field__label {
+  font-size: 0.78rem;
+  font-weight: 750;
+  color: #334155;
+}
+
+.chat-contact-field__input {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  color: #0f172a;
+  font: inherit;
+  font-size: 0.95rem;
+  padding: 0.78rem 0.9rem;
+  outline: none;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.chat-contact-field__input:focus {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.14);
+}
+
+.chat-contact-field__input::placeholder {
+  color: #94a3b8;
+}
+
+.chat-contact-field__hint,
+.chat-contact-field__error {
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.chat-contact-field__hint {
+  color: #64748b;
+}
+
+.chat-contact-field__error {
+  color: #b91c1c;
+}
+
 .chat-composer__icon {
   width: 44px;
   height: 44px;
