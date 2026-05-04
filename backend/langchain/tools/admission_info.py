@@ -623,6 +623,7 @@ def get_available_programs(*, level: Optional[str] = None, language: Optional[st
 
     results = []
     for item in matches:
+        score = item.get("passing_score") or {}
         results.append(
             {
                 "program": _program_display_name(item, language=lang),
@@ -631,7 +632,14 @@ def get_available_programs(*, level: Optional[str] = None, language: Optional[st
                 "duration_by_basis": _resolve_localized_value(item.get("duration_by_basis"), lang),
                 "profile_subject_1": _resolve_localized_value(item.get("profile_subject_1"), lang),
                 "profile_subject_2": _resolve_localized_value(item.get("profile_subject_2"), lang),
-                "gop_code": (item.get("passing_score") or {}).get("gop_code"),
+                "gop_code": score.get("gop_code"),
+                "grant": score.get("grant"),
+                "grant_full": score.get("grant_full"),
+                "grant_short": score.get("grant_short"),
+                "paid": score.get("paid"),
+                "exam": _resolve_localized_value(score.get("exam"), lang),
+                "notes": _resolve_localized_value(score.get("notes") or [], lang),
+                "passing_score_updated_at": score.get("updated_at") or data.get("last_updated"),
                 "source": item.get("source"),
             }
         )
@@ -2018,9 +2026,32 @@ def _format_programs_context(result: Dict[str, Any], language: Optional[str] = N
             details.append(profile_subjects)
         if item.get("gop_code"):
             details.append(_text(lang, "passing_gop", value=item.get("gop_code")))
+        score_details = _format_program_score_details(item, language=lang)
+        if score_details:
+            details.append(score_details)
         suffix = f": {', '.join(details)}" if details else ""
         lines.append(f"- {program_name}{suffix}")
     return "\n".join(lines)
+
+
+def _format_program_score_details(item: Dict[str, Any], language: Optional[str] = None) -> str:
+    lang = normalize_language(language)
+    score_parts: List[str] = []
+    grant_full = item.get("grant_full")
+    grant = item.get("grant")
+    grant_short = item.get("grant_short")
+    paid = item.get("paid")
+    if grant_full is not None:
+        score_parts.append(_text(lang, "passing_grant_full", value=grant_full))
+    elif grant is not None:
+        score_parts.append(_text(lang, "passing_grant", value=grant))
+    if grant_short is not None:
+        score_parts.append(_text(lang, "passing_grant_short", value=grant_short))
+    if paid is not None:
+        score_parts.append(_text(lang, "passing_paid", value=paid))
+    if item.get("exam"):
+        score_parts.append(_text(lang, "passing_exam", value=item.get("exam")))
+    return "; ".join(score_parts)
 
 
 def _format_passing_scores_context(result: Dict[str, Any], language: Optional[str] = None) -> str:
