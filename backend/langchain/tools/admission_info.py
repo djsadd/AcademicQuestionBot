@@ -385,6 +385,14 @@ TOOL_TERMS = {
         "admission of foreign citizens",
         "nostrification",
         "iin for foreign",
+        "РФ",
+        "Россия",
+        "Украина",
+        "Беларусь",
+        "Узбекистан",
+        "Кыргызстан",
+        "Китай",
+        "Монголия",
     },
 }
 
