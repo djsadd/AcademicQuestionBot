@@ -127,6 +127,9 @@ def _should_force_grant_ai_answer(query: str) -> bool:
     return any(term in normalized for term in terms)
 
 
+from datetime import datetime
+
+
 def _generate_grant_ai_answer(
     *,
     query: str,
@@ -139,8 +142,9 @@ def _generate_grant_ai_answer(
 
     history_text = _format_llm_history(history)
     context_text = _format_llm_context(context_entries)
+    now = datetime.now().strftime("%d.%m.%Y %H:%M")
     prompt = (
-    "Ты ИИ-агент приёмной комиссии университета.\n\n"
+    "Ты ИИ-агент приёмной комиссии университета Туран-Астана. Находится университет в городе Астана, страна Казахстан. Соотвественно все другие страны идут как иностранные.\n\n"
 
     "ЖЁСТКИЕ ПРАВИЛА:\n"
     "1. Отвечай ТОЛЬКО на основе переданного контекста.\n"
@@ -171,6 +175,7 @@ def _generate_grant_ai_answer(
     f"Вопрос пользователя: {query}\n\n"
     f"История:\n{history_text}\n\n"
     f"Контекст:\n{context_text}"
+    f"ТЕКУЩАЯ ДАТА И ВРЕМЯ: {now}\n\n"
 )
     messages = [
         {"role": "system", "content": "Ты помощник приёмной комиссии. Отвечай только по предоставленному контексту."},
