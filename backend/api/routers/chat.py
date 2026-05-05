@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -290,6 +291,16 @@ def _synthesize_public_admission_answer(
     language = normalize_language(payload.language)
     context_entries = build_context_entries(tool_result, language=language)
     force_ai_answer = _should_force_grant_ai_answer(payload.message)
+    information_gap = _detect_public_admission_information_gap(tool_result)
+    if information_gap.get("detected"):
+        answer = _format_public_admission_information_gap_answer(language)
+        return answer, {
+            "used": False,
+            "model": None,
+            "error": None,
+            "raw_request": None,
+            "information_gap": information_gap,
+        }
     if _should_skip_public_admission_llm(tool_result=tool_result, fallback_answer=fallback_answer):
         if force_ai_answer:
             return _grant_ai_unavailable_message(language), {"used": False, "model": None, "error": None, "raw_request": None}
@@ -334,6 +345,80 @@ def _should_skip_public_admission_llm(*, tool_result: dict[str, Any], fallback_a
     if tool in {"contacts", "address"}:
         return True
     return False
+
+
+def _detect_public_admission_information_gap(tool_result: dict[str, Any]) -> dict[str, Any]:
+    existing = tool_result.get("information_gap")
+    if isinstance(existing, dict) and existing.get("detected"):
+        return existing
+
+    status = str(tool_result.get("status") or "").strip()
+    if status in {"missing_data_file", "invalid_data_file", "not_found"}:
+        return {
+            "detected": True,
+            "reason": status,
+            "tool": tool_result.get("tool"),
+            "route_to_contacts": True,
+        }
+
+    tool = str(tool_result.get("tool") or "")
+    if tool == "overview":
+        summary = tool_result.get("summary") if isinstance(tool_result.get("summary"), dict) else {}
+        if summary.get("mode") == "unsupported_specific_question":
+            return {
+                "detected": True,
+                "reason": "unsupported_specific_question",
+                "tool": tool,
+                "route_to_contacts": True,
+            }
+        if summary.get("mode") == "program_details":
+            items = summary.get("items") or []
+            has_any_details = any(
+                bool(item.get("has_prices") or item.get("has_scores") or item.get("has_durations"))
+                for item in items
+                if isinstance(item, dict)
+            )
+            if items and not has_any_details:
+                return {
+                    "detected": True,
+                    "reason": "missing_program_details",
+                    "tool": tool,
+                    "route_to_contacts": True,
+                }
+
+    return {"detected": False}
+
+
+def _format_public_admission_information_gap_answer(language: str) -> str:
+    contacts = format_admission_tool_result(
+        get_admission_contacts(language=language),
+        language=language,
+    )
+    messages = {
+        "ru": (
+            "Этот вопрос лучше уточнить напрямую в приемной комиссии, чтобы получить точный ответ по вашей ситуации.<br><br>"
+            f"{_plain_text_to_html(contacts)}"
+        ),
+        "kk": (
+            "Бұл сұрақты сіздің жағдайыңыз бойынша нақтылау үшін қабылдау комиссиясына тікелей қойған дұрыс.<br><br>"
+            f"{_plain_text_to_html(contacts)}"
+        ),
+        "en": (
+            "This question is best clarified directly with the admissions office so they can give an exact answer for your situation.<br><br>"
+            f"{_plain_text_to_html(contacts)}"
+        ),
+    }
+    return messages.get(language, messages["ru"])
+
+
+def _plain_text_to_html(value: str) -> str:
+    escaped = (
+        str(value or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+    )
+    return escaped.replace("\n", "<br>")
 
 
 def _build_public_admission_response(
@@ -388,9 +473,149 @@ def _build_public_admission_response(
                 level=level,
                 language=language,
             )
+            information_gap = _detect_public_admission_query_information_gap(
+                query=query,
+                requested_tool=requested_tool,
+                requested_programs=requested_programs,
+                level=level,
+            )
+            if information_gap.get("detected"):
+                summary = dict(tool_result.get("summary") or {})
+                summary["mode"] = information_gap["reason"]
+                tool_result = {
+                    **tool_result,
+                    "summary": summary,
+                    "information_gap": information_gap,
+                }
 
     fallback_answer = format_admission_tool_result(tool_result, language=language)
     return tool_result, fallback_answer
+
+
+def _detect_public_admission_query_information_gap(
+    *,
+    query: str,
+    requested_tool: str | None,
+    requested_programs: list[str],
+    level: str | None,
+) -> dict[str, Any]:
+    if requested_tool or requested_programs or level:
+        return {"detected": False}
+
+    normalized = _normalize_public_admission_query(query)
+    if not normalized:
+        return {"detected": False}
+    if _is_public_admission_greeting(normalized):
+        return {"detected": False}
+    if _is_public_admission_catalog_request(normalized):
+        return {"detected": False}
+    if _looks_like_specific_public_admission_question(normalized):
+        return {
+            "detected": True,
+            "reason": "unsupported_specific_question",
+            "tool": "overview",
+            "route_to_contacts": True,
+        }
+    if _is_public_admission_broad_opening(normalized):
+        return {"detected": False}
+    return {"detected": False}
+
+
+def _normalize_public_admission_query(query: str) -> str:
+    return re.sub(r"\s+", " ", (query or "").strip().lower())
+
+
+def _is_public_admission_greeting(normalized_query: str) -> bool:
+    cleaned = re.sub(r"[^\w\s]+", " ", normalized_query)
+    words = [word for word in cleaned.split() if word]
+    return len(words) <= 2 and any(
+        word in {"hi", "hello", "hey", "сәлем", "салем", "привет", "здравствуйте", "добрый"}
+        for word in words
+    )
+
+
+def _is_public_admission_broad_opening(normalized_query: str) -> bool:
+    exact_phrases = {
+        "поступление",
+        "приемная комиссия",
+        "admission",
+        "оқуға түсу",
+    }
+    if normalized_query in exact_phrases:
+        return True
+
+    broad_prefixes = {
+        "как поступить",
+        "хочу поступить",
+        "how to apply",
+        "i want to apply",
+        "қалай түсем",
+    }
+    return any(normalized_query.startswith(phrase) for phrase in broad_prefixes)
+
+
+def _is_public_admission_catalog_request(normalized_query: str) -> bool:
+    catalog_terms = {
+        "специальности",
+        "специальность",
+        "программы",
+        "программа",
+        "направления",
+        "мамандық",
+        "бағдарлама",
+        "programs",
+        "programmes",
+        "majors",
+    }
+    return any(term in normalized_query for term in catalog_terms)
+
+
+def _looks_like_specific_public_admission_question(normalized_query: str) -> bool:
+    question_markers = {
+        "?",
+        "можно",
+        "нужно",
+        "есть",
+        "будет",
+        "сколько",
+        "когда",
+        "где",
+        "какой",
+        "какая",
+        "какие",
+        "каким",
+        "почему",
+        "общежит",
+        "военн",
+        "медицин",
+        "льгот",
+        "скид",
+        "дистанц",
+        "онлайн",
+        "перевод",
+        "после колледжа",
+        "после школы",
+        "can",
+        "need",
+        "when",
+        "where",
+        "how much",
+        "discount",
+        "dorm",
+        "hostel",
+        "online",
+        "transfer",
+        "қашан",
+        "қайда",
+        "қанша",
+        "жеңілдік",
+        "жатақхана",
+    }
+    if any(marker in normalized_query for marker in question_markers):
+        return True
+
+    words = normalized_query.split()
+    return len(words) >= 4
 
 
 def _assemble_public_admission_response(
