@@ -13,7 +13,7 @@ class LLMClient:
 
     def __init__(self) -> None:
         self.api_key = os.getenv("OPENAI_API_KEY")
-        self.model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
+        self.model = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
         self.team = os.getenv("OPENAI_TEAM")
         self.default_max_tokens = self._read_int_env("OPENAI_MAX_TOKENS", 1600)
         self.last_error: Optional[str] = None
