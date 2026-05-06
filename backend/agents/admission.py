@@ -26,6 +26,7 @@ from ..langchain.tools.admission_info import (
     get_passing_scores,
     get_required_documents,
     get_scholarships,
+    get_student_house,
     get_study_durations,
     load_admission_data,
     normalize_language,
@@ -77,6 +78,8 @@ class AdmissionAgent(BaseAgent):
             result = get_foreign_admission_info(language=language)
         elif requested_tool == "management":
             result = get_management(language=language)
+        elif requested_tool == "student_house":
+            result = get_student_house(language=language)
         else:
             if force_ai_answer:
                 result = get_scholarships(language=language, query=query)

@@ -68,6 +68,7 @@ TEXTS = {
         "admission_exams_title": "ЕНТ, КТ и докторантура:",
         "foreign_admission_title": "Прием иностранных граждан:",
         "management_title": "Руководство университета:",
+        "student_house_title": "Студенческий дом TAU:",
         "fallback_answer": "Данные по поступлению загружены, но формат ответа для этого инструмента не настроен.",
     },
     "kk": {
@@ -123,6 +124,7 @@ TEXTS = {
         "admission_exams_title": "ҰБТ, КТ және докторантура:",
         "foreign_admission_title": "Шетел азаматтарын қабылдау:",
         "management_title": "Университет басшылығы:",
+        "student_house_title": "TAU студенттер үйі:",
         "fallback_answer": "Оқуға түсу деректері жүктелді, бірақ бұл құрал үшін жауап форматы бапталмаған.",
     },
     "en": {
@@ -178,6 +180,7 @@ TEXTS = {
         "admission_exams_title": "UNT, CT, and doctorate:",
         "foreign_admission_title": "Admission of foreign citizens:",
         "management_title": "University leadership:",
+        "student_house_title": "TAU Student House:",
         "fallback_answer": "Admission data is loaded, but the response format for this tool is not configured.",
     },
 }
@@ -394,6 +397,23 @@ TOOL_TERMS = {
         "Китай",
         "Монголия",
     },
+}
+
+TOOL_TERMS["student_house"] = {
+    "студенческий дом",
+    "студ дом",
+    "общежитие",
+    "общага",
+    "проживание",
+    "жилье",
+    "жильё",
+    "hostel",
+    "dorm",
+    "dormitory",
+    "student house",
+    "student residence",
+    "campus housing",
+    "tau student house",
 }
 
 LEVEL_ALIASES["bachelor"].update(
@@ -916,6 +936,26 @@ def get_academic_mobility(
     }
 
 
+def get_student_house(*, language: Optional[str] = None) -> Dict[str, Any]:
+    data = load_admission_data()
+    if data.get("status") in {"missing_data_file", "invalid_data_file"}:
+        return data
+
+    lang = normalize_language(language)
+    student_house = _resolve_localized_value(data.get("student_house") or {}, lang)
+    if not isinstance(student_house, dict) or not student_house:
+        return _not_found("student_house", data, level=None, program=None, language=lang)
+
+    return {
+        "status": "ok",
+        "tool": "student_house",
+        "language": lang,
+        "student_house": student_house,
+        "data_updated_at": student_house.get("updated_at") or data.get("last_updated"),
+        "source_path": _source_path(),
+    }
+
+
 def get_scholarships(
     *,
     language: Optional[str] = None,
@@ -1056,6 +1096,9 @@ def detect_requested_tool(query: str) -> str:
         if is_passing_score_query or _looks_like_grant_score_query(normalized_query):
             return "passing_scores"
         return "scholarships"
+
+    if _matches_any_term(TOOL_TERMS["student_house"], normalized_query, raw_query):
+        return "student_house"
 
     if _matches_any_term(TOOL_TERMS["foreign_admission"], normalized_query, raw_query):
         return "foreign_admission"
@@ -1853,6 +1896,43 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
                     value = contacts.get(key)
                     if value:
                         lines.append(f"- {key}: {value}")
+        return "\n".join(lines)
+
+    if tool == "student_house":
+        student_house = result.get("student_house") or {}
+        if not isinstance(student_house, dict):
+            return str(student_house or _text(lang, "not_specified"))
+
+        labels = {
+            "location": "Локация",
+            "accommodation": "Проживание",
+            "food": "Питание",
+            "infrastructure": "Инфраструктура",
+            "community": "Сообщество",
+            "security": "Безопасность",
+        }
+        lines = [_text(lang, "student_house_title")]
+        description = student_house.get("description")
+        if description:
+            lines.append(str(description))
+
+        for key, label in labels.items():
+            items = student_house.get(key) or []
+            if not items:
+                continue
+            lines.append(f"{label}:")
+            for item in items:
+                lines.append(f"- {item}")
+
+        contacts = student_house.get("contacts") or {}
+        if isinstance(contacts, dict) and contacts:
+            lines.append("Контакты:")
+            office = contacts.get("office")
+            phone = contacts.get("phone")
+            if office:
+                lines.append(f"- Офис: {office}")
+            if phone:
+                lines.append(f"- Телефон: {phone}")
         return "\n".join(lines)
 
     if tool == "scholarships":
