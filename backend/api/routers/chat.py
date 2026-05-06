@@ -628,6 +628,10 @@ def _assemble_public_admission_response(
     final_answer: str,
     llm_info: dict[str, Any],
 ) -> dict[str, Any]:
+    context_entries = build_context_entries(
+        tool_result,
+        language=normalize_language(payload.language),
+    )
     return {
         "query": payload.message.strip(),
         "language": payload.language,
@@ -641,10 +645,12 @@ def _assemble_public_admission_response(
                 "output": {
                     "intent": "admission",
                     "tool_data": tool_result,
+                    "context": context_entries,
                 },
             }
         ],
-        "context": build_context_entries(tool_result, language=normalize_language(payload.language)),
+        "context": context_entries,
+        "supporting_context": context_entries,
         "llm": llm_info,
         "final_answer": final_answer,
         "tool_data": tool_result,
