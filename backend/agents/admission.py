@@ -34,6 +34,28 @@ from ..langchain.tools.admission_info import (
 from .base import AgentResult, BaseAgent
 
 
+ADMISSION_LLM_HISTORY_LIMIT = 4
+ADMISSION_LLM_HISTORY_CHARS = 220
+ADMISSION_LLM_CONTEXT_LIMIT = 4
+ADMISSION_LLM_CONTEXT_CHARS = 1800
+DETERMINISTIC_ADMISSION_TOOLS = {
+    "contacts",
+    "address",
+    "programs",
+    "prices",
+    "passing_scores",
+    "documents",
+    "durations",
+    "admission_exams",
+    "foreign_admission",
+    "academic_mobility",
+    "academic_cooperation",
+    "management",
+    "student_house",
+    "application_form",
+}
+
+
 class AdmissionAgent(BaseAgent):
     """Answers about enrollment rules and admission requirements."""
 
@@ -290,7 +312,7 @@ def _render_admission_answer(
 
 
 def _should_skip_admission_llm(result: dict[str, Any]) -> bool:
-    return str(result.get("tool") or "") in {"contacts", "address"}
+    return str(result.get("tool") or "") in DETERMINISTIC_ADMISSION_TOOLS
 
 
 def _build_admission_ai_prompt(
@@ -343,7 +365,7 @@ def _format_llm_history(history: Any) -> str:
         return "- нет истории"
 
     lines: list[str] = []
-    for item in history[-8:]:
+    for item in history[-ADMISSION_LLM_HISTORY_LIMIT:]:
         if not isinstance(item, dict):
             continue
         role = str(item.get("role") or "user").strip().lower()
@@ -352,7 +374,7 @@ def _format_llm_history(history: Any) -> str:
         content = str(item.get("content") or "").strip()
         if not content:
             continue
-        lines.append(f"- {role}: {content[:300]}")
+        lines.append(f"- {role}: {_truncate_for_prompt(content, ADMISSION_LLM_HISTORY_CHARS)}")
     return "\n".join(lines) if lines else "- нет истории"
 
 
@@ -361,14 +383,21 @@ def _format_llm_context(context_entries: list[dict[str, Any]]) -> str:
         return "- контекст отсутствует"
 
     lines: list[str] = []
-    for item in context_entries[:12]:
+    for item in context_entries[:ADMISSION_LLM_CONTEXT_LIMIT]:
         if not isinstance(item, dict):
             continue
         content = str(item.get("content") or "").strip()
         if not content:
             continue
-        lines.append(f"- {content[:4000]}")
+        lines.append(f"- {_truncate_for_prompt(content, ADMISSION_LLM_CONTEXT_CHARS)}")
     return "\n".join(lines) if lines else "- контекст отсутствует"
+
+
+def _truncate_for_prompt(value: str, limit: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit].rstrip()}..."
 
 
 def _grant_ai_unavailable_message(language: str) -> str:

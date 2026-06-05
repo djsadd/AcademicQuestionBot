@@ -64,6 +64,26 @@ PUBLIC_ADMISSION_PLAN = [
     {"agent": "admission", "description": "Admission Agent"},
 ]
 
+PUBLIC_ADMISSION_LLM_HISTORY_LIMIT = 4
+PUBLIC_ADMISSION_LLM_HISTORY_CHARS = 220
+PUBLIC_ADMISSION_LLM_CONTEXT_LIMIT = 4
+PUBLIC_ADMISSION_LLM_CONTEXT_CHARS = 1800
+DETERMINISTIC_PUBLIC_ADMISSION_TOOLS = {
+    "contacts",
+    "address",
+    "programs",
+    "prices",
+    "passing_scores",
+    "documents",
+    "durations",
+    "admission_exams",
+    "foreign_admission",
+    "academic_mobility",
+    "academic_cooperation",
+    "management",
+    "student_house",
+}
+
 def _normalize_history_item(item: Any) -> dict[str, str] | None:
     if not isinstance(item, dict):
         return None
@@ -343,7 +363,7 @@ def _synthesize_public_admission_answer(
 
 def _should_skip_public_admission_llm(*, tool_result: dict[str, Any], fallback_answer: str) -> bool:
     tool = str(tool_result.get("tool") or "")
-    if tool in {"contacts", "address"}:
+    if tool in DETERMINISTIC_PUBLIC_ADMISSION_TOOLS:
         return True
     return False
 
@@ -695,7 +715,7 @@ def _build_grant_ai_prompt(
     language: str,
 ) -> str:
     history_lines: list[str] = []
-    for item in (history or [])[-8:]:
+    for item in (history or [])[-PUBLIC_ADMISSION_LLM_HISTORY_LIMIT:]:
         if not isinstance(item, dict):
             continue
         role = str(item.get("role") or "user").strip().lower()
@@ -704,16 +724,16 @@ def _build_grant_ai_prompt(
         content = str(item.get("content") or "").strip()
         if not content:
             continue
-        history_lines.append(f"- {role}: {content[:300]}")
+        history_lines.append(f"- {role}: {_truncate_for_prompt(content, PUBLIC_ADMISSION_LLM_HISTORY_CHARS)}")
 
     context_lines: list[str] = []
-    for item in context_entries[:12]:
+    for item in context_entries[:PUBLIC_ADMISSION_LLM_CONTEXT_LIMIT]:
         if not isinstance(item, dict):
             continue
         content = str(item.get("content") or "").strip()
         if not content:
             continue
-        context_lines.append(f"- {content[:4000]}")
+        context_lines.append(f"- {_truncate_for_prompt(content, PUBLIC_ADMISSION_LLM_CONTEXT_CHARS)}")
 
     history_text = "\n".join(history_lines) if history_lines else "- нет истории"
     context_text = "\n".join(context_lines) if context_lines else "- контекст отсутствует"
@@ -739,7 +759,7 @@ def _build_public_admission_ai_prompt(
     grant_only: bool = False,
 ) -> str:
     history_lines: list[str] = []
-    for item in (history or [])[-8:]:
+    for item in (history or [])[-PUBLIC_ADMISSION_LLM_HISTORY_LIMIT:]:
         if not isinstance(item, dict):
             continue
         role = str(item.get("role") or "user").strip().lower()
@@ -748,16 +768,16 @@ def _build_public_admission_ai_prompt(
         content = str(item.get("content") or "").strip()
         if not content:
             continue
-        history_lines.append(f"- {role}: {content[:300]}")
+        history_lines.append(f"- {role}: {_truncate_for_prompt(content, PUBLIC_ADMISSION_LLM_HISTORY_CHARS)}")
 
     context_lines: list[str] = []
-    for item in context_entries[:12]:
+    for item in context_entries[:PUBLIC_ADMISSION_LLM_CONTEXT_LIMIT]:
         if not isinstance(item, dict):
             continue
         content = str(item.get("content") or "").strip()
         if not content:
             continue
-        context_lines.append(f"- {content[:4000]}")
+        context_lines.append(f"- {_truncate_for_prompt(content, PUBLIC_ADMISSION_LLM_CONTEXT_CHARS)}")
 
     history_text = "\n".join(history_lines) if history_lines else "- no history"
     context_text = "\n".join(context_lines) if context_lines else "- no context"
@@ -792,6 +812,13 @@ def _build_public_admission_ai_prompt(
         f"Context:\n{context_text}\n\n"
         f"Admissions contacts for clarification:\n{clarification_contacts}"
     )
+
+
+def _truncate_for_prompt(value: str, limit: int) -> str:
+    text = str(value or "").strip()
+    if len(text) <= limit:
+        return text
+    return f"{text[:limit].rstrip()}..."
 
 
 def _grant_ai_unavailable_message(language: str) -> str:
