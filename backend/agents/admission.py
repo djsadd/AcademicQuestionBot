@@ -38,24 +38,6 @@ ADMISSION_LLM_HISTORY_LIMIT = 4
 ADMISSION_LLM_HISTORY_CHARS = 220
 ADMISSION_LLM_CONTEXT_LIMIT = 4
 ADMISSION_LLM_CONTEXT_CHARS = 1800
-DETERMINISTIC_ADMISSION_TOOLS = {
-    "contacts",
-    "address",
-    "programs",
-    "prices",
-    "passing_scores",
-    "documents",
-    "durations",
-    "admission_exams",
-    "foreign_admission",
-    "academic_mobility",
-    "academic_cooperation",
-    "management",
-    "student_house",
-    "application_form",
-}
-
-
 class AdmissionAgent(BaseAgent):
     """Answers about enrollment rules and admission requirements."""
 
@@ -293,11 +275,8 @@ def _render_admission_answer(
     grant_only: bool = False,
 ) -> str:
     context_entries = build_context_entries(result, language=language)
-    resolved_fallback = fallback_answer or format_admission_tool_result(result, language=language)
-    if _should_skip_admission_llm(result):
-        return resolved_fallback
     if not llm_client.is_configured:
-        return _grant_ai_unavailable_message(language) if grant_only else resolved_fallback
+        return _grant_ai_unavailable_message(language)
 
     ai_answer = _generate_admission_ai_answer(
         query=query,
@@ -308,11 +287,7 @@ def _render_admission_answer(
     )
     if ai_answer:
         return ai_answer
-    return _grant_ai_unavailable_message(language) if grant_only else resolved_fallback
-
-
-def _should_skip_admission_llm(result: dict[str, Any]) -> bool:
-    return str(result.get("tool") or "") in DETERMINISTIC_ADMISSION_TOOLS
+    return _grant_ai_unavailable_message(language)
 
 
 def _build_admission_ai_prompt(

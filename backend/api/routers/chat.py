@@ -68,21 +68,6 @@ PUBLIC_ADMISSION_LLM_HISTORY_LIMIT = 4
 PUBLIC_ADMISSION_LLM_HISTORY_CHARS = 220
 PUBLIC_ADMISSION_LLM_CONTEXT_LIMIT = 4
 PUBLIC_ADMISSION_LLM_CONTEXT_CHARS = 1800
-DETERMINISTIC_PUBLIC_ADMISSION_TOOLS = {
-    "contacts",
-    "address",
-    "programs",
-    "prices",
-    "passing_scores",
-    "documents",
-    "durations",
-    "admission_exams",
-    "foreign_admission",
-    "academic_mobility",
-    "academic_cooperation",
-    "management",
-    "student_house",
-}
 
 def _normalize_history_item(item: Any) -> dict[str, str] | None:
     if not isinstance(item, dict):
@@ -312,24 +297,8 @@ def _synthesize_public_admission_answer(
     language = normalize_language(payload.language)
     context_entries = build_context_entries(tool_result, language=language)
     force_ai_answer = _should_force_grant_ai_answer(payload.message)
-    information_gap = _detect_public_admission_information_gap(tool_result)
-    if information_gap.get("detected"):
-        answer = _format_public_admission_information_gap_answer(language)
-        return answer, {
-            "used": False,
-            "model": None,
-            "error": None,
-            "raw_request": None,
-            "information_gap": information_gap,
-        }
-    if _should_skip_public_admission_llm(tool_result=tool_result, fallback_answer=fallback_answer):
-        if force_ai_answer:
-            return _grant_ai_unavailable_message(language), {"used": False, "model": None, "error": None, "raw_request": None}
-        return fallback_answer, {"used": False, "model": None, "error": None, "raw_request": None}
     if not llm_client.is_configured:
-        if force_ai_answer:
-            return _grant_ai_unavailable_message(language), {"used": False, "model": None, "error": None, "raw_request": None}
-        return fallback_answer, {"used": False, "model": None, "error": None, "raw_request": None}
+        return _grant_ai_unavailable_message(language), {"used": False, "model": None, "error": None, "raw_request": None}
 
     prompt = _build_public_admission_ai_prompt(
         query=payload.message.strip(),
@@ -350,7 +319,7 @@ def _synthesize_public_admission_answer(
             "error": getattr(llm_client, "last_error", None),
             "raw_request": None,
         }
-    return (_grant_ai_unavailable_message(language) if force_ai_answer else fallback_answer), {
+    return _grant_ai_unavailable_message(language), {
         "used": False,
         "model": getattr(llm_client, "model", None),
         "error": getattr(llm_client, "last_error", None),
@@ -359,55 +328,6 @@ def _synthesize_public_admission_answer(
             "plan": ["admission"],
         },
     }
-
-
-def _should_skip_public_admission_llm(*, tool_result: dict[str, Any], fallback_answer: str) -> bool:
-    tool = str(tool_result.get("tool") or "")
-    if tool in DETERMINISTIC_PUBLIC_ADMISSION_TOOLS:
-        return True
-    return False
-
-
-def _detect_public_admission_information_gap(tool_result: dict[str, Any]) -> dict[str, Any]:
-    existing = tool_result.get("information_gap")
-    if isinstance(existing, dict) and existing.get("detected"):
-        return existing
-
-    status = str(tool_result.get("status") or "").strip()
-    if status in {"missing_data_file", "invalid_data_file", "not_found"}:
-        return {
-            "detected": True,
-            "reason": status,
-            "tool": tool_result.get("tool"),
-            "route_to_contacts": True,
-        }
-
-    tool = str(tool_result.get("tool") or "")
-    if tool == "overview":
-        summary = tool_result.get("summary") if isinstance(tool_result.get("summary"), dict) else {}
-        if summary.get("mode") == "unsupported_specific_question":
-            return {
-                "detected": True,
-                "reason": "unsupported_specific_question",
-                "tool": tool,
-                "route_to_contacts": True,
-            }
-        if summary.get("mode") == "program_details":
-            items = summary.get("items") or []
-            has_any_details = any(
-                bool(item.get("has_prices") or item.get("has_scores") or item.get("has_durations"))
-                for item in items
-                if isinstance(item, dict)
-            )
-            if items and not has_any_details:
-                return {
-                    "detected": True,
-                    "reason": "missing_program_details",
-                    "tool": tool,
-                    "route_to_contacts": True,
-                }
-
-    return {"detected": False}
 
 
 def _format_public_admission_information_gap_answer(language: str) -> str:
