@@ -26,7 +26,7 @@ const DEFAULT_PROFILE = {
 } as const;
 
 const PUBLIC_ADMISSION_PROFILE = {
-  language: "ru",
+  language: "auto",
   context: {
     university: "TAU",
     program: "admission",

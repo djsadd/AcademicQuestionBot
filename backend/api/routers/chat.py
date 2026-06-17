@@ -32,7 +32,7 @@ class ChatPayload(BaseModel):
     person_id: str | None = None
     uuid: str | None = None
     message: str
-    language: str | None = "ru"
+    language: str | None = None
     context: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
     history: list[dict[str, Any]] | None = None

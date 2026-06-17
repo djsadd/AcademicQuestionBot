@@ -628,6 +628,22 @@ def _normalize_language_code(language: Optional[str]) -> str:
     value = (language or DEFAULT_LANGUAGE).strip().lower()
     if "-" in value:
         value = value.split("-", 1)[0]
+    aliases = {
+        "kz": "kk",
+        "kaz": "kk",
+        "kazakh": "kk",
+        "қазақ": "kk",
+        "қазақша": "kk",
+        "rus": "ru",
+        "russian": "ru",
+        "рус": "ru",
+        "русский": "ru",
+        "eng": "en",
+        "english": "en",
+        "англ": "en",
+        "английский": "en",
+    }
+    value = aliases.get(value, value)
     return value if value in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
 
 

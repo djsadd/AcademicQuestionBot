@@ -345,6 +345,43 @@ class AdmissionDialogueTests(unittest.TestCase):
         )
         self.assertTrue(response["llm"]["used"])
 
+    def test_overview_honors_kazakh_language_alias(self) -> None:
+        response = run_admission_pipeline(
+            query="Расскажи про поступление",
+            language="kz",
+            payload={},
+        )
+
+        self.assertEqual(response["language"], "kk")
+        self.assertEqual(response["tool_data"]["tool"], "overview")
+        self.assertIn("Қолжетімді мамандықтар", response["answer"])
+        self.assertIn("Бакалавриат", response["answer"])
+        self.assertNotIn("Доступные специальности", response["answer"])
+
+    def test_overview_supports_english_language(self) -> None:
+        response = run_admission_pipeline(
+            query="General admission information",
+            language="en",
+            payload={},
+        )
+
+        self.assertEqual(response["language"], "en")
+        self.assertEqual(response["tool_data"]["tool"], "overview")
+        self.assertIn("Available programs", response["answer"])
+        self.assertIn("Bachelor", response["answer"])
+        self.assertNotIn("Доступные специальности", response["answer"])
+
+    def test_public_auto_language_detects_kazakh_overview(self) -> None:
+        response = run_admission_pipeline(
+            query="Қандай мамандықтар бар?",
+            language="auto",
+            payload={},
+        )
+
+        self.assertEqual(response["language"], "kk")
+        self.assertEqual(response["tool_data"]["tool"], "programs")
+        self.assertIn("Қолжетімді мамандықтар", response["answer"])
+
 
 if __name__ == "__main__":
     unittest.main()

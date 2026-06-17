@@ -594,11 +594,39 @@ class AdmissionRequestOrchestrator:
 
 def detect_question_language(query: str, *, fallback: Any = None) -> str:
     fallback_language = _normalize_language(fallback)
+    fallback_is_explicit = _is_explicit_language(fallback)
     text = str(query or "").strip()
     if not text:
         return fallback_language
 
     lowered = text.casefold()
+    if _has_any(
+        lowered,
+        {
+            "қазақша",
+            "қазақ тілінде",
+            "казахском",
+            "казахский язык",
+            "казакша",
+            "kazakh",
+            "in kazakh",
+        },
+    ):
+        return "kk"
+    if _has_any(
+        lowered,
+        {
+            "english",
+            "in english",
+            "английском",
+            "английский язык",
+            "ағылшынша",
+            "ағылшын тілінде",
+        },
+    ):
+        return "en"
+    if fallback_is_explicit and fallback_language in {"kk", "en"}:
+        return fallback_language
     if any(char in set("әғқңөұүһі") for char in lowered):
         return "kk"
     words = set(re.findall(r"[\w]+", lowered, flags=re.UNICODE))
@@ -609,6 +637,13 @@ def detect_question_language(query: str, *, fallback: Any = None) -> str:
     if re.findall(r"[а-яё]", lowered):
         return "ru"
     return fallback_language
+
+
+def _is_explicit_language(language: Any) -> bool:
+    value = str(language or "").strip().lower()
+    if not value or value == "auto":
+        return False
+    return _normalize_language(value) in {"ru", "kk", "en"}
 
 
 def _normalize_intent_payload(payload: dict[str, Any], *, source: str) -> AdmissionIntent | None:
@@ -786,4 +821,22 @@ def _normalize_language(language: Any) -> str:
     value = str(language or "ru").strip().lower()
     if "-" in value:
         value = value.split("-", 1)[0]
+    aliases = {
+        "kz": "kk",
+        "kaz": "kk",
+        "kazakh": "kk",
+        "қазақ": "kk",
+        "қазақша": "kk",
+        "ru": "ru",
+        "rus": "ru",
+        "russian": "ru",
+        "рус": "ru",
+        "русский": "ru",
+        "en": "en",
+        "eng": "en",
+        "english": "en",
+        "англ": "en",
+        "английский": "en",
+    }
+    value = aliases.get(value, value)
     return value if value in {"ru", "kk", "en"} else "ru"
