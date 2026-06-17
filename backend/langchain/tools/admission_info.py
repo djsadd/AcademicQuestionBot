@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 DEFAULT_DATA_PATH = (
     Path(__file__).resolve().parents[2] / "data" / "admission_info.json"
 )
+DEFAULT_KK_DATA_PATH = DEFAULT_DATA_PATH.with_name("admission_info_kk.json")
 DEFAULT_LANGUAGE = "ru"
 SUPPORTED_LANGUAGES = {"ru", "kk", "en"}
 
@@ -276,6 +277,12 @@ TOOL_TERMS = {
         "majors",
         "specialties",
         "degrees",
+        "мамандық",
+        "мамандықтар",
+        "бағдарлама",
+        "бағдарламалар",
+        "қандай мамандық",
+        "қандай бағдарламалар",
     },
     "prices": {
         "цена",
@@ -289,9 +296,15 @@ TOOL_TERMS = {
         "tuition",
         "price",
         "cost",
+        "оқу ақысы",
+        "оқу құны",
+        "ақысы",
+        "құны",
+        "қанша тұрады",
+        "ақылы",
     },
-    "passing_scores": {"проход", "балл", "ент", "грант", "score", "scores"},
-    "documents": {"документ", "справк", "что нужно", "что надо", "document", "documents"},
+    "passing_scores": {"проход", "балл", "ент", "грант", "score", "scores", "ұбт", "өту балы", "балл", "грант"},
+    "documents": {"документ", "справк", "что нужно", "что надо", "document", "documents", "құжат", "құжаттар", "не керек", "қандай құжат"},
     "address": {
         "адрес приемной комиссии",
         "где находится приемная комиссия",
@@ -303,6 +316,11 @@ TOOL_TERMS = {
         "location",
         "where is the admissions office",
         "address",
+        "қабылдау комиссиясының мекенжайы",
+        "университет мекенжайы",
+        "қайда орналасқан",
+        "қайда келу",
+        "мекенжай",
     },
     "contacts": {
         "контакт",
@@ -321,8 +339,13 @@ TOOL_TERMS = {
         "contacts",
         "phone",
         "mail",
+        "байланыс",
+        "телефон",
+        "пошта",
+        "жұмыс уақыты",
+        "жұмыс кестесі",
     },
-    "durations": {"срок", "длительность", "сколько уч", "duration", "study period", "how long"},
+    "durations": {"срок", "длительность", "сколько уч", "duration", "study period", "how long", "оқу мерзімі", "қанша жыл", "неше жыл"},
     "academic_mobility": {
         "академическая мобильность",
         "акад мобильность",
@@ -528,10 +551,30 @@ TOOL_TERMS["foreign_admission"].update(
 )
 
 
-def load_admission_data() -> Dict[str, Any]:
-    """Load structured admission data from JSON."""
+def load_admission_data(language: Optional[str] = None) -> Dict[str, Any]:
+    """Load structured admission data from JSON, with language-specific overlays."""
+    lang = _normalize_language_code(language)
     configured_path = os.getenv("ADMISSION_DATA_PATH")
     data_path = Path(configured_path) if configured_path else DEFAULT_DATA_PATH
+    data = _read_admission_json(data_path)
+    if data.get("status") in {"missing_data_file", "invalid_data_file"}:
+        return data
+
+    language_path = _language_data_path(lang, base_path_configured=bool(configured_path))
+    if language_path and language_path.exists():
+        overlay = _read_admission_json(language_path)
+        if overlay.get("status") in {"missing_data_file", "invalid_data_file"}:
+            return overlay
+        data = _deep_merge_admission_data(data, overlay)
+        data["_source_path"] = str(language_path)
+        data["_base_source_path"] = str(data_path)
+        return data
+
+    data["_source_path"] = str(data_path)
+    return data
+
+
+def _read_admission_json(data_path: Path) -> Dict[str, Any]:
     try:
         return json.loads(data_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
@@ -544,7 +587,44 @@ def load_admission_data() -> Dict[str, Any]:
         }
 
 
+def _language_data_path(language: str, *, base_path_configured: bool) -> Optional[Path]:
+    if language != "kk":
+        return None
+    configured_path = os.getenv("ADMISSION_DATA_KK_PATH")
+    if configured_path:
+        return Path(configured_path)
+    return None if base_path_configured else DEFAULT_KK_DATA_PATH
+
+
+def _deep_merge_admission_data(base: Any, overlay: Any) -> Any:
+    if isinstance(base, dict) and isinstance(overlay, dict):
+        merged = dict(base)
+        for key, value in overlay.items():
+            merged[key] = _deep_merge_admission_data(merged.get(key), value)
+        return merged
+
+    if isinstance(base, list) and isinstance(overlay, list):
+        if all(isinstance(item, dict) and item.get("id") for item in base + overlay):
+            by_id = {str(item["id"]): dict(item) for item in base}
+            order = [str(item["id"]) for item in base]
+            for item in overlay:
+                item_id = str(item["id"])
+                if item_id not in by_id:
+                    order.append(item_id)
+                    by_id[item_id] = dict(item)
+                    continue
+                by_id[item_id] = _deep_merge_admission_data(by_id[item_id], item)
+            return [by_id[item_id] for item_id in order if item_id in by_id]
+        return overlay
+
+    return overlay
+
+
 def normalize_language(language: Optional[str]) -> str:
+    return _normalize_language_code(language)
+
+
+def _normalize_language_code(language: Optional[str]) -> str:
     value = (language or DEFAULT_LANGUAGE).strip().lower()
     if "-" in value:
         value = value.split("-", 1)[0]
@@ -643,11 +723,11 @@ def get_current_prices(
     level: Optional[str] = None,
     language: Optional[str] = None,
 ) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     matches = _match_programs(data, program=program, level=level)
     if not matches:
         return _not_found("prices", data, level=level, program=program, language=lang)
@@ -671,7 +751,7 @@ def get_current_prices(
         "language": lang,
         "results": results,
         "data_updated_at": data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
@@ -682,11 +762,11 @@ def get_available_programs(
     language: Optional[str] = None,
     profile_subjects: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     requested_profile_subjects = _normalize_profile_subjects(profile_subjects or [])
     matches = _match_programs(
         data,
@@ -713,7 +793,7 @@ def get_available_programs(
                 "grant_full": score.get("grant_full"),
                 "grant_short": score.get("grant_short"),
                 "paid": score.get("paid"),
-                "exam": _resolve_localized_value(score.get("exam"), lang),
+                "exam": _exam_label(score.get("exam"), language=lang),
                 "notes": _resolve_localized_value(score.get("notes") or [], lang),
                 "passing_score_updated_at": score.get("updated_at") or data.get("last_updated"),
                 "source": item.get("source"),
@@ -727,7 +807,7 @@ def get_available_programs(
         "requested_profile_subjects": requested_profile_subjects,
         "results": results,
         "data_updated_at": data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
@@ -737,11 +817,11 @@ def get_passing_scores(
     level: Optional[str] = None,
     language: Optional[str] = None,
 ) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     matches = _match_programs(data, program=program, level=level)
     if not level:
         meaningful_matches = [item for item in matches if _has_meaningful_passing_score(item)]
@@ -762,7 +842,7 @@ def get_passing_scores(
                 "grant_full": score.get("grant_full"),
                 "grant_short": score.get("grant_short"),
                 "paid": score.get("paid"),
-                "exam": _resolve_localized_value(score.get("exam"), lang),
+                "exam": _exam_label(score.get("exam"), language=lang),
                 "notes": _resolve_localized_value(score.get("notes") or [], lang),
                 "profile_subject_1": _resolve_localized_value(item.get("profile_subject_1"), lang),
                 "profile_subject_2": _resolve_localized_value(item.get("profile_subject_2"), lang),
@@ -775,7 +855,7 @@ def get_passing_scores(
         "language": lang,
         "results": results,
         "data_updated_at": data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
@@ -788,11 +868,11 @@ def _has_meaningful_passing_score(program_item: Dict[str, Any]) -> bool:
 
 
 def get_required_documents(*, level: Optional[str] = None, language: Optional[str] = None) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     normalized_level = _normalize_level(level)
     documents = data.get("documents") or {}
     if normalized_level:
@@ -804,7 +884,7 @@ def get_required_documents(*, level: Optional[str] = None, language: Optional[st
                 "language": lang,
                 "message": _text(lang, "documents_not_found", level=normalized_level),
                 "available_levels": sorted(documents.keys()),
-                "source_path": _source_path(),
+                "source_path": _source_path(lang),
             }
         results = [{"level": normalized_level, **_resolve_localized_value(doc_entry, lang)}]
     else:
@@ -816,16 +896,16 @@ def get_required_documents(*, level: Optional[str] = None, language: Optional[st
         "language": lang,
         "results": results,
         "data_updated_at": data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
 def get_admission_contacts(*, language: Optional[str] = None) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     contacts = _resolve_localized_value(data.get("contacts") or {}, lang)
     return {
         "status": "ok",
@@ -833,16 +913,16 @@ def get_admission_contacts(*, language: Optional[str] = None) -> Dict[str, Any]:
         "language": lang,
         "contacts": contacts,
         "data_updated_at": data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
 def get_admission_address(*, language: Optional[str] = None) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     contacts = _resolve_localized_value(data.get("contacts") or {}, lang)
     if not isinstance(contacts, dict):
         contacts = {}
@@ -854,7 +934,7 @@ def get_admission_address(*, language: Optional[str] = None) -> Dict[str, Any]:
         "address": contacts.get("address"),
         "working_hours": contacts.get("working_hours"),
         "data_updated_at": data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
@@ -864,11 +944,11 @@ def get_study_durations(
     level: Optional[str] = None,
     language: Optional[str] = None,
 ) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     normalized_level = _normalize_level(level)
     duration_rules = data.get("duration_rules") or {}
 
@@ -882,7 +962,7 @@ def get_study_durations(
                 "results": [],
                 "duration_rules": [{"level": normalized_level, **_resolve_localized_value(rules, lang)}],
                 "data_updated_at": data.get("last_updated"),
-                "source_path": _source_path(),
+                "source_path": _source_path(lang),
             }
 
     matches = _match_programs(data, program=program, level=level)
@@ -910,7 +990,7 @@ def get_study_durations(
             else []
         ),
         "data_updated_at": data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
@@ -920,11 +1000,11 @@ def get_academic_cooperation(
     query: Optional[str] = None,
     language: Optional[str] = None,
 ) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     cooperation = _resolve_localized_value(data.get("academic_cooperation") or {}, lang)
     if not isinstance(cooperation, dict) or not cooperation:
         return _not_found("academic_cooperation", data, level=None, program=program or query, language=lang)
@@ -948,7 +1028,7 @@ def get_academic_cooperation(
         "source": cooperation.get("source") or {},
         "results": results,
         "data_updated_at": data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
@@ -958,11 +1038,11 @@ def get_academic_mobility(
     query: Optional[str] = None,
     language: Optional[str] = None,
 ) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     mobility = _resolve_localized_value(data.get("academic_mobility") or {}, lang)
     if not isinstance(mobility, dict) or not mobility:
         return _not_found("academic_mobility", data, level=None, program=program or query, language=lang)
@@ -982,16 +1062,16 @@ def get_academic_mobility(
         "language": lang,
         "mobility": result,
         "data_updated_at": data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
 def get_student_house(*, language: Optional[str] = None) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     student_house = _resolve_localized_value(data.get("student_house") or {}, lang)
     if not isinstance(student_house, dict) or not student_house:
         return _not_found("student_house", data, level=None, program=None, language=lang)
@@ -1002,7 +1082,7 @@ def get_student_house(*, language: Optional[str] = None) -> Dict[str, Any]:
         "language": lang,
         "student_house": student_house,
         "data_updated_at": student_house.get("updated_at") or data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
@@ -1011,11 +1091,11 @@ def get_scholarships(
     language: Optional[str] = None,
     query: Optional[str] = None,
 ) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     scholarships = _resolve_localized_value(data.get("scholarships") or {}, lang)
     requested_type = detect_requested_scholarship_type(query)
     selected_scholarships, resolved_type, available_types, missing_requested_type = _select_scholarship_payload(
@@ -1036,7 +1116,7 @@ def get_scholarships(
             if isinstance(selected_scholarships, dict)
             else data.get("last_updated")
         ) or data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
@@ -1045,11 +1125,11 @@ def get_admission_exams(
     language: Optional[str] = None,
     query: Optional[str] = None,
 ) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     exams = _resolve_localized_value(data.get("admission_exams") or {}, lang)
     if not isinstance(exams, dict) or not exams:
         return _not_found("admission_exams", data, level=None, program=query, language=lang)
@@ -1073,16 +1153,16 @@ def get_admission_exams(
         },
         "selected_exam": selected_key,
         "data_updated_at": exams.get("updated_at") or data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
 def get_foreign_admission_info(*, language: Optional[str] = None) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     foreign_admission = _resolve_localized_value(data.get("foreign_admission") or {}, lang)
     if not isinstance(foreign_admission, dict) or not foreign_admission:
         return _not_found("foreign_admission", data, level=None, program=None, language=lang)
@@ -1093,16 +1173,16 @@ def get_foreign_admission_info(*, language: Optional[str] = None) -> Dict[str, A
         "language": lang,
         "foreign_admission": foreign_admission,
         "data_updated_at": foreign_admission.get("updated_at") or data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
 def get_management(*, language: Optional[str] = None) -> Dict[str, Any]:
-    data = load_admission_data()
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
-    lang = normalize_language(language)
     management = _resolve_localized_value(data.get("management") or {}, lang)
     return {
         "status": "ok",
@@ -1114,7 +1194,7 @@ def get_management(*, language: Optional[str] = None) -> Dict[str, Any]:
             if isinstance(management, dict)
             else data.get("last_updated")
         ) or data.get("last_updated"),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
@@ -1454,7 +1534,7 @@ def build_minimal_admission_overview(
                 "items": summary_items,
                 "supported_topics": supported_topics,
             },
-            "source_path": _source_path(),
+            "source_path": _source_path(lang),
         }
 
     programs_result = get_available_programs(level=level, language=lang)
@@ -1525,7 +1605,7 @@ def build_minimal_admission_overview(
             "programs_by_level": programs_by_level,
             "supported_topics": supported_topics,
         },
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
         "data_updated_at": programs_result.get("data_updated_at"),
     }
 
@@ -1590,7 +1670,7 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
             if profile_subjects:
                 details.append(profile_subjects)
             if item.get("level"):
-                details.append(str(item.get("level")))
+                details.append(_level_label(item.get("level"), language=lang))
             suffix = f": {', '.join(details)}" if details else ""
             lines.append(f"- {program_name}{suffix}")
         return "\n".join(lines)
@@ -1601,7 +1681,7 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
             amount = item.get("amount")
             amount_text = f"{int(amount):,}".replace(",", " ") if isinstance(amount, (int, float)) else _text(lang, "not_specified")
             lines.append(
-                f"- {item.get('program')} ({item.get('level')}): {amount_text} {item.get('currency')} {item.get('period') or ''}".rstrip()
+                f"- {item.get('program')} ({_level_label(item.get('level'), language=lang)}): {amount_text} {item.get('currency')} {item.get('period') or ''}".rstrip()
             )
         return "\n".join(lines)
 
@@ -1625,7 +1705,7 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
                 score_parts.append(_text(lang, "passing_grant_short_missing"))
             score_parts.append(_text(lang, "passing_paid", value=paid if paid is not None else _text(lang, "not_specified")))
             score_parts.append(_text(lang, "passing_exam", value=item.get("exam") or _text(lang, "not_specified")))
-            line = f"- {item.get('program')} ({item.get('level')}): " + ", ".join(score_parts) + "."
+            line = f"- {item.get('program')} ({_level_label(item.get('level'), language=lang)}): " + ", ".join(score_parts) + "."
             profile_subjects = _format_profile_subjects(
                 item.get("profile_subject_1"),
                 item.get("profile_subject_2"),
@@ -2165,7 +2245,7 @@ def _format_programs_context(result: Dict[str, Any], language: Optional[str] = N
         seen_programs.add(normalized_name)
         details: List[str] = []
         if item.get("level"):
-            details.append(str(item.get("level")))
+            details.append(_level_label(item.get("level"), language=lang))
         profile_subjects = _format_profile_subjects(
             item.get("profile_subject_1"),
             item.get("profile_subject_2"),
@@ -2229,7 +2309,7 @@ def _format_passing_scores_context(result: Dict[str, Any], language: Optional[st
         )
         if profile_subjects:
             score_parts.append(profile_subjects)
-        lines.append(f"- {item.get('program')} ({item.get('level')}): " + ", ".join(score_parts) + ".")
+        lines.append(f"- {item.get('program')} ({_level_label(item.get('level'), language=lang)}): " + ", ".join(score_parts) + ".")
     return "\n".join(lines)
 
 
@@ -2284,18 +2364,20 @@ def _build_program_overview_block(
         level_value = str(item.get("level") or "")
         if level_value and level_value not in levels:
             levels.append(level_value)
+        level_text = _level_label(level_value, language=lang)
         amount = item.get("amount")
         amount_text = f"{int(amount):,}".replace(",", " ") if isinstance(amount, (int, float)) else _text(lang, "not_specified")
         period = str(item.get("period") or "").strip()
         price_text = f"{amount_text} {item.get('currency') or 'KZT'}".strip()
         if period:
             price_text = f"{price_text} {period}".strip()
-        lines.append(f"- {text['tuition']} ({level_value}): {price_text}")
+        lines.append(f"- {text['tuition']} ({level_text}): {price_text}")
 
     for item in score_rows[:3]:
         level_value = str(item.get("level") or "")
         if level_value and level_value not in levels:
             levels.append(level_value)
+        level_text = _level_label(level_value, language=lang)
         score_parts: List[str] = []
         if item.get("gop_code"):
             score_parts.append(_text(lang, "passing_gop", value=item.get("gop_code")))
@@ -2311,11 +2393,11 @@ def _build_program_overview_block(
             score_parts.append(_text(lang, "passing_grant_short", value=grant_short))
         score_parts.append(_text(lang, "passing_paid", value=paid if paid is not None else _text(lang, "not_specified")))
         score_text = ", ".join(score_parts) if score_parts else _text(lang, "not_specified")
-        basis = str(item.get("exam") or _text(lang, "not_specified"))
-        lines.append(f"- {text['scores']} ({level_value}): {score_text}")
+        basis = _exam_label(item.get("exam"), language=lang) or _text(lang, "not_specified")
+        lines.append(f"- {text['scores']} ({level_text}): {score_text}")
         subject_parts = [
-            str(item.get("profile_subject_1") or "").strip(),
-            str(item.get("profile_subject_2") or "").strip(),
+            _profile_subject_label(item.get("profile_subject_1"), language=lang),
+            _profile_subject_label(item.get("profile_subject_2"), language=lang),
         ]
         subjects = ", ".join(part for part in subject_parts if part)
         if subjects:
@@ -2326,12 +2408,13 @@ def _build_program_overview_block(
         level_value = str(item.get("level") or "")
         if level_value and level_value not in levels:
             levels.append(level_value)
+        level_text = _level_label(level_value, language=lang)
         duration_value = _format_duration_summary_clean(
             item.get("duration"),
             item.get("duration_by_basis"),
             language=lang,
         )
-        lines.append(f"- {text['duration']} ({level_value}): {duration_value}")
+        lines.append(f"- {text['duration']} ({level_text}): {duration_value}")
 
     lines.append(text["details"])
     return "\n".join(lines), {
@@ -2742,10 +2825,81 @@ def _format_profile_subjects(
     left_label, right_label = labels.get(lang, labels[DEFAULT_LANGUAGE])
     parts: List[str] = []
     if subject_1 not in (None, "", [], {}):
-        parts.append(f"{left_label}: {subject_1}")
+        parts.append(f"{left_label}: {_profile_subject_label(subject_1, language=lang)}")
     if subject_2 not in (None, "", [], {}):
-        parts.append(f"{right_label}: {subject_2}")
+        parts.append(f"{right_label}: {_profile_subject_label(subject_2, language=lang)}")
     return ", ".join(parts)
+
+
+def _profile_subject_label(subject: Any, *, language: Optional[str]) -> str:
+    value = str(_resolve_localized_value(subject, language) or "").strip()
+    if not value:
+        return ""
+    labels = {
+        "kk": {
+            "Математика": "Математика",
+            "География": "География",
+            "Информатика": "Информатика",
+            "Биология": "Биология",
+            "Всемирная история": "Дүниежүзі тарихы",
+            "Иностранный язык": "Шет тілі",
+            "Основы права": "Құқық негіздері",
+            "Язык обучения": "Оқу тілі",
+            "Литература": "Әдебиет",
+            "Творческий экзамен 1": "Шығармашылық емтихан 1",
+            "Творческий экзамен 2": "Шығармашылық емтихан 2",
+            "Профильный блок": "Бейіндік блок",
+            "Профильный экзамен по специальности": "Мамандық бойынша бейіндік емтихан",
+            "Собеседование": "Әңгімелесу",
+        },
+        "en": {
+            "Математика": "Mathematics",
+            "География": "Geography",
+            "Информатика": "Informatics",
+            "Биология": "Biology",
+            "Всемирная история": "World History",
+            "Иностранный язык": "Foreign Language",
+            "Основы права": "Basics of Law",
+            "Язык обучения": "Language of Instruction",
+            "Литература": "Literature",
+            "Творческий экзамен 1": "Creative Exam 1",
+            "Творческий экзамен 2": "Creative Exam 2",
+            "Профильный блок": "Profile Block",
+            "Профильный экзамен по специальности": "Profile Exam",
+            "Собеседование": "Interview",
+        },
+    }
+    return labels.get(normalize_language(language), {}).get(value, value)
+
+
+def _level_label(level: Any, *, language: Optional[str]) -> str:
+    value = str(level or "").strip()
+    if not value:
+        return ""
+    labels = {
+        "bachelor": _text(language, "programs_level_bachelor"),
+        "master": _text(language, "programs_level_master"),
+        "doctorate": _text(language, "programs_level_doctorate"),
+        "second_higher": _text(language, "programs_level_second_higher"),
+    }
+    return labels.get(value, value)
+
+
+def _exam_label(exam: Any, *, language: Optional[str]) -> str:
+    value = str(_resolve_localized_value(exam, language) or "").strip()
+    if not value:
+        return ""
+    labels = {
+        "kk": {
+            "ЕНТ": "ҰБТ",
+            "КТ": "КТ",
+        },
+        "en": {
+            "ЕНТ": "UNT",
+            "КТ": "CT",
+        },
+    }
+    return labels.get(normalize_language(language), {}).get(value, value)
 
 
 def _matches_any_term(terms: set[str], normalized_query: str, raw_query: str) -> bool:
@@ -2917,11 +3071,15 @@ def _not_found(
             if _program_display_name(item, language=lang)
         ],
         "available_levels": sorted({item.get("level") for item in data.get("programs") or [] if item.get("level")}),
-        "source_path": _source_path(),
+        "source_path": _source_path(lang),
     }
 
 
-def _source_path() -> str:
+def _source_path(language: Optional[str] = None) -> str:
+    lang = _normalize_language_code(language)
+    language_path = _language_data_path(lang, base_path_configured=bool(os.getenv("ADMISSION_DATA_PATH")))
+    if language_path and language_path.exists():
+        return str(language_path)
     configured_path = os.getenv("ADMISSION_DATA_PATH")
     path = Path(configured_path) if configured_path else DEFAULT_DATA_PATH
     return str(path)

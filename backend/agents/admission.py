@@ -499,7 +499,7 @@ class AdmissionRequestOrchestrator:
         if decision.requires_auth and not authenticated:
             return decision, _auth_required_result(classification, language)
 
-        data = load_admission_data()
+        data = load_admission_data(language=language)
         resolved_slots = slots or {}
         level = resolved_slots.get("degree") or extract_level(query)
         program = resolved_slots.get("program") or extract_program_with_history(query, history=history, data=data)
