@@ -4,40 +4,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ...agents.admission import (
+    detect_question_language,
+    run_admission_pipeline,
+)
 from ...db import chat_analytics
 from ...langchain.llm import llm_client
-from ...langchain.tools.admission_info import (
-    build_minimal_admission_overview,
-    build_context_entries,
-    detect_requested_tool,
-    extract_level,
-    extract_program_with_history,
-    extract_programs_with_history,
-    format_admission_tool_result,
-    get_admission_address,
-    get_academic_mobility,
-    get_academic_cooperation,
-    get_admission_contacts,
-    get_admission_exams,
-    get_available_programs,
-    get_current_prices,
-    get_foreign_admission_info,
-    get_management,
-    get_passing_scores,
-    get_required_documents,
-    get_scholarships,
-    get_student_house,
-    get_study_durations,
-    load_admission_data,
-    normalize_language,
-)
 from ...services.permissions import require_user
 
 from ...orchestrator.router import AgentRouter
@@ -63,11 +41,6 @@ class ChatPayload(BaseModel):
 PUBLIC_ADMISSION_PLAN = [
     {"agent": "admission", "description": "Admission Agent"},
 ]
-
-PUBLIC_ADMISSION_LLM_HISTORY_LIMIT = 4
-PUBLIC_ADMISSION_LLM_HISTORY_CHARS = 220
-PUBLIC_ADMISSION_LLM_CONTEXT_LIMIT = 4
-PUBLIC_ADMISSION_LLM_CONTEXT_CHARS = 1800
 
 def _normalize_history_item(item: Any) -> dict[str, str] | None:
     if not isinstance(item, dict):
@@ -142,6 +115,35 @@ def _merge_history(
         compacted.append(item)
 
     return compacted[-limit:]
+
+
+def _attach_admission_state(
+    router_payload: dict[str, Any],
+    session_id: str | None,
+) -> None:
+    context = dict(router_payload.get("context") or {})
+    if session_id:
+        if not isinstance(context.get("admission_state"), dict):
+            state = chat_analytics.fetch_latest_admission_state(session_id)
+            if state:
+                context["admission_state"] = state
+        if not isinstance(context.get("admission_profile"), dict):
+            profile = chat_analytics.fetch_latest_admission_profile(session_id)
+            if profile:
+                context["admission_profile"] = profile
+    router_payload["context"] = context
+
+
+def _sync_admission_context_snapshot(metadata: dict[str, Any], response: dict[str, Any]) -> None:
+    context_snapshot = dict(metadata.get("context_snapshot") or {})
+    state = response.get("admission_state")
+    if isinstance(state, dict):
+        context_snapshot["admission_state"] = state
+    profile = response.get("admission_profile")
+    if isinstance(profile, dict):
+        context_snapshot["admission_profile"] = profile
+    if context_snapshot:
+        metadata["context_snapshot"] = context_snapshot
 
 
 def _compact_metadata(value: Any) -> Any:
@@ -287,294 +289,18 @@ def _print_public_request(endpoint: str, request_payload: dict[str, Any]) -> Non
         print(f"[public-request] {endpoint} :: {safe_payload}", flush=True)
 
 
-def _synthesize_public_admission_answer(
-    *,
-    payload: ChatPayload,
-    tool_result: dict[str, Any],
-    fallback_answer: str,
-    history: list[dict[str, Any]] | None = None,
-) -> tuple[str, dict[str, Any]]:
-    language = normalize_language(payload.language)
-    context_entries = build_context_entries(tool_result, language=language)
-    force_ai_answer = _should_force_grant_ai_answer(payload.message)
-    if not llm_client.is_configured:
-        return _grant_ai_unavailable_message(language), {"used": False, "model": None, "error": None, "raw_request": None}
-
-    prompt = _build_public_admission_ai_prompt(
-        query=payload.message.strip(),
-        history=history or payload.history or [],
-        context_entries=context_entries,
-        language=language,
-        grant_only=force_ai_answer,
-    )
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": prompt},
-    ]
-    llm_answer = llm_client.chat(messages)
-    if llm_answer:
-        return llm_answer, {
-            "used": True,
-            "model": getattr(llm_client, "model", None),
-            "error": getattr(llm_client, "last_error", None),
-            "raw_request": None,
-        }
-    return _grant_ai_unavailable_message(language), {
-        "used": False,
-        "model": getattr(llm_client, "model", None),
-        "error": getattr(llm_client, "last_error", None),
-        "raw_request": {
-            "intents": ["admission"],
-            "plan": ["admission"],
-        },
-    }
-
-
-def _format_public_admission_information_gap_answer(language: str) -> str:
-    contacts = format_admission_tool_result(
-        get_admission_contacts(language=language),
-        language=language,
-    )
-    messages = {
-        "ru": (
-            "Этот вопрос лучше уточнить напрямую в приемной комиссии, чтобы получить точный ответ по вашей ситуации.<br><br>"
-            f"{_plain_text_to_html(contacts)}"
-        ),
-        "kk": (
-            "Бұл сұрақты сіздің жағдайыңыз бойынша нақтылау үшін қабылдау комиссиясына тікелей қойған дұрыс.<br><br>"
-            f"{_plain_text_to_html(contacts)}"
-        ),
-        "en": (
-            "This question is best clarified directly with the admissions office so they can give an exact answer for your situation.<br><br>"
-            f"{_plain_text_to_html(contacts)}"
-        ),
-    }
-    return messages.get(language, messages["ru"])
-
-
-def _plain_text_to_html(value: str) -> str:
-    escaped = (
-        str(value or "")
-        .replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-    )
-    return escaped.replace("\n", "<br>")
-
-
-def _build_public_admission_response(
-    *,
-    payload: ChatPayload,
-    history: list[dict[str, Any]] | None = None,
-) -> tuple[dict[str, Any], str]:
-    query = payload.message.strip()
-    language = normalize_language(payload.language)
-    data = load_admission_data()
-    level = extract_level(query)
-    program = extract_program_with_history(query, history=history, data=data)
-    programs = extract_programs_with_history(query, history=history, data=data)
-    requested_tool = detect_requested_tool(query)
-    force_ai_answer = _should_force_grant_ai_answer(query)
-
-    if requested_tool == "programs":
-        tool_result = get_available_programs(level=level, language=language)
-    elif requested_tool == "prices":
-        tool_result = get_current_prices(program=program, level=level, language=language)
-    elif requested_tool == "passing_scores":
-        tool_result = get_passing_scores(program=program, level=level, language=language)
-    elif requested_tool == "documents":
-        tool_result = get_required_documents(level=level, language=language)
-    elif requested_tool == "address":
-        tool_result = get_admission_address(language=language)
-    elif requested_tool == "contacts":
-        tool_result = get_admission_contacts(language=language)
-    elif requested_tool == "durations":
-        tool_result = get_study_durations(program=program, level=level, language=language)
-    elif requested_tool == "academic_mobility":
-        tool_result = get_academic_mobility(program=program, query=query, language=language)
-    elif requested_tool == "academic_cooperation":
-        tool_result = get_academic_cooperation(program=program, query=query, language=language)
-    elif requested_tool == "scholarships":
-        tool_result = get_scholarships(language=language, query=query)
-    elif requested_tool == "admission_exams":
-        tool_result = get_admission_exams(language=language, query=query)
-    elif requested_tool == "foreign_admission":
-        tool_result = get_foreign_admission_info(language=language)
-    elif requested_tool == "management":
-        tool_result = get_management(language=language)
-    elif requested_tool == "student_house":
-        tool_result = get_student_house(language=language)
-    else:
-        if force_ai_answer:
-            tool_result = get_scholarships(language=language, query=query)
-        else:
-            requested_programs = [item for item in programs if item]
-            if program and program not in requested_programs:
-                requested_programs.insert(0, program)
-            tool_result = build_minimal_admission_overview(
-                programs=requested_programs,
-                level=level,
-                language=language,
-            )
-            information_gap = _detect_public_admission_query_information_gap(
-                query=query,
-                requested_tool=requested_tool,
-                requested_programs=requested_programs,
-                level=level,
-            )
-            if information_gap.get("detected"):
-                summary = dict(tool_result.get("summary") or {})
-                summary["mode"] = information_gap["reason"]
-                tool_result = {
-                    **tool_result,
-                    "summary": summary,
-                    "information_gap": information_gap,
-                }
-
-    fallback_answer = format_admission_tool_result(tool_result, language=language)
-    return tool_result, fallback_answer
-
-
-def _detect_public_admission_query_information_gap(
-    *,
-    query: str,
-    requested_tool: str | None,
-    requested_programs: list[str],
-    level: str | None,
-) -> dict[str, Any]:
-    if requested_tool or requested_programs or level:
-        return {"detected": False}
-
-    normalized = _normalize_public_admission_query(query)
-    if not normalized:
-        return {"detected": False}
-    if _is_public_admission_greeting(normalized):
-        return {"detected": False}
-    if _is_public_admission_catalog_request(normalized):
-        return {"detected": False}
-    if _looks_like_specific_public_admission_question(normalized):
-        return {
-            "detected": True,
-            "reason": "unsupported_specific_question",
-            "tool": "overview",
-            "route_to_contacts": True,
-        }
-    if _is_public_admission_broad_opening(normalized):
-        return {"detected": False}
-    return {"detected": False}
-
-
-def _normalize_public_admission_query(query: str) -> str:
-    return re.sub(r"\s+", " ", (query or "").strip().lower())
-
-
-def _is_public_admission_greeting(normalized_query: str) -> bool:
-    cleaned = re.sub(r"[^\w\s]+", " ", normalized_query)
-    words = [word for word in cleaned.split() if word]
-    return len(words) <= 2 and any(
-        word in {"hi", "hello", "hey", "сәлем", "салем", "привет", "здравствуйте", "добрый"}
-        for word in words
-    )
-
-
-def _is_public_admission_broad_opening(normalized_query: str) -> bool:
-    exact_phrases = {
-        "поступление",
-        "приемная комиссия",
-        "admission",
-        "оқуға түсу",
-    }
-    if normalized_query in exact_phrases:
-        return True
-
-    broad_prefixes = {
-        "как поступить",
-        "хочу поступить",
-        "how to apply",
-        "i want to apply",
-        "қалай түсем",
-    }
-    return any(normalized_query.startswith(phrase) for phrase in broad_prefixes)
-
-
-def _is_public_admission_catalog_request(normalized_query: str) -> bool:
-    catalog_terms = {
-        "специальности",
-        "специальность",
-        "программы",
-        "программа",
-        "направления",
-        "мамандық",
-        "бағдарлама",
-        "programs",
-        "programmes",
-        "majors",
-    }
-    return any(term in normalized_query for term in catalog_terms)
-
-
-def _looks_like_specific_public_admission_question(normalized_query: str) -> bool:
-    question_markers = {
-        "?",
-        "можно",
-        "нужно",
-        "есть",
-        "будет",
-        "сколько",
-        "когда",
-        "где",
-        "какой",
-        "какая",
-        "какие",
-        "каким",
-        "почему",
-        "общежит",
-        "военн",
-        "медицин",
-        "льгот",
-        "скид",
-        "дистанц",
-        "онлайн",
-        "перевод",
-        "после колледжа",
-        "после школы",
-        "can",
-        "need",
-        "when",
-        "where",
-        "how much",
-        "discount",
-        "dorm",
-        "hostel",
-        "online",
-        "transfer",
-        "қашан",
-        "қайда",
-        "қанша",
-        "жеңілдік",
-        "жатақхана",
-    }
-    if any(marker in normalized_query for marker in question_markers):
-        return True
-
-    words = normalized_query.split()
-    return len(words) >= 4
-
-
 def _assemble_public_admission_response(
     *,
     payload: ChatPayload,
-    tool_result: dict[str, Any],
-    final_answer: str,
-    llm_info: dict[str, Any],
+    pipeline: dict[str, Any],
 ) -> dict[str, Any]:
-    context_entries = build_context_entries(
-        tool_result,
-        language=normalize_language(payload.language),
-    )
+    language = str(pipeline.get("language") or detect_question_language(payload.message, fallback=payload.language))
+    tool_result = pipeline.get("tool_data") or {}
+    context_entries = pipeline.get("context") or []
+    final_answer = str(pipeline.get("answer") or "")
     return {
         "query": payload.message.strip(),
-        "language": payload.language,
+        "language": language,
         "intents": ["admission"],
         "plan": PUBLIC_ADMISSION_PLAN,
         "trace": [
@@ -584,16 +310,25 @@ def _assemble_public_admission_response(
                 "description": "Public Admission FAQ",
                 "output": {
                     "intent": "admission",
+                    "answer": final_answer,
                     "tool_data": tool_result,
                     "context": context_entries,
+                    "classification": pipeline.get("classification"),
+                    "orchestration": pipeline.get("orchestration"),
+                    "admission_state": pipeline.get("admission_state"),
+                    "admission_profile": pipeline.get("admission_profile"),
                 },
             }
         ],
         "context": context_entries,
         "supporting_context": context_entries,
-        "llm": llm_info,
+        "llm": pipeline.get("llm") or {},
         "final_answer": final_answer,
         "tool_data": tool_result,
+        "classification": pipeline.get("classification"),
+        "orchestration": pipeline.get("orchestration"),
+        "admission_state": pipeline.get("admission_state"),
+        "admission_profile": pipeline.get("admission_profile"),
     }
 
 
@@ -601,153 +336,16 @@ def _run_public_admission_chat(
     payload: ChatPayload,
     history: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    tool_result, fallback_answer = _build_public_admission_response(
-        payload=payload,
-        history=history,
-    )
-    final_answer, llm_info = _synthesize_public_admission_answer(
-        payload=payload,
-        tool_result=tool_result,
-        fallback_answer=fallback_answer,
-        history=history,
+    pipeline = run_admission_pipeline(
+        query=payload.message.strip(),
+        history=history or payload.history or [],
+        language=payload.language,
+        payload=payload.model_dump(),
     )
     return _assemble_public_admission_response(
         payload=payload,
-        tool_result=tool_result,
-        final_answer=final_answer,
-        llm_info=llm_info,
+        pipeline=pipeline,
     )
-
-
-def _should_force_grant_ai_answer(query: str) -> bool:
-    normalized = " ".join((query or "").strip().lower().split())
-    if not normalized:
-        return False
-    terms = {"грант", "гранты", "госгрант", "гос грант", "grant", "grants"}
-    return any(term in normalized for term in terms)
-
-
-def _build_grant_ai_prompt(
-    *,
-    query: str,
-    history: list[dict[str, Any]] | None,
-    context_entries: list[dict[str, Any]],
-    language: str,
-) -> str:
-    history_lines: list[str] = []
-    for item in (history or [])[-PUBLIC_ADMISSION_LLM_HISTORY_LIMIT:]:
-        if not isinstance(item, dict):
-            continue
-        role = str(item.get("role") or "user").strip().lower()
-        if role == "bot":
-            role = "assistant"
-        content = str(item.get("content") or "").strip()
-        if not content:
-            continue
-        history_lines.append(f"- {role}: {_truncate_for_prompt(content, PUBLIC_ADMISSION_LLM_HISTORY_CHARS)}")
-
-    context_lines: list[str] = []
-    for item in context_entries[:PUBLIC_ADMISSION_LLM_CONTEXT_LIMIT]:
-        if not isinstance(item, dict):
-            continue
-        content = str(item.get("content") or "").strip()
-        if not content:
-            continue
-        context_lines.append(f"- {_truncate_for_prompt(content, PUBLIC_ADMISSION_LLM_CONTEXT_CHARS)}")
-
-    history_text = "\n".join(history_lines) if history_lines else "- нет истории"
-    context_text = "\n".join(context_lines) if context_lines else "- контекст отсутствует"
-    return (
-        "Сформируй ответ пользователю по вопросам поступления, связанным с грантами.\n"
-        "Отвечай только по контексту ниже.\n"
-        "Не копируй шаблонные заголовки и не воспроизводи структурированный шаблон ответа.\n"
-        "Если вопрос общий, например только про грант, кратко объясни доступные варианты и предложи уточнить программу или уровень для точного ответа.\n"
-        "Формат ответа: короткий HTML-фрагмент без Markdown.\n\n"
-        f"Язык ответа: {language}\n"
-        f"Вопрос пользователя: {query}\n"
-        f"История:\n{history_text}\n\n"
-        f"Контекст:\n{context_text}"
-    )
-
-
-def _build_public_admission_ai_prompt(
-    *,
-    query: str,
-    history: list[dict[str, Any]] | None,
-    context_entries: list[dict[str, Any]],
-    language: str,
-    grant_only: bool = False,
-) -> str:
-    history_lines: list[str] = []
-    for item in (history or [])[-PUBLIC_ADMISSION_LLM_HISTORY_LIMIT:]:
-        if not isinstance(item, dict):
-            continue
-        role = str(item.get("role") or "user").strip().lower()
-        if role == "bot":
-            role = "assistant"
-        content = str(item.get("content") or "").strip()
-        if not content:
-            continue
-        history_lines.append(f"- {role}: {_truncate_for_prompt(content, PUBLIC_ADMISSION_LLM_HISTORY_CHARS)}")
-
-    context_lines: list[str] = []
-    for item in context_entries[:PUBLIC_ADMISSION_LLM_CONTEXT_LIMIT]:
-        if not isinstance(item, dict):
-            continue
-        content = str(item.get("content") or "").strip()
-        if not content:
-            continue
-        context_lines.append(f"- {_truncate_for_prompt(content, PUBLIC_ADMISSION_LLM_CONTEXT_CHARS)}")
-
-    history_text = "\n".join(history_lines) if history_lines else "- no history"
-    context_text = "\n".join(context_lines) if context_lines else "- no context"
-    clarification_contacts = format_admission_tool_result(
-        get_admission_contacts(language=language),
-        language=language,
-    )
-    scope = (
-        "The question is specifically about scholarships or grants."
-        if grant_only
-        else "The question is about admission."
-    )
-    return (
-        "Write a concise and natural reply for a prospective student.\n"
-        f"{scope}\n"
-        "Use only the context below.\n"
-        "If this is a greeting, first message, or broad opening message, do not list the full program catalog unless the user explicitly asks for available programs.\n"
-        "For greetings or broad openings, briefly greet the user and ask what admission question they want to clarify.\n"
-        "Strict rule for missing information:\n"
-        "- If the context does not contain enough information to answer the user's question, do not invent facts.\n"
-        "- Never write phrases like 'there is no information', 'not specified', 'no data', 'I do not know', or similar wording.\n"
-        "- In that case, immediately route the user to the admissions office: give the admissions contacts below and say that they can clarify this question there.\n"
-        "- The final answer must sound like a referral to the admissions office, not like a refusal or a negative answer.\n"
-        "Do not copy template headings. Do not reproduce the tool output mechanically.\n"
-        "For short direct questions, start with a direct answer in the first sentence.\n"
-        "Example style: 'Да, для этой программы нужен ЕНТ.' or 'Нет, здесь нужно комплексное тестирование.'\n"
-        "If the question is broad, answer the main point first and then suggest what to clarify for a more exact answer.\n"
-        "Response format: short HTML fragment without Markdown.\n\n"
-        f"Response language: {language}\n"
-        f"User question: {query}\n"
-        f"History:\n{history_text}\n\n"
-        f"Context:\n{context_text}\n\n"
-        f"Admissions contacts for clarification:\n{clarification_contacts}"
-    )
-
-
-def _truncate_for_prompt(value: str, limit: int) -> str:
-    text = str(value or "").strip()
-    if len(text) <= limit:
-        return text
-    return f"{text[:limit].rstrip()}..."
-
-
-def _grant_ai_unavailable_message(language: str) -> str:
-    messages = {
-        "ru": "Не удалось сформировать ответ через ИИ. Попробуйте повторить запрос.",
-        "kk": "ЖИ арқылы жауап құрастыру мүмкін болмады. Сұрауды қайта жіберіп көріңіз.",
-        "en": "Could not generate an AI answer. Please try again.",
-    }
-    return messages.get(language, messages["ru"])
 
 
 def _save_public_admission_analytics(
@@ -759,6 +357,7 @@ def _save_public_admission_analytics(
     request_payload: dict[str, Any] | None = None,
 ) -> None:
     try:
+        _sync_admission_context_snapshot(metadata, response)
         chat_analytics.save_chat_event(
             session_id=session_id,
             telegram_id=None,
@@ -804,6 +403,7 @@ def _prepare_public_router_payload(
         stored_history,
         current_message=payload.message,
     )
+    _attach_admission_state(router_payload, session_id)
     if router_payload.get("metadata") is None:
         router_payload["metadata"] = metadata
     else:
@@ -839,6 +439,7 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
         stored_history,
         current_message=payload.message,
     )
+    _attach_admission_state(router_payload, session_id)
 
     response = await agent_router.route(router_payload)
     request_payload = _build_request_log_payload(
@@ -849,6 +450,7 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
     )
 
     try:
+        _sync_admission_context_snapshot(metadata, response)
         chat_analytics.save_chat_event(
             session_id=session_id,
             telegram_id=telegram_id,
@@ -878,7 +480,12 @@ async def handle_public_admission_chat(payload: ChatPayload) -> dict:
         payload,
         endpoint="/chat/public/admission",
     )
-    public_payload = payload.model_copy(update={"history": router_payload.get("history") or []})
+    public_payload = payload.model_copy(
+        update={
+            "history": router_payload.get("history") or [],
+            "context": router_payload.get("context") or {},
+        }
+    )
     response = _run_public_admission_chat(public_payload, history=router_payload.get("history"))
     request_payload = _build_request_log_payload(
         payload=payload,
@@ -911,7 +518,12 @@ async def handle_public_admission_chat_stream(payload: ChatPayload) -> Streaming
     async def event_stream():
         final_answer_parts: list[str] = []
         try:
-            public_payload = payload.model_copy(update={"history": router_payload.get("history") or []})
+            public_payload = payload.model_copy(
+                update={
+                    "history": router_payload.get("history") or [],
+                    "context": router_payload.get("context") or {},
+                }
+            )
             response = _run_public_admission_chat(
                 public_payload,
                 history=router_payload.get("history"),
@@ -980,6 +592,7 @@ async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_
         stored_history,
         current_message=payload.message,
     )
+    _attach_admission_state(router_payload, session_id)
     request_payload = _build_request_log_payload(
         payload=payload,
         router_payload=router_payload,
@@ -1097,9 +710,11 @@ async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_
                         "plan": [step.key for step in full_plan],
                     } if not llm_answer else None,
                 },
+                **agent_router.aggregator._collect_admission_metadata(execution_trace),
             }
 
             try:
+                _sync_admission_context_snapshot(metadata, response_obj)
                 chat_analytics.save_chat_event(
                     session_id=session_id,
                     telegram_id=telegram_id,

@@ -54,6 +54,7 @@ class ResponseAggregator:
         trace: List[Dict[str, Any]],
     ) -> Dict[str, Any]:
         artifacts = self._collect_artifacts(trace)
+        admission_metadata = self._collect_admission_metadata(trace)
         if artifacts.direct_response:
             plan_view = [
                 {"agent": step.key, "description": step.description} for step in plan
@@ -74,6 +75,7 @@ class ResponseAggregator:
                     "error": None,
                     "raw_request": None,
                 },
+                **admission_metadata,
             }
         fallback_answer = self._fallback_answer(artifacts.answers)
         llm_answer = self._synthesize_final_answer(
@@ -110,7 +112,31 @@ class ResponseAggregator:
                 if not llm_answer
                 else None,
             },
+            **admission_metadata,
         }
+
+    def _collect_admission_metadata(
+        self,
+        trace: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        for item in reversed(trace):
+            if item.get("key") != "admission":
+                continue
+            output = item.get("output")
+            if not isinstance(output, dict):
+                return {}
+            return {
+                key: output[key]
+                for key in (
+                    "classification",
+                    "orchestration",
+                    "admission_state",
+                    "admission_profile",
+                    "tool_data",
+                )
+                if key in output
+            }
+        return {}
 
     def _collect_artifacts(self, trace: List[Dict[str, Any]]) -> AggregationArtifacts:
         answers: List[str] = []

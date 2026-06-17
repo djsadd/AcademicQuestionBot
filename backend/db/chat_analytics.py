@@ -887,6 +887,50 @@ def fetch_session_history(session_id: str, limit: int = 20) -> list[dict[str, An
     return history
 
 
+def fetch_latest_admission_state(session_id: str) -> dict[str, Any] | None:
+    normalized_session_id = str(session_id or "").strip()
+    if not normalized_session_id:
+        return None
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT response_payload->'admission_state'
+            FROM chat_analytics
+            WHERE session_id = %s
+              AND jsonb_typeof(response_payload->'admission_state') = 'object'
+            ORDER BY created_at DESC
+            LIMIT 1;
+            """,
+            (normalized_session_id,),
+        )
+        row = cursor.fetchone()
+    if not row or not isinstance(row[0], dict):
+        return None
+    return row[0]
+
+
+def fetch_latest_admission_profile(session_id: str) -> dict[str, Any] | None:
+    normalized_session_id = str(session_id or "").strip()
+    if not normalized_session_id:
+        return None
+    with _get_connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT response_payload->'admission_profile'
+            FROM chat_analytics
+            WHERE session_id = %s
+              AND jsonb_typeof(response_payload->'admission_profile') = 'object'
+            ORDER BY created_at DESC
+            LIMIT 1;
+            """,
+            (normalized_session_id,),
+        )
+        row = cursor.fetchone()
+    if not row or not isinstance(row[0], dict):
+        return None
+    return row[0]
+
+
 def fetch_public_session_history(session_id: str, limit: int = 20) -> list[dict[str, Any]]:
     with _get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(

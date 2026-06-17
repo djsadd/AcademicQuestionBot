@@ -399,6 +399,42 @@ TOOL_TERMS = {
     },
 }
 
+PROFILE_SUBJECT_ALIASES: Dict[str, set[str]] = {
+    "Математика": {"математика", "math", "mathematics"},
+    "География": {"география", "geography"},
+    "Информатика": {"информатика", "computer science", "informatics"},
+    "Биология": {"биология", "biology"},
+    "Всемирная история": {"всемирная история", "мировая история", "world history"},
+    "Иностранный язык": {
+        "иностранный язык",
+        "английский",
+        "английский язык",
+        "english",
+        "foreign language",
+    },
+    "Основы права": {"основы права", "право", "law basics"},
+    "Язык обучения": {"язык обучения", "казахский язык", "русский язык", "language of instruction"},
+    "Литература": {"литература", "literature"},
+    "Творческий экзамен 1": {"творческий экзамен 1", "творческий экзамен", "creative exam 1"},
+    "Творческий экзамен 2": {"творческий экзамен 2", "creative exam 2"},
+}
+
+PROFILE_SUBJECT_CONTEXT_TERMS = {
+    "профиль",
+    "предмет",
+    "предметы",
+    "ент",
+    "ұбт",
+    "комбинация",
+    "комбинац",
+    "сдаю",
+    "сдал",
+    "сдала",
+    "profile subject",
+    "profile subjects",
+    "unt",
+}
+
 TOOL_TERMS["student_house"] = {
     "студенческий дом",
     "студ дом",
@@ -639,13 +675,24 @@ def get_current_prices(
     }
 
 
-def get_available_programs(*, level: Optional[str] = None, language: Optional[str] = None) -> Dict[str, Any]:
+def get_available_programs(
+    *,
+    level: Optional[str] = None,
+    language: Optional[str] = None,
+    profile_subjects: Optional[List[str]] = None,
+) -> Dict[str, Any]:
     data = load_admission_data()
     if data.get("status") in {"missing_data_file", "invalid_data_file"}:
         return data
 
     lang = normalize_language(language)
-    matches = _match_programs(data, program=None, level=level)
+    requested_profile_subjects = _normalize_profile_subjects(profile_subjects or [])
+    matches = _match_programs(
+        data,
+        program=None,
+        level=level,
+        profile_subjects=requested_profile_subjects,
+    )
     if not matches:
         return _not_found("programs", data, level=level, program=None, language=lang)
 
@@ -675,6 +722,7 @@ def get_available_programs(*, level: Optional[str] = None, language: Optional[st
         "status": "ok",
         "tool": "programs",
         "language": lang,
+        "requested_profile_subjects": requested_profile_subjects,
         "results": results,
         "data_updated_at": data.get("last_updated"),
         "source_path": _source_path(),
@@ -2293,19 +2341,49 @@ def _program_specific_rows(result: Dict[str, Any], program_name: str) -> List[Di
     return matched
 
 
+def extract_profile_subjects(query: str) -> List[str]:
+    normalized_query = _normalize_text(query)
+    if not normalized_query:
+        return []
+    if not any(_term_matches_query(term, normalized_query) for term in PROFILE_SUBJECT_CONTEXT_TERMS):
+        return []
+
+    matches: List[tuple[int, str]] = []
+    seen: set[str] = set()
+    for canonical, aliases in PROFILE_SUBJECT_ALIASES.items():
+        terms = {canonical, *aliases}
+        positions = [
+            normalized_query.find(_normalize_text(term))
+            for term in terms
+            if _normalize_text(term) and _term_matches_query(term, normalized_query)
+        ]
+        positions = [position for position in positions if position >= 0]
+        if not positions or canonical in seen:
+            continue
+        seen.add(canonical)
+        matches.append((min(positions), canonical))
+
+    matches.sort(key=lambda item: item[0])
+    return [canonical for _, canonical in matches[:2]]
+
+
 def _match_programs(
     data: Dict[str, Any],
     *,
     program: Optional[str],
     level: Optional[str],
+    profile_subjects: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     programs = data.get("programs") or []
     normalized_level = _normalize_level(level)
     normalized_program = _normalize_text(program)
+    normalized_profile_subjects = _normalize_profile_subjects(profile_subjects or [])
     matches: List[Dict[str, Any]] = []
     exact_matches: List[Dict[str, Any]] = []
     for item in programs:
         if normalized_level and item.get("level") != normalized_level:
+            continue
+        if normalized_profile_subjects and not _program_matches_profile_subjects(item, normalized_profile_subjects):
             continue
         if normalized_program:
             candidates = _program_candidates(item)
@@ -2317,6 +2395,43 @@ def _match_programs(
                 continue
         matches.append(item)
     return exact_matches or matches
+
+
+def _normalize_profile_subjects(subjects: List[str]) -> List[str]:
+    result: List[str] = []
+    seen: set[str] = set()
+    for subject in subjects:
+        canonical = _canonical_profile_subject(subject)
+        if not canonical or canonical in seen:
+            continue
+        seen.add(canonical)
+        result.append(canonical)
+    return result
+
+
+def _canonical_profile_subject(subject: Any) -> str:
+    normalized_subject = _normalize_text(str(subject or ""))
+    if not normalized_subject:
+        return ""
+    for canonical, aliases in PROFILE_SUBJECT_ALIASES.items():
+        normalized_terms = {_normalize_text(canonical), *(_normalize_text(alias) for alias in aliases)}
+        if normalized_subject in normalized_terms:
+            return canonical
+    return str(subject or "").strip()
+
+
+def _program_matches_profile_subjects(program: Dict[str, Any], requested_subjects: List[str]) -> bool:
+    program_subjects = _normalize_profile_subjects(
+        [
+            str(program.get("profile_subject_1") or ""),
+            str(program.get("profile_subject_2") or ""),
+        ]
+    )
+    if not program_subjects:
+        return False
+    if len(requested_subjects) >= 2:
+        return set(program_subjects) == set(requested_subjects[:2])
+    return requested_subjects[0] in program_subjects
 
 
 def _program_candidates(program: Dict[str, Any], *, include_topic_aliases: bool = False) -> List[str]:

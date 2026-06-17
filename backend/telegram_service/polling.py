@@ -114,6 +114,14 @@ def _build_ai_payload(
 ) -> dict:
     """Prepare chat payload for Telegram requests with session history."""
     history = chat_analytics.fetch_session_history(session_id) if session_id else []
+    context: dict = {}
+    if session_id:
+        admission_state = chat_analytics.fetch_latest_admission_state(session_id)
+        if admission_state:
+            context["admission_state"] = admission_state
+        admission_profile = chat_analytics.fetch_latest_admission_profile(session_id)
+        if admission_profile:
+            context["admission_profile"] = admission_profile
     return {
         "message": message,
         "language": language,
@@ -127,6 +135,7 @@ def _build_ai_payload(
             "channel": "telegram",
             "session_id": session_id,
         },
+        "context": context,
         "history": history,
     }
 
@@ -351,6 +360,7 @@ def run() -> None:
                         agents=result.get("plan"),
                         trace=result.get("trace"),
                         metadata={"chat_id": chat_id},
+                        response_payload=result,
                     )
                 except Exception as exc:
                     logger.warning("Chat analytics failed: %s", exc)

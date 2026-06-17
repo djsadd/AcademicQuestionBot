@@ -7,18 +7,18 @@
 Получение пороговых баллов находится здесь:
 
 - `backend/langchain/tools/admission_info.py`
-  - `detect_requested_tool()` определяет, что вопрос относится к `passing_scores`;
+  - `classify_admission_tool()` определяет, что вопрос относится к `passing_scores`;
   - `get_passing_scores()` читает `backend/data/admission_info.json`, достает блок `programs[].passing_score` и возвращает структурированный результат;
   - `build_context_entries()` превращает результат инструмента в компактный текстовый контекст для LLM.
 
 В публичном чате вызов происходит здесь:
 
 - `backend/api/routers/chat.py`
-  - `_build_public_admission_response()` вызывает `get_passing_scores(...)`, если `detect_requested_tool(...)` вернул `passing_scores`;
+  - `_build_public_admission_response()` вызывает `get_passing_scores(...)`, если `classify_admission_tool(...)` вернул `passing_scores`;
   - `_synthesize_public_admission_answer()` собирает `context_entries = build_context_entries(tool_result, ...)` и передает их в prompt;
   - `_assemble_public_admission_response()` возвращает тот же контекст наружу в поле `context`.
 
-Это реализовано как структурированный admission-tool в коде, но не как классический LangChain tool с декоратором `@tool` и не как runtime tool-call LLM. LLM не выбирает инструмент сам: инструмент выбирается детерминированно Python-кодом по ключевым словам и параметрам запроса.
+Это реализовано как структурированный admission-tool в коде, но не как классический LangChain tool с декоратором `@tool` и не как runtime tool-call LLM. Инструмент выбирается приложением до финального ответа через `classify_admission_tool()`; при недоступном LLM используется fallback по ключевым словам.
 
 ## Основной публичный flow
 
@@ -69,7 +69,7 @@ Streaming endpoint отличается только транспортом от
 3. Определяет уровень обучения через `extract_level(query)`.
 4. Определяет программу через `extract_program_with_history(query, history, data)`.
 5. Определяет список программ через `extract_programs_with_history(...)`.
-6. Определяет нужный инструмент через `detect_requested_tool(query)`.
+6. Определяет нужный инструмент через `classify_admission_tool(query, history=history)`.
 7. Вызывает одну из функций из `backend/langchain/tools/admission_info.py`.
 
 Основные инструменты:
@@ -89,7 +89,7 @@ Streaming endpoint отличается только транспортом от
 
 ## Как выбирается `passing_scores`
 
-`detect_requested_tool()` в `backend/langchain/tools/admission_info.py` смотрит на ключевые слова запроса.
+`classify_admission_tool()` использует LLM, если он настроен. Если LLM недоступен или вернул неподдерживаемую метку, fallback `detect_requested_tool()` в `backend/langchain/tools/admission_info.py` смотрит на ключевые слова запроса.
 
 В `passing_scores` ведут слова и паттерны вроде:
 
@@ -161,7 +161,7 @@ ADMISSION_DATA_PATH=C:\path\to\admission_info.json
 
 ```text
 _build_public_admission_response()
-  -> detect_requested_tool(query) == "passing_scores"
+  -> classify_admission_tool(query, history=history) == "passing_scores"
   -> get_passing_scores(program=program, level=level, language=language)
   -> tool_result = {"tool": "passing_scores", "results": [...], ...}
   -> fallback_answer = format_admission_tool_result(tool_result, language)
@@ -256,11 +256,13 @@ IntentRouterAgent
 
 ```text
 public endpoint
-  -> deterministic admission tool selection
+  -> LLM admission tool classifier with deterministic fallback
   -> optional LLM synthesis
 ```
 
-При этом приватный `AdmissionAgent` в `backend/agents/admission.py` использует те же функции из `backend/langchain/tools/admission_info.py`: `detect_requested_tool()`, `get_passing_scores()`, `build_context_entries()` и `format_admission_tool_result()`.
+Note: public admission routing now calls `classify_admission_tool(query, history=history)`. If the LLM is unavailable or returns an unsupported label, the classifier falls back to `detect_requested_tool()`.
+
+При этом приватный `AdmissionAgent` в `backend/agents/admission.py` использует тот же классификатор `classify_admission_tool()` и те же функции из `backend/langchain/tools/admission_info.py`: `get_passing_scores()`, `build_context_entries()` и `format_admission_tool_result()`.
 
 ## Что считать инструментом в этой кодовой базе
 
@@ -272,4 +274,3 @@ public endpoint
 - может быть преобразована в fallback answer и LLM context.
 
 Это не LangChain tool object и не функция, которую модель вызывает через tool calling. Выбор инструмента выполняется приложением до вызова LLM.
-

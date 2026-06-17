@@ -135,9 +135,11 @@ level = payload.get("level") or extract_level(query)
 history = payload.get("history")
 program = payload.get("program") or extract_program_with_history(query, history=history, data=data)
 programs = extract_programs_with_history(query, history=history, data=data)
-requested_tool = detect_requested_tool(query)
+requested_tool = classify_admission_tool(query, history=history)
 force_ai_answer = _should_force_grant_ai_answer(query)
 ```
+
+Note: `classify_admission_tool()` uses the LLM when it is configured. If the LLM is unavailable or returns an unsupported label, it falls back to `detect_requested_tool()`.
 
 Что происходит на этом этапе:
 
@@ -145,7 +147,7 @@ force_ai_answer = _should_force_grant_ai_answer(query)
 - `extract_level()` определяет уровень обучения из текста;
 - `extract_program_with_history()` пытается найти программу в текущем запросе и истории;
 - `extract_programs_with_history()` собирает список программ, если в запросе их несколько;
-- `detect_requested_tool()` определяет тип вопроса по ключевым словам;
+- `classify_admission_tool()` определяет тип вопроса через LLM, а `detect_requested_tool()` используется как fallback по ключевым словам;
 - `_should_force_grant_ai_answer()` отдельно проверяет запросы про гранты.
 
 ## Шаг 5. Выбор admission-инструмента
@@ -174,7 +176,7 @@ force_ai_answer = _should_force_grant_ai_answer(query)
 - для вопросов про гранты вызывается `get_scholarships()`;
 - для остальных запросов собирается обзор через `_build_overview()`, который вызывает `build_minimal_admission_overview()`.
 
-Важно: LLM не выбирает tool сам. Tool выбирается детерминированно Python-кодом через `detect_requested_tool()`.
+Важно: admission-tool выбирается приложением до формирования финального ответа. Основной выбор делает `classify_admission_tool()`, а `detect_requested_tool()` остается deterministic fallback.
 
 ## Шаг 6. Формирование контекста и fallback-ответа
 
@@ -250,7 +252,7 @@ LLM prompt строится в `_build_admission_ai_prompt()` и содержи�
 - `extract_level()`;
 - `extract_program_with_history()`;
 - `extract_programs_with_history()`;
-- `detect_requested_tool()`;
+- `classify_admission_tool()` и fallback `detect_requested_tool()`;
 - `get_*()` функции из `admission_info.py`;
 - `format_admission_tool_result()`;
 - `build_context_entries()`.
@@ -280,7 +282,7 @@ LLM prompt строится в `_build_admission_ai_prompt()` и содержи�
 
 1. Добавить или расширить данные в `backend/data/admission_info.json`.
 2. Добавить tool-функцию или расширить существующую в `backend/langchain/tools/admission_info.py`.
-3. Добавить ключевые слова в логику `detect_requested_tool()`.
+3. При необходимости добавить/уточнить метку в `classify_admission_tool()` и ключевые слова fallback в `detect_requested_tool()`.
 4. Добавить ветку выбора tool в `AdmissionAgent.run()`.
 5. Если это публичный admission-чат, добавить такую же ветку в `_build_public_admission_response()`.
 6. Обновить `format_admission_tool_result()` и `build_context_entries()`, если у результата новый формат.
@@ -289,7 +291,7 @@ LLM prompt строится в `_build_admission_ai_prompt()` и содержи�
 
 При проблемах с admission-ответом сначала проверяются:
 
-- какой `requested_tool` вернул `detect_requested_tool(query)`;
+- какой `requested_tool` вернул `classify_admission_tool(query, history=history)`;
 - удалось ли извлечь `level` и `program`;
 - что лежит в `tool_data`;
 - что попало в `context`;
@@ -297,4 +299,3 @@ LLM prompt строится в `_build_admission_ai_prompt()` и содержи�
 - не относится ли tool к `contacts` или `address`, где LLM специально пропускается;
 - есть ли нужные данные в `backend/data/admission_info.json`;
 - для заявки - корректно ли история содержит предыдущие вопросы и ответы.
-

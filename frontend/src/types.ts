@@ -131,6 +131,23 @@ export type ChatResult = {
   supporting_context?: Record<string, unknown>[];
   llm: ChatLLMInfo;
   tool_data?: Record<string, unknown>;
+  classification?: Record<string, unknown>;
+  orchestration?: Record<string, unknown>;
+  admission_state?: {
+    domain: string;
+    subdomain: string;
+    slots: Record<string, unknown>;
+    required: string[];
+    missing: string[];
+    status: "collecting" | "awaiting_slots" | "ready" | "completed";
+    last_requested_slot: string | null;
+  };
+  admission_profile?: {
+    domain: string;
+    status: string;
+    slots: Record<string, unknown>;
+    updated_fields: string[];
+  };
 };
 
 export type ChatResponse = {
