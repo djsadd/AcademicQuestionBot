@@ -677,6 +677,7 @@ def get_current_prices(
 
 def get_available_programs(
     *,
+    program: Optional[str] = None,
     level: Optional[str] = None,
     language: Optional[str] = None,
     profile_subjects: Optional[List[str]] = None,
@@ -689,12 +690,12 @@ def get_available_programs(
     requested_profile_subjects = _normalize_profile_subjects(profile_subjects or [])
     matches = _match_programs(
         data,
-        program=None,
+        program=program,
         level=level,
         profile_subjects=requested_profile_subjects,
     )
     if not matches:
-        return _not_found("programs", data, level=level, program=None, language=lang)
+        return _not_found("programs", data, level=level, program=program, language=lang)
 
     results = []
     for item in matches:
@@ -722,6 +723,7 @@ def get_available_programs(
         "status": "ok",
         "tool": "programs",
         "language": lang,
+        "requested_program": program,
         "requested_profile_subjects": requested_profile_subjects,
         "results": results,
         "data_updated_at": data.get("last_updated"),
@@ -1579,7 +1581,18 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
             if not normalized_name or normalized_name in seen_programs:
                 continue
             seen_programs.add(normalized_name)
-            lines.append(f"- {program_name}")
+            details: List[str] = []
+            profile_subjects = _format_profile_subjects(
+                item.get("profile_subject_1"),
+                item.get("profile_subject_2"),
+                language=lang,
+            )
+            if profile_subjects:
+                details.append(profile_subjects)
+            if item.get("level"):
+                details.append(str(item.get("level")))
+            suffix = f": {', '.join(details)}" if details else ""
+            lines.append(f"- {program_name}{suffix}")
         return "\n".join(lines)
 
     if tool == "prices":

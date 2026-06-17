@@ -28,6 +28,35 @@ PROFILE_SUBJECT_CONTEXT_TERMS = {
     "unt",
 }
 
+PROFILE_SUBJECT_QUESTION_TERMS = {
+    "какие предметы",
+    "какие профильные",
+    "какой предмет",
+    "предметы нужны",
+    "предметы надо",
+    "что сдавать",
+    "нужно сдавать",
+    "надо сдавать",
+    "profile subjects required",
+    "which profile subjects",
+}
+
+PROFILE_SUBJECT_USER_TERMS = {
+    "у меня",
+    "мои",
+    "мой",
+    "сдаю",
+    "сдал",
+    "сдала",
+    "выбрал",
+    "выбрала",
+    "собираюсь сдавать",
+    "i have",
+    "my",
+    "i took",
+    "i take",
+}
+
 EXTRA_PROFILE_SUBJECT_ALIASES: dict[str, set[str]] = {
     "Иностранный язык": {
         "английский",
@@ -72,7 +101,12 @@ class ProfileSubjectAgent:
     ) -> ProfileSubjectAnalysis:
         next_slots = dict(slots or {})
         extracted = self.extract(query)
-        active = force_active or self.looks_like_request(query) or bool(self.subjects_from_slots(next_slots))
+        active = (
+            force_active
+            or bool(extracted)
+            or self.looks_like_request(query)
+            or bool(self.subjects_from_slots(next_slots))
+        )
 
         missing_slots = [slot for slot in PROFILE_SUBJECT_SLOTS if _is_missing(next_slots.get(slot))]
         target_slots = missing_slots or list(PROFILE_SUBJECT_SLOTS)
@@ -95,6 +129,14 @@ class ProfileSubjectAgent:
     def looks_like_request(self, query: str) -> bool:
         normalized = _normalize(query)
         if not normalized:
+            return False
+        asks_for_required_subjects = any(
+            _term_matches(term, normalized) for term in PROFILE_SUBJECT_QUESTION_TERMS
+        )
+        has_user_subject_context = any(
+            _term_matches(term, normalized) for term in PROFILE_SUBJECT_USER_TERMS
+        )
+        if asks_for_required_subjects and not has_user_subject_context:
             return False
         return any(_term_matches(term, normalized) for term in PROFILE_SUBJECT_CONTEXT_TERMS)
 

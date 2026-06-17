@@ -560,7 +560,12 @@ class AdmissionRequestOrchestrator:
         if subdomain == "eligibility":
             return get_admission_exams(language=language, query=query)
         if subdomain == "programs":
-            return get_available_programs(level=level, language=language, profile_subjects=profile_subjects)
+            return get_available_programs(
+                program=program,
+                level=level,
+                language=language,
+                profile_subjects=profile_subjects,
+            )
         if subdomain == "tuition":
             return get_current_prices(program=program, level=level, language=language)
         if subdomain == "international":

@@ -131,6 +131,25 @@ class AdmissionDialogueTests(unittest.TestCase):
         self.assertEqual(len(response["tool_data"]["results"]), 1)
         self.assertEqual(response["tool_data"]["results"][0]["level"], "bachelor")
 
+    def test_program_subject_question_does_not_collect_user_ent_subjects(self) -> None:
+        response = run_admission_pipeline(
+            query="Для переводческого дела какие предметы нужны",
+            language="ru",
+            payload={},
+        )
+
+        self.assertEqual(response["classification"]["subdomain"], "programs")
+        self.assertTrue(response["orchestration"]["executed"])
+        self.assertEqual(response["orchestration"]["tool"], "programs")
+        self.assertEqual(response["admission_state"]["missing"], [])
+        self.assertEqual(response["tool_data"]["request_slots"]["program"], "Переводческое дело")
+        self.assertEqual(response["tool_data"]["requested_program"], "Переводческое дело")
+        self.assertEqual(response["tool_data"]["results"][0]["program"], "Переводческое дело")
+        self.assertEqual(response["tool_data"]["results"][0]["profile_subject_1"], "Иностранный язык")
+        self.assertEqual(response["tool_data"]["results"][0]["profile_subject_2"], "Всемирная история")
+        self.assertIn("Иностранный язык", response["answer"])
+        self.assertIn("Всемирная история", response["answer"])
+
     def test_profile_subject_agent_collects_second_subject(self) -> None:
         first = run_admission_pipeline(
             query="У меня профильный предмет ЕНТ Английский",
