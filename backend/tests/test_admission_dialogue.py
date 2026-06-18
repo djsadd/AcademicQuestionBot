@@ -113,6 +113,20 @@ class AdmissionDialogueTests(unittest.TestCase):
         self.assertEqual(response["admission_state"]["missing"], [])
         self.assertNotIn("ent_score", response["admission_state"]["required"])
 
+    def test_distance_learning_routes_to_study_formats_without_program_slot(self) -> None:
+        response = run_admission_pipeline(
+            query="Есть ли дистанционное обучение?",
+            language="ru",
+            payload={},
+        )
+
+        self.assertEqual(response["classification"]["subdomain"], "study_formats")
+        self.assertTrue(response["orchestration"]["executed"])
+        self.assertEqual(response["orchestration"]["tool"], "study_formats")
+        self.assertEqual(response["admission_state"]["missing"], [])
+        self.assertIn("Дистанционное обучение", response["answer"])
+        self.assertIn("не предусмотрено", response["answer"])
+
     def test_programs_are_filtered_by_ent_profile_subject_pair(self) -> None:
         response = run_admission_pipeline(
             query="У меня профильные предметы ЕНТ Английский и Всемирная история",

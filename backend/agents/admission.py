@@ -23,6 +23,7 @@ from ..langchain.tools.admission_info import (
     get_passing_scores,
     get_required_documents,
     get_scholarships,
+    get_study_formats,
     get_student_house,
     get_study_durations,
     load_admission_data,
@@ -56,6 +57,7 @@ ADMISSION_SUBDOMAINS = {
     "competition",
     "deadlines",
     "documents",
+    "study_formats",
 }
 APPLICANT_SUBDOMAINS = {
     "application_status",
@@ -433,6 +435,31 @@ class AdmissionIntentClassifier:
             return AdmissionIntent("admissions", "tuition", False, confidence=0.95)
         if _has_any(normalized, {"документ", "құжат", "documents", "справк"}):
             return AdmissionIntent("admissions", "documents", False, confidence=0.95)
+        if _has_any(
+            normalized,
+            {
+                "форма обучения",
+                "формы обучения",
+                "формат обучения",
+                "форматы обучения",
+                "очная форма",
+                "очное обучение",
+                "очно",
+                "дистанцион",
+                "онлайн обучение",
+                "онлайн формат",
+                "distance learning",
+                "remote learning",
+                "online learning",
+                "study format",
+                "mode of study",
+                "оқу форматы",
+                "күндізгі оқу",
+                "қашықтықтан оқу",
+                "онлайн оқу",
+            },
+        ):
+            return AdmissionIntent("admissions", "study_formats", False, confidence=0.95)
         if _has_any(normalized, {"программ", "специальност", "мамандық", "program", "major", "профильн", "предмет"}):
             return AdmissionIntent("admissions", "programs", False, confidence=0.95)
         if _looks_like_ent_requirement_query(normalized) or _has_any(normalized, {"ент нужен", "нужна ли ент", "нужно ли ент", "ұбт қажет"}):
@@ -466,7 +493,7 @@ class AdmissionIntentClassifier:
             "You are an intent classifier. Do not answer the user.\n"
             "Return only valid JSON with keys: domain, subdomain, requires_auth.\n\n"
             "Domains and subdomains:\n"
-            "- admissions: eligibility, programs, tuition, international, scholarships, competition, deadlines, documents\n"
+            "- admissions: eligibility, programs, tuition, international, scholarships, competition, deadlines, documents, study_formats\n"
             "- applicant: application_status, documents, payments, exams, notifications\n"
             "- general_info: contacts, address, student_house, events, faq\n\n"
             "Applicant domain always requires_auth=true. Other domains require_auth=false.\n\n"
@@ -533,6 +560,7 @@ class AdmissionRequestOrchestrator:
             ("admissions", "competition"): OrchestratorDecision("competition_api", "passing_scores"),
             ("admissions", "deadlines"): OrchestratorDecision("admission_rules_api", "admission_exams"),
             ("admissions", "documents"): OrchestratorDecision("admission_rules_api", "documents"),
+            ("admissions", "study_formats"): OrchestratorDecision("admission_rules_api", "study_formats"),
             ("applicant", "application_status"): OrchestratorDecision("crm_api", "application_status", True),
             ("applicant", "documents"): OrchestratorDecision("document_service", "applicant_documents", True),
             ("applicant", "payments"): OrchestratorDecision("admission_system_api", "payments", True),
@@ -578,6 +606,8 @@ class AdmissionRequestOrchestrator:
             return get_admission_exams(language=language, query=query)
         if subdomain == "documents":
             return get_required_documents(level=level, language=language)
+        if subdomain == "study_formats":
+            return get_study_formats(language=language)
         return build_minimal_admission_overview(programs=programs, level=level, language=language)
 
     def _dispatch_general_info(self, subdomain: str, language: str) -> dict[str, Any]:

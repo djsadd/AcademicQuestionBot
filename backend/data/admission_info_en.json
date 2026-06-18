@@ -1223,5 +1223,21 @@
         "higher_education": "2 years"
       }
     }
-  ]
+  ],
+  "study_formats": {
+    "title": "Study formats",
+    "summary": "Turan-Astana University provides full-time, on-campus study. Distance learning is not available.",
+    "available": [
+      "Full-time, on-campus study"
+    ],
+    "not_available": [
+      "Distance learning",
+      "Online learning as a separate study format"
+    ],
+    "notes": [
+      "If an applicant asks about distance, online, or remote study, answer directly that this format is not available.",
+      "For specific organizational questions about the study process, contact the admissions office."
+    ],
+    "updated_at": "2026-06-18"
+  }
 }

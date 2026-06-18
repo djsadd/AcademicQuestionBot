@@ -62,6 +62,7 @@ TEXTS = {
         "durations_title": "Сроки обучения:",
         "academic_mobility_title": "Академическая мобильность:",
         "academic_cooperation_title": "Академическое сотрудничество:",
+        "study_formats_title": "Формы обучения:",
         "scholarships_title": "Гранты и стипендии:",
         "scholarships_state_grant_title": "Государственный грант и связанные стипендии:",
         "scholarships_rector_grant_title": "Ректорский грант:",
@@ -118,6 +119,7 @@ TEXTS = {
         "durations_title": "Оқу мерзімдері:",
         "academic_mobility_title": "Академиялық ұтқырлық:",
         "academic_cooperation_title": "Академиялық ынтымақтастық:",
+        "study_formats_title": "Оқу форматтары:",
         "scholarships_title": "Гранттар мен стипендиялар:",
         "scholarships_state_grant_title": "Мемлекеттік грант және онымен байланысты стипендиялар:",
         "scholarships_rector_grant_title": "Ректор гранты:",
@@ -174,6 +176,7 @@ TEXTS = {
         "durations_title": "Study durations:",
         "academic_mobility_title": "Academic mobility:",
         "academic_cooperation_title": "Academic cooperation:",
+        "study_formats_title": "Study formats:",
         "scholarships_title": "Grants and scholarships:",
         "scholarships_state_grant_title": "State grant and related scholarships:",
         "scholarships_rector_grant_title": "Rector's grant:",
@@ -474,6 +477,33 @@ TOOL_TERMS["student_house"] = {
     "student residence",
     "campus housing",
     "tau student house",
+}
+
+TOOL_TERMS["study_formats"] = {
+    "форма обучения",
+    "формы обучения",
+    "формат обучения",
+    "форматы обучения",
+    "очная форма",
+    "очное обучение",
+    "очно",
+    "дистанцион",
+    "дистанционное обучение",
+    "онлайн обучение",
+    "онлайн формат",
+    "online learning",
+    "distance learning",
+    "remote learning",
+    "study format",
+    "study formats",
+    "mode of study",
+    "full time study",
+    "offline study",
+    "оқу форматы",
+    "оқу форматтары",
+    "күндізгі оқу",
+    "қашықтықтан оқу",
+    "онлайн оқу",
 }
 
 LEVEL_ALIASES["bachelor"].update(
@@ -1111,6 +1141,26 @@ def get_student_house(*, language: Optional[str] = None) -> Dict[str, Any]:
     }
 
 
+def get_study_formats(*, language: Optional[str] = None) -> Dict[str, Any]:
+    lang = normalize_language(language)
+    data = load_admission_data(language=lang)
+    if data.get("status") in {"missing_data_file", "invalid_data_file"}:
+        return data
+
+    study_formats = _resolve_localized_value(data.get("study_formats") or {}, lang)
+    if not isinstance(study_formats, dict) or not study_formats:
+        return _not_found("study_formats", data, level=None, program=None, language=lang)
+
+    return {
+        "status": "ok",
+        "tool": "study_formats",
+        "language": lang,
+        "study_formats": study_formats,
+        "data_updated_at": study_formats.get("updated_at") or data.get("last_updated"),
+        "source_path": _source_path(lang),
+    }
+
+
 def get_scholarships(
     *,
     language: Optional[str] = None,
@@ -1251,6 +1301,9 @@ def detect_requested_tool(query: str) -> str:
         if is_passing_score_query or _looks_like_grant_score_query(normalized_query):
             return "passing_scores"
         return "scholarships"
+
+    if _matches_any_term(TOOL_TERMS["study_formats"], normalized_query, raw_query):
+        return "study_formats"
 
     if _matches_any_term(TOOL_TERMS["student_house"], normalized_query, raw_query):
         return "student_house"
@@ -2099,6 +2152,46 @@ def format_admission_tool_result(result: Dict[str, Any], language: Optional[str]
                 lines.append(f"- Офис: {office}")
             if phone:
                 lines.append(f"- Телефон: {phone}")
+        return "\n".join(lines)
+
+    if tool == "study_formats":
+        study_formats = result.get("study_formats") or {}
+        if not isinstance(study_formats, dict):
+            return str(study_formats or _text(lang, "not_specified"))
+
+        labels = {
+            "ru": {
+                "available": "Доступно",
+                "not_available": "Не предусмотрено",
+                "notes": "Важно",
+            },
+            "kk": {
+                "available": "Қолжетімді",
+                "not_available": "Қарастырылмаған",
+                "notes": "Маңызды",
+            },
+            "en": {
+                "available": "Available",
+                "not_available": "Not available",
+                "notes": "Important",
+            },
+        }
+        text = labels.get(lang, labels["en"])
+        lines = [_text(lang, "study_formats_title")]
+        title = study_formats.get("title")
+        summary = study_formats.get("summary")
+        if title:
+            lines.append(str(title))
+        if summary:
+            lines.append(str(summary))
+
+        for key in ("available", "not_available", "notes"):
+            items = study_formats.get(key) or []
+            if not items:
+                continue
+            lines.append(f"{text[key]}:")
+            for item in items:
+                lines.append(f"- {item}")
         return "\n".join(lines)
 
     if tool == "scholarships":

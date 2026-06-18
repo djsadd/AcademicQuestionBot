@@ -24,6 +24,7 @@ ADMISSION_TOOL_LABELS = {
     "foreign_admission",
     "management",
     "student_house",
+    "study_formats",
 }
 
 ADMISSION_CLASSIFIER_HISTORY_LIMIT = 6
@@ -47,9 +48,11 @@ Return exactly one label from this list:
 - foreign_admission: admission for foreign citizens, applicants from another country, visa/adaptation
 - management: university leadership, rector, administration
 - student_house: dormitory, student house, housing
+- study_formats: study format/mode, full-time/offline, distance/online/remote learning availability
 
 Priority rules:
 - If the question asks about grant/UNT/passing points or threshold scores, use passing_scores.
+- If the question asks whether distance, online, remote, full-time or offline study is available, use study_formats.
 - If it asks whether a foreign applicant needs UNT/CT or how foreigners apply, use foreign_admission.
 - If it asks for contact details, use contacts even if admissions office is mentioned.
 - If the topic is broad or not enough information is available, use overview.
