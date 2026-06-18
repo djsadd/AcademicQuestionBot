@@ -1,0 +1,1227 @@
+{
+  "language": "en",
+  "contacts": {
+    "department": "Admissions Office",
+    "phone": [
+      "Bachelor programs:",
+      "+7 702 912 39 97 - Saule Senbekovna",
+      "+7 700 139 51 10 - Admissions Office",
+      "+7 747 911 55 28 - Tatyana Yuryevna",
+      "+7 777 038 21 52 - Talgat Amirkhanovich",
+      "+7 701 158 89 24 - Almaz Shairbekovich",
+      "Master's and doctoral programs:",
+      "+7 702 912 39 97 - Saule Senbekovna",
+      "+7 701 677 99 94 - Almas Maratbekovich"
+    ],
+    "address": "Astana, Ykylas Dukenuly Street, 29",
+    "working_hours": "Weekdays: 09:00-18:00. Lunch break: 13:00-14:00. From June 20 to August 25: weekdays 09:00-18:00, weekends 10:00-15:00."
+  },
+  "admission_exams": {
+    "en": {
+      "sections": [
+        {
+          "key": "ent",
+          "title": "UNT for bachelor programs",
+          "items": [
+            "UNT is required for admission to bachelor programs.",
+            "The subject combination determines the list of available educational programs.",
+            "Main UNT 2026: registration from April 11 to April 25, 2026; exam from May 10 to July 10, 2026.",
+            "Additional UNT attempts: January UNT registration is in December with the exam in January-February; March UNT registration is in February with the exam in March-April."
+          ]
+        },
+        {
+          "key": "kt",
+          "title": "CT for master's programs",
+          "items": [
+            "CT is required for admission to master's programs.",
+            "The comprehensive test includes a foreign language, a learning readiness test, and profile disciplines.",
+            "Registration usually takes place in June-July.",
+            "Exams usually take place in July-August.",
+            "Exact dates are approved annually by the National Testing Center; registration is completed at app.testcenter.kz."
+          ]
+        },
+        {
+          "key": "doctorate",
+          "title": "PhD doctorate",
+          "items": [
+            "Admission to doctoral studies requires an IELTS or TOEFL language certificate.",
+            "The exact language certificate threshold depends on the university requirements.",
+            "Applicants must pass an entrance exam in the specialty.",
+            "Applications are accepted from early July to approximately August 3.",
+            "Entrance exams are held from August 4 to August 20.",
+            "Admission is conducted through an interview and competition."
+          ]
+        }
+      ],
+      "updated_at": "2026-04-29"
+    }
+  },
+  "documents": {
+    "bachelor": {
+      "title": "Admission for the 2026-2027 academic year",
+      "variants": [
+        {
+          "title": "For participation in the state grant competition",
+          "notes": [
+            "Document submission: from July 13 to July 20.",
+            "SAT, ACT, and IB results are accepted for the grant competition. Submit them by July 5."
+          ],
+          "items": [
+            "Education document and a copy",
+            "UNT certificate",
+            "Copy of identity card"
+          ]
+        },
+        {
+          "title": "For enrollment at the university",
+          "notes": [
+            "Document submission: from April 1 to August 25."
+          ],
+          "items": [
+            "Education document and a copy",
+            "UNT certificate",
+            "Medical certificate 075 and fluorography",
+            "Grant certificate, if available",
+            "8 photos sized 3x4",
+            "Copy of identity card",
+            "Copy of parent identity card or birth certificate if the applicant is under 18",
+            "Copy of vaccination card 063",
+            "Registration certificate or military ID copy for male applicants"
+          ]
+        },
+        {
+          "title": "For foreign citizens applying to bachelor programs",
+          "notes": [
+            "List of documents for foreign citizens applying to TAU University."
+          ],
+          "items": [
+            "Original education document and its transcript/supplement",
+            "Notarized copies of the education document and supplement translated into Kazakh or Russian and notarized in Kazakhstan, 2 copies",
+            "Identity document and notarized copy with translation into Kazakh or Russian, 3 copies",
+            "Certificate of recognition and nostrification of education documents",
+            "IIN of the Republic of Kazakhstan",
+            "8 photos sized 3x4",
+            "Medical certificate 075-u and original fluorography image"
+          ]
+        }
+      ],
+      "updated_at": "2026-04-16"
+    },
+    "second_higher": {
+      "title": "Bachelor programs based on higher education",
+      "notes": [
+        "Study format: full-time.",
+        "Study duration: 2 years.",
+        "Document submission: June 1 - August 25, 2026."
+      ],
+      "variants": [
+        {
+          "title": "Requirements",
+          "notes": [
+            "Higher education is required, not lower than a bachelor degree.",
+            "UNT certificate.",
+            "Passing score: more than 50 out of 100."
+          ],
+          "items": []
+        },
+        {
+          "title": "Educational programs",
+          "items": [
+            "Design",
+            "Translation Studies",
+            "Psychology",
+            "Management",
+            "Jurisprudence",
+            "International Law",
+            "Information Systems"
+          ]
+        },
+        {
+          "title": "Required documents",
+          "items": [
+            "Diploma with supplement",
+            "Medical certificate 075 and fluorography",
+            "Vaccination card, form 063-u",
+            "Copy of identity card",
+            "8 photos sized 3x4",
+            "Registration certificate or military ID for male applicants"
+          ]
+        }
+      ],
+      "updated_at": "2026-04-16"
+    },
+    "master": {
+      "title": "Master's programs: document admission",
+      "notes": [
+        "Study formats: academic-pedagogical and specialized master's programs.",
+        "Classes are held in the evening from 18:00 to 22:00.",
+        "Final payment schedule: 30% / 20% / 30% / 20%."
+      ],
+      "variants": [
+        {
+          "title": "Academic-pedagogical master's program",
+          "notes": [
+            "Study duration: 2 years.",
+            "Grant-funded study is available.",
+            "Comprehensive entrance testing: foreign language, learning readiness test, and profile block.",
+            "Passing score: 75.",
+            "Minimum foreign language score: 25.",
+            "Minimum score for the remaining blocks: 7."
+          ],
+          "items": [
+            "Higher education document",
+            "Diploma supplement",
+            "Identity card",
+            "Application",
+            "3x4 photo",
+            "Medical certificate",
+            "Fluorography",
+            "CV",
+            "Motivation letter",
+            "Portfolio",
+            "Recommendation from previous place of study",
+            "CT certificate, if available"
+          ]
+        },
+        {
+          "title": "Specialized master's program",
+          "notes": [
+            "Study duration: 1 year.",
+            "For some educational programs, the study duration is 1.5 years.",
+            "Study is provided on a paid basis.",
+            "Comprehensive entrance testing: learning readiness test and profile block.",
+            "Passing score: 30.",
+            "Minimum score for each block: 7."
+          ],
+          "items": [
+            "Higher education document",
+            "Diploma supplement, including HR and certificate supplement where applicable",
+            "Identity card",
+            "Application",
+            "3x4 photo",
+            "Medical certificate",
+            "Fluorography",
+            "CV",
+            "Motivation letter",
+            "Portfolio",
+            "Recommendation from previous place of work"
+          ]
+        },
+        {
+          "title": "Creative master's program",
+          "items": [
+            "Creative exam and interview",
+            "Portfolio in the training profile",
+            "Applicant creative dossier",
+            "Master's classes: 18:00-22:00",
+            "Payment schedule: 30% / 20% / 30% / 20%",
+            "Academic mobility: more than 40 universities",
+            "Research internships",
+            "Foreign teachers"
+          ]
+        }
+      ],
+      "updated_at": "2026-04-16"
+    }
+  },
+  "duration_rules": {
+    "bachelor": {
+      "title": "Study durations",
+      "items": [
+        "Check the exact duration for a specific educational program with the admissions office."
+      ],
+      "updated_at": "2026-04-16"
+    },
+    "master": {
+      "title": "Study durations for master's programs",
+      "items": [
+        "Academic-pedagogical master's program: 2 years.",
+        "Specialized master's program: 1 year.",
+        "Some specialized programs: 1.5 years."
+      ],
+      "updated_at": "2026-04-16"
+    },
+    "second_higher": {
+      "title": "Study durations",
+      "items": [
+        "Bachelor programs based on higher education: 2 years.",
+        "Study format: full-time."
+      ],
+      "updated_at": "2026-04-16"
+    }
+  },
+  "academic_cooperation": {
+    "source": {
+      "name": "TAU Academic Cooperation",
+      "url": "https://tau-edu.kz/content/akademiceskoe-sotrudnicestvo"
+    },
+    "programs": {
+      "internal_academic_mobility": {
+        "name": "Internal academic mobility",
+        "source": "https://tau-edu.kz/content/akademiceskoe-sotrudnicestvo",
+        "description": "Transfer of students for a defined academic period to another higher education institution within Kazakhstan.",
+        "advantages": [
+          "New educational experience",
+          "Broad personal development",
+          "Improved competitiveness"
+        ],
+        "eligibility_criteria": {
+          "bachelor": "2nd-3rd year; 1st year in the spring semester",
+          "master": "1st year of academic-pedagogical track in the spring semester"
+        },
+        "duration": [
+          "1 semester",
+          "1 academic year"
+        ],
+        "partner_universities": [
+          "Turan University",
+          "L.N. Gumilyov Eurasian National University",
+          "K. Sagadiyev University of International Business",
+          "and other universities in Kazakhstan; the full list is available from TAU"
+        ],
+        "documents": [
+          "Application",
+          "Copy of identity card",
+          "Recommendation letter from the rector",
+          "Individual study plan",
+          "Transcript",
+          "Medical certificate",
+          "Study agreement",
+          "Three-party agreement"
+        ],
+        "contacts": {
+          "address": "Building B, room B101",
+          "phone": "8 747 255 4577",
+          "email": "yermaganova@tau-edu.kz",
+          "working_hours": "09:00-18:00"
+        }
+      },
+      "international_academic_mobility": {
+        "name": "International academic mobility",
+        "source": "https://tau-edu.kz/content/akademiceskoe-sotrudnicestvo",
+        "description": "Study at foreign universities for a defined academic period.",
+        "advantages": [
+          "International experience",
+          "Improved foreign language level",
+          "Personal and professional development",
+          "Cross-cultural competencies"
+        ],
+        "eligibility_criteria": {
+          "language_requirement": "Sufficient foreign language level",
+          "gpa_min": 3.0
+        },
+        "partner_universities": [
+          "Rzeszow University of Technology",
+          "Kadir Has University",
+          "Universidad San Pablo CEU",
+          "and other foreign partner universities"
+        ],
+        "duration": [
+          "1 semester",
+          "1 academic year"
+        ],
+        "documents": [
+          "Application",
+          "Recommendation letters",
+          "Individual study plan",
+          "Transcript",
+          "Medical certificate",
+          "Parental consent for applicants under 18",
+          "Three-party agreement"
+        ]
+      },
+      "double_degree_program": {
+        "name": "Double degree education",
+        "source": "https://tau-edu.kz/content/akademiceskoe-sotrudnicestvo",
+        "description": "Parallel study at two universities with two diplomas awarded.",
+        "advantages": [
+          "International experience",
+          "Improved employment prospects",
+          "Advanced knowledge from leading teachers of partner universities",
+          "Two diplomas: TAU and the partner university"
+        ],
+        "study_format": "Two diplomas with equal status.",
+        "duration": [
+          "Bachelor programs: plus 1-1.5 years",
+          "Master's programs: plus 0.5-1 year",
+          "Doctoral programs: plus 1 year"
+        ],
+        "requirements": [
+          "Good academic performance",
+          "Fluent foreign language proficiency",
+          "Interest in receiving education at another partner university",
+          "Financial readiness"
+        ],
+        "partner_universities": [
+          "Varna Free University named after Chernorizets Hrabar",
+          "Nanjing Vocational University of Industry Technology",
+          "Belgorod State National Research University, Institute of Economics and Management"
+        ],
+        "languages": [
+          "Russian",
+          "English"
+        ],
+        "result": "Standard diplomas awarding an academic degree and transcripts from each partner university"
+      }
+    }
+  },
+  "academic_mobility": {
+    "program": {
+      "name": "TAU Academic Mobility",
+      "university": "Turan-Astana University",
+      "description": "Study or research activity at another university in Kazakhstan or abroad.",
+      "duration": "1 semester",
+      "types": {
+        "external": "foreign universities",
+        "internal": "universities of the Republic of Kazakhstan"
+      },
+      "credit_transfer_required": true
+    },
+    "eligibility": {
+      "bachelor": {
+        "4_year_program": [
+          "2",
+          "3"
+        ],
+        "5_year_program": [
+          "2",
+          "3",
+          "4"
+        ]
+      },
+      "master": {
+        "allowed_courses": [
+          "1"
+        ],
+        "mode": "full-time"
+      },
+      "requirements": {
+        "min_gpa": 2.67,
+        "language_level_min": "B2"
+      }
+    },
+    "financials": {
+      "tuition": "free",
+      "covered_by_student": [
+        "flight",
+        "accommodation",
+        "food",
+        "visa",
+        "medical insurance"
+      ]
+    },
+    "deadlines": {
+      "spring_semester": "2025-11-24",
+      "autumn_semester": "2026-05-01"
+    },
+    "documents": {
+      "required": [
+        "application",
+        "copy of Kazakhstan passport",
+        "transcript certified by the higher education institution",
+        "language certificate or internal test",
+        "medical certificate 072/u"
+      ],
+      "optional": [
+        "parental consent if under 18",
+        "family composition certificate",
+        "orphan status document",
+        "disability document"
+      ]
+    },
+    "partner_universities": [
+      {
+        "name": "Rzeszow University of Technology",
+        "country": "Poland",
+        "city": "Rzeszow",
+        "programs": [
+          "State and Local Administration",
+          "Management",
+          "Translation Studies",
+          "Computer Engineering and Software"
+        ]
+      },
+      {
+        "name": "Pomeranian Academy in Slupsk",
+        "country": "Poland",
+        "city": "Slupsk",
+        "programs": [
+          "Translation Studies",
+          "Law",
+          "Information Systems",
+          "Psychology",
+          "Management"
+        ]
+      },
+      {
+        "name": "Kadir Has University",
+        "country": "Turkey",
+        "city": "Istanbul",
+        "programs": [
+          "International Law"
+        ]
+      },
+      {
+        "name": "Chang'an University",
+        "country": "China",
+        "city": "Xi'an",
+        "programs": [
+          "Translation Studies"
+        ]
+      },
+      {
+        "name": "1 Decembrie 1918 University",
+        "country": "Romania",
+        "city": "Alba Iulia",
+        "programs": [
+          "Accounting and Audit",
+          "Tourism",
+          "Restaurant and Hotel Business"
+        ]
+      },
+      {
+        "name": "Horizon University College",
+        "country": "UAE",
+        "city": "Ajman",
+        "programs": [
+          "Marketing",
+          "Tourism",
+          "Restaurant and Hotel Business",
+          "Computer Engineering and Software"
+        ]
+      },
+      {
+        "name": "Nanjing Vocational University of Industry Technology",
+        "country": "China",
+        "city": "Nanjing",
+        "programs": [
+          "Computer Engineering and Software",
+          "Information Systems"
+        ]
+      },
+      {
+        "name": "Universiti Teknologi MARA (UiTM)",
+        "country": "Malaysia",
+        "city": null,
+        "programs": [
+          "Restaurant and Hotel Business",
+          "Information Systems",
+          "Computer Engineering and Software",
+          "Accounting and Audit"
+        ]
+      },
+      {
+        "name": "Northwest University of Political Science and Law (NWUPL)",
+        "country": "China",
+        "city": "Xi'an",
+        "programs": [
+          "Economics",
+          "Management",
+          "International Law"
+        ]
+      },
+      {
+        "name": "Kodolanyi Janos University",
+        "country": "Hungary",
+        "city": "Budapest",
+        "programs": [
+          "Tourism",
+          "Information Systems",
+          "Management"
+        ]
+      },
+      {
+        "name": "Altinbas University",
+        "country": "Turkey",
+        "city": "Istanbul",
+        "programs": [
+          "Management",
+          "Law",
+          "Information Systems",
+          "Psychology"
+        ]
+      }
+    ],
+    "selection_process": [
+      "application collection",
+      "initial selection",
+      "interview",
+      "registration"
+    ],
+    "contacts": {
+      "email": "international@tau-edu.kz",
+      "address": "Building A, room 101",
+      "website": "https://tau-edu.kz"
+    },
+    "logic": {
+      "eligibility_check": "GPA >= 2.67 AND language_level >= B2 AND course_allowed = true",
+      "deadline_logic": {
+        "spring": "2025-11-24",
+        "autumn": "2026-05-01"
+      }
+    }
+  },
+  "student_house": {
+    "name": "TAU Student House",
+    "type": "Dormitory",
+    "description": "TAU Student House is a university dormitory focused on comfortable student accommodation with access to academic, social, and sports infrastructure.",
+    "location": [
+      "Located near academic buildings",
+      "Minimal travel time",
+      "Inside the campus environment"
+    ],
+    "accommodation": [
+      "Different room types depending on student preferences",
+      "Rooms are equipped for rest",
+      "Rooms are equipped for study",
+      "Modern living conditions"
+    ],
+    "food": [
+      "There is a dining hall on site",
+      "A varied and balanced menu is available",
+      "Students do not need to cook independently"
+    ],
+    "infrastructure": [
+      "Sports hall",
+      "Fitness hall",
+      "Access during the day"
+    ],
+    "community": [
+      "Student environment for communication and networking",
+      "Regular activities and events",
+      "Opportunity to participate in student life"
+    ],
+    "security": [
+      "24/7 security",
+      "Video surveillance",
+      "Access control",
+      "On-site staff"
+    ],
+    "contacts": {
+      "office": "Block B, room 607",
+      "phone": "+7 702 314 65 85"
+    },
+    "updated_at": "2026-05-06"
+  },
+  "programs": [
+    {
+      "id": "economics-bachelor",
+      "name_en": "Economics",
+      "aliases": [
+        "Экономика",
+        "Economics"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "management-bachelor",
+      "name_en": "Management",
+      "aliases": [
+        "Менеджмент",
+        "Management"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "accounting-and-audit-bachelor",
+      "name_en": "Accounting and Audit",
+      "aliases": [
+        "Учет и аудит",
+        "Учёт и аудит",
+        "Accounting and Audit"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "finance-bachelor",
+      "name_en": "Finance",
+      "aliases": [
+        "Финансы",
+        "Finance"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "digital-marketing-bachelor",
+      "name_en": "Digital Marketing",
+      "aliases": [
+        "Цифровой маркетинг",
+        "Digital Marketing"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "design-bachelor",
+      "name_en": "Design",
+      "aliases": [
+        "Дизайн",
+        "Design"
+      ],
+      "duration": {
+        "en": "After school - 5 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "5 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "environment-and-interior-design-bachelor",
+      "name_en": "Environmental and Interior Design",
+      "aliases": [
+        "Дизайн среды и интерьера",
+        "Design of Environment and Interior",
+        "Environmental and Interior Design"
+      ],
+      "duration": {
+        "en": "After school - 5 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "5 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "ethnodesign-bachelor",
+      "name_en": "Decorative Art and Ethnodesign",
+      "aliases": [
+        "Декоративное искусство и этнодизайн",
+        "Этнодизайн",
+        "Decorative Art and Ethnodesign"
+      ],
+      "duration": {
+        "en": "After school - 5 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "5 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "directing-bachelor",
+      "name_en": "Directing",
+      "aliases": [
+        "Режиссура",
+        "Directing"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "philology-bachelor",
+      "name_en": "Philology",
+      "aliases": [
+        "Филология",
+        "Philology"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "international-law-bachelor",
+      "name_en": "International Law",
+      "aliases": [
+        "Международное право",
+        "International Law"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "digital-law-bachelor",
+      "name_en": "Digital Jurisprudence",
+      "aliases": [
+        "Цифровая юриспруденция",
+        "Digital Jurisprudence",
+        "Digital Law"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "legal-regulation-of-economics-bachelor",
+      "name_en": "Legal Regulation of Economics",
+      "aliases": [
+        "Правовое регулирование экономики",
+        "Legal Regulation of Economics"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "information-systems-bachelor",
+      "name_en": "Information Systems",
+      "aliases": [
+        "Информационные системы",
+        "Информ. системы",
+        "Information Systems"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "computer-engineering-and-software-bachelor",
+      "name_en": "Computer Engineering and Software",
+      "aliases": [
+        "Вычислительная техника и программное обеспечение",
+        "Вычислительная техника и ПО",
+        "Computer Engineering and Software"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "tourism-bachelor",
+      "name_en": "Tourism",
+      "aliases": [
+        "Туризм",
+        "Tourism"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "hotel-and-restaurant-business-bachelor",
+      "name_en": "Hotel and Restaurant Business",
+      "aliases": [
+        "Ресторанный и гостиничный бизнес",
+        "Гостиничный и ресторанный бизнес",
+        "Hotel and Restaurant Business"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "translation-studies-bachelor",
+      "name_en": "Translation Studies",
+      "aliases": [
+        "Переводческое дело",
+        "Переводческого дела",
+        "Translation Studies"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "jurisprudence-bachelor",
+      "name_en": "Jurisprudence",
+      "aliases": [
+        "Юриспруденция",
+        "Jurisprudence",
+        "Law"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "psychology-bachelor",
+      "name_en": "Psychology",
+      "aliases": [
+        "Психология",
+        "Psychology"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "state-and-local-administration-bachelor",
+      "name_en": "State and Local Administration",
+      "aliases": [
+        "Государственное и местное управление",
+        "Государственное управление",
+        "State and Local Administration"
+      ],
+      "duration": {
+        "en": "After school - 4 years; on a college basis - 3 years."
+      },
+      "duration_by_basis": {
+        "school": "4 years",
+        "college": "3 years"
+      }
+    },
+    {
+      "id": "pedagogy-and-psychology-master",
+      "name_en": "Pedagogy and Psychology",
+      "aliases": [
+        "Педагогика и психология",
+        "Pedagogy and Psychology"
+      ],
+      "duration": {
+        "en": "Academic-pedagogical - 2 years; specialized - 1 year."
+      }
+    },
+    {
+      "id": "management-master",
+      "name_en": "Management",
+      "aliases": [
+        "Менеджмент",
+        "Management"
+      ],
+      "duration": {
+        "en": "Academic-pedagogical - 2 years; specialized - 1 year."
+      }
+    },
+    {
+      "id": "hr-management-master",
+      "name_en": "HR Management",
+      "aliases": [
+        "HR-менеджмент",
+        "HR менеджмент",
+        "HR Management"
+      ],
+      "duration": {
+        "en": "Specialized - 1 year."
+      }
+    },
+    {
+      "id": "management-in-education-master",
+      "name_en": "Management in Education",
+      "aliases": [
+        "Менеджмент в образовании",
+        "Management in Education"
+      ],
+      "duration": {
+        "en": "Specialized - 1 year."
+      }
+    },
+    {
+      "id": "economics-master",
+      "name_en": "Economics",
+      "aliases": [
+        "Экономика",
+        "Economics"
+      ],
+      "duration": {
+        "en": "Academic-pedagogical - 2 years; specialized - 1 year."
+      }
+    },
+    {
+      "id": "finance-master",
+      "name_en": "Finance",
+      "aliases": [
+        "Финансы",
+        "Finance"
+      ],
+      "duration": {
+        "en": "Academic-pedagogical - 2 years; specialized - 1 year."
+      }
+    },
+    {
+      "id": "accounting-and-audit-master",
+      "name_en": "Accounting and Audit",
+      "aliases": [
+        "Учет и аудит",
+        "Учёт и аудит",
+        "Accounting and Audit"
+      ],
+      "duration": {
+        "en": "Academic-pedagogical - 2 years; specialized - 1 year."
+      }
+    },
+    {
+      "id": "public-administration-master",
+      "name_en": "State and Local Administration",
+      "aliases": [
+        "Государственное и местное управление",
+        "Государственное управление",
+        "State and Local Administration"
+      ],
+      "duration": {
+        "en": "Academic-pedagogical - 2 years; specialized - 1 year."
+      }
+    },
+    {
+      "id": "jurisprudence-master",
+      "name_en": "Jurisprudence",
+      "aliases": [
+        "Юриспруденция",
+        "Jurisprudence"
+      ],
+      "duration": {
+        "en": "Academic-pedagogical - 2 years; specialized - 1 year."
+      }
+    },
+    {
+      "id": "compliance-master",
+      "name_en": "Compliance Service",
+      "aliases": [
+        "Комплаенс – служба",
+        "Комплаенс",
+        "Compliance Service"
+      ],
+      "duration": {
+        "en": "Specialized - 1 year."
+      }
+    },
+    {
+      "id": "information-systems-master",
+      "name_en": "Information Systems",
+      "aliases": [
+        "Информационные системы",
+        "Информ. системы",
+        "Information Systems"
+      ],
+      "duration": {
+        "en": "Academic-pedagogical - 2 years; specialized - 1.5 years."
+      }
+    },
+    {
+      "id": "tourism-master",
+      "name_en": "Tourism",
+      "aliases": [
+        "Туризм",
+        "Tourism"
+      ],
+      "duration": {
+        "en": "Academic-pedagogical - 2 years; specialized - 1 year."
+      }
+    },
+    {
+      "id": "restaurant-and-hotel-business-master",
+      "name_en": "Restaurant and Hotel Business",
+      "aliases": [
+        "Ресторанный и гостиничный бизнес",
+        "Гостиничный и ресторанный бизнес",
+        "Restaurant and Hotel Business"
+      ],
+      "duration": {
+        "en": "Academic-pedagogical - 2 years; specialized - 1 year."
+      }
+    },
+    {
+      "id": "kazakh-language-and-literature-master",
+      "name_en": "Kazakh Language and Literature",
+      "aliases": [
+        "Казахский язык и литература",
+        "Kazakh Language and Literature"
+      ],
+      "duration": {
+        "en": "Academic-pedagogical master's program only - 2 years."
+      }
+    },
+    {
+      "id": "economics-doctorate",
+      "name_en": "Economics",
+      "aliases": [
+        "Экономика",
+        "Economics"
+      ],
+      "duration": {
+        "en": "Check with the admissions office."
+      }
+    },
+    {
+      "id": "management-doctorate",
+      "name_en": "Management",
+      "aliases": [
+        "Менеджмент",
+        "Management"
+      ],
+      "duration": {
+        "en": "Check with the admissions office."
+      }
+    },
+    {
+      "id": "finance-doctorate",
+      "name_en": "Finance",
+      "aliases": [
+        "Финансы",
+        "Finance"
+      ],
+      "duration": {
+        "en": "Check with the admissions office."
+      }
+    },
+    {
+      "id": "design-second-higher",
+      "name_en": "Design",
+      "aliases": [
+        "Дизайн",
+        "Design"
+      ],
+      "duration": {
+        "en": "Second higher education - 2 years."
+      },
+      "duration_by_basis": {
+        "higher_education": "2 years"
+      }
+    },
+    {
+      "id": "translation-studies-second-higher",
+      "name_en": "Translation Studies",
+      "aliases": [
+        "Переводческое дело",
+        "Переводческого дела",
+        "Translation Studies"
+      ],
+      "duration": {
+        "en": "Second higher education - 2 years."
+      },
+      "duration_by_basis": {
+        "higher_education": "2 years"
+      }
+    },
+    {
+      "id": "psychology-second-higher",
+      "name_en": "Psychology",
+      "aliases": [
+        "Психология",
+        "Psychology"
+      ],
+      "duration": {
+        "en": "Second higher education - 2 years."
+      },
+      "duration_by_basis": {
+        "higher_education": "2 years"
+      }
+    },
+    {
+      "id": "management-second-higher",
+      "name_en": "Management",
+      "aliases": [
+        "Менеджмент",
+        "Management"
+      ],
+      "duration": {
+        "en": "Second higher education - 2 years."
+      },
+      "duration_by_basis": {
+        "higher_education": "2 years"
+      }
+    },
+    {
+      "id": "jurisprudence-second-higher",
+      "name_en": "Jurisprudence",
+      "aliases": [
+        "Юриспруденция",
+        "Jurisprudence",
+        "Law"
+      ],
+      "duration": {
+        "en": "Second higher education - 2 years."
+      },
+      "duration_by_basis": {
+        "higher_education": "2 years"
+      }
+    },
+    {
+      "id": "international-law-second-higher",
+      "name_en": "International Law",
+      "aliases": [
+        "Международное право",
+        "International Law"
+      ],
+      "duration": {
+        "en": "Second higher education - 2 years."
+      },
+      "duration_by_basis": {
+        "higher_education": "2 years"
+      }
+    },
+    {
+      "id": "information-systems-second-higher",
+      "name_en": "Information Systems",
+      "aliases": [
+        "Информационные системы",
+        "Информ. системы",
+        "Information Systems"
+      ],
+      "duration": {
+        "en": "Second higher education - 2 years."
+      },
+      "duration_by_basis": {
+        "higher_education": "2 years"
+      }
+    }
+  ]
+}

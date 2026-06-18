@@ -11,6 +11,7 @@ services:
       - rag_storage:/app/storage
       - ./backend/data/admission_info.json:/app/backend/data/admission_info.json
       - ./backend/data/admission_info_kk.json:/app/backend/data/admission_info_kk.json
+      - ./backend/data/admission_info_en.json:/app/backend/data/admission_info_en.json
     ports:
       - "${API_PORT:-18000}:8000"
     depends_on:
@@ -29,6 +30,7 @@ services:
     volumes:
       - ./backend/data/admission_info.json:/app/backend/data/admission_info.json
       - ./backend/data/admission_info_kk.json:/app/backend/data/admission_info_kk.json
+      - ./backend/data/admission_info_en.json:/app/backend/data/admission_info_en.json
     ports:
       - "${PLATONUS_API_PORT:-18001}:8001"
     depends_on:
@@ -64,6 +66,7 @@ services:
     volumes:
       - ./backend/data/admission_info.json:/app/backend/data/admission_info.json
       - ./backend/data/admission_info_kk.json:/app/backend/data/admission_info_kk.json
+      - ./backend/data/admission_info_en.json:/app/backend/data/admission_info_en.json
     depends_on:
       - postgresql
     command:
@@ -81,6 +84,7 @@ services:
       - rag_storage:/app/storage
       - ./backend/data/admission_info.json:/app/backend/data/admission_info.json
       - ./backend/data/admission_info_kk.json:/app/backend/data/admission_info_kk.json
+      - ./backend/data/admission_info_en.json:/app/backend/data/admission_info_en.json
     depends_on:
       - postgresql
       - redis

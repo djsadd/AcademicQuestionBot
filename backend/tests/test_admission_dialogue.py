@@ -4,6 +4,7 @@ import unittest
 
 from backend.agents.admission import run_admission_pipeline
 from backend.langchain.llm import llm_client
+from backend.langchain.tools.admission_info import get_required_documents, get_study_durations
 
 
 class AdmissionDialogueTests(unittest.TestCase):
@@ -369,7 +370,23 @@ class AdmissionDialogueTests(unittest.TestCase):
         self.assertEqual(response["tool_data"]["tool"], "overview")
         self.assertIn("Available programs", response["answer"])
         self.assertIn("Bachelor", response["answer"])
+        self.assertTrue(response["tool_data"]["source_path"].endswith("admission_info_en.json"))
         self.assertNotIn("Доступные специальности", response["answer"])
+
+    def test_english_overlay_provides_english_context(self) -> None:
+        documents = get_required_documents(level="bachelor", language="en")
+        self.assertEqual(documents["language"], "en")
+        self.assertTrue(documents["source_path"].endswith("admission_info_en.json"))
+        self.assertEqual(documents["results"][0]["title"], "Admission for the 2026-2027 academic year")
+        self.assertIn("UNT certificate", documents["results"][0]["variants"][0]["items"])
+
+        durations = get_study_durations(program="Economics", language="en")
+        self.assertEqual(durations["language"], "en")
+        self.assertTrue(durations["source_path"].endswith("admission_info_en.json"))
+        self.assertEqual(
+            durations["results"][0]["duration"],
+            "After school - 4 years; on a college basis - 3 years.",
+        )
 
     def test_public_auto_language_detects_kazakh_overview(self) -> None:
         response = run_admission_pipeline(

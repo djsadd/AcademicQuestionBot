@@ -12,6 +12,7 @@ DEFAULT_DATA_PATH = (
     Path(__file__).resolve().parents[2] / "data" / "admission_info.json"
 )
 DEFAULT_KK_DATA_PATH = DEFAULT_DATA_PATH.with_name("admission_info_kk.json")
+DEFAULT_EN_DATA_PATH = DEFAULT_DATA_PATH.with_name("admission_info_en.json")
 DEFAULT_LANGUAGE = "ru"
 SUPPORTED_LANGUAGES = {"ru", "kk", "en"}
 
@@ -588,12 +589,20 @@ def _read_admission_json(data_path: Path) -> Dict[str, Any]:
 
 
 def _language_data_path(language: str, *, base_path_configured: bool) -> Optional[Path]:
-    if language != "kk":
+    if language not in {"kk", "en"}:
         return None
-    configured_path = os.getenv("ADMISSION_DATA_KK_PATH")
+    env_key = {
+        "kk": "ADMISSION_DATA_KK_PATH",
+        "en": "ADMISSION_DATA_EN_PATH",
+    }[language]
+    configured_path = os.getenv(env_key)
     if configured_path:
         return Path(configured_path)
-    return None if base_path_configured else DEFAULT_KK_DATA_PATH
+    default_path = {
+        "kk": DEFAULT_KK_DATA_PATH,
+        "en": DEFAULT_EN_DATA_PATH,
+    }[language]
+    return None if base_path_configured else default_path
 
 
 def _deep_merge_admission_data(base: Any, overlay: Any) -> Any:
