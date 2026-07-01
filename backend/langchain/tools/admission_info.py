@@ -2746,7 +2746,11 @@ def _program_topic_aliases(program: Dict[str, Any]) -> List[str]:
         topic_aliases.extend(
             [
                 "цифровая юриспруденция",
+                "цифровой юриспруденции",
+                "цифровую юриспруденцию",
                 "цифровой юрист",
+                "цифрового юриста",
+                "цифровому юристу",
                 "digital law",
                 "digital jurisprudence",
             ]
@@ -2754,10 +2758,19 @@ def _program_topic_aliases(program: Dict[str, Any]) -> List[str]:
     elif "юриспруденция" in normalized_text or "jurisprudence" in normalized_text:
         topic_aliases.extend(
             [
+                "юриспруденц",
                 "юрист",
                 "юриста",
+                "юристу",
+                "юристом",
                 "юриспруденция",
+                "юриспруденции",
+                "юриспруденцию",
+                "юриспруденцией",
+                "юридическ",
                 "право",
+                "права",
+                "праву",
                 "law",
                 "lawyer",
                 "jurisprudence",

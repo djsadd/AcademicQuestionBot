@@ -239,6 +239,48 @@ class AdmissionDialogueTests(unittest.TestCase):
         self.assertEqual(second["admission_state"]["missing"], [])
         self.assertEqual(second["tool_data"]["request_slots"]["program"], "Психология")
 
+    def test_jurisprudence_program_slot_is_reused_for_price_followup(self) -> None:
+        first = run_admission_pipeline(
+            query="Пороговые баллы по юриспруденции",
+            language="ru",
+            payload={},
+        )
+        second = run_admission_pipeline(
+            query="А цена?",
+            language="ru",
+            history=[
+                {"role": "user", "content": "Пороговые баллы по юриспруденции"},
+                {"role": "assistant", "content": first["answer"]},
+            ],
+            payload={
+                "context": {
+                    "admission_state": first["admission_state"],
+                    "admission_profile": first["admission_profile"],
+                }
+            },
+        )
+
+        self.assertEqual(first["classification"]["subdomain"], "competition")
+        self.assertEqual(first["tool_data"]["request_slots"]["program"], "Юриспруденция")
+        self.assertEqual(second["classification"]["subdomain"], "tuition")
+        self.assertTrue(second["orchestration"]["executed"])
+        self.assertEqual(second["orchestration"]["tool"], "prices")
+        self.assertEqual(second["admission_state"]["missing"], [])
+        self.assertEqual(second["tool_data"]["request_slots"]["program"], "Юриспруденция")
+
+    def test_jurisprudence_tuition_query_extracts_inflected_program(self) -> None:
+        response = run_admission_pipeline(
+            query="Цена обучения на юриспруденцию",
+            language="ru",
+            payload={},
+        )
+
+        self.assertEqual(response["classification"]["subdomain"], "tuition")
+        self.assertTrue(response["orchestration"]["executed"])
+        self.assertEqual(response["orchestration"]["tool"], "prices")
+        self.assertEqual(response["admission_state"]["missing"], [])
+        self.assertEqual(response["tool_data"]["request_slots"]["program"], "Юриспруденция")
+
     def test_admission_profile_collects_important_session_facts(self) -> None:
         response = run_admission_pipeline(
             query="Меня зовут Ерасыл, я из РФ, после школы, хочу на Психология, у меня 90 баллов",
