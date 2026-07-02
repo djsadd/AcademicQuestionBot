@@ -42,10 +42,21 @@ PUBLIC_ADMISSION_PLAN = [
     {"agent": "admission", "description": "Admission Agent"},
 ]
 
+CHAT_HISTORY_LIMIT = 8
+CHAT_HISTORY_ITEM_CHARS = 700
+
+
+def _compact_history_content(value: Any, limit: int = CHAT_HISTORY_ITEM_CHARS) -> str:
+    content = " ".join(str(value or "").strip().split())
+    if len(content) <= limit:
+        return content
+    return f"{content[: max(0, limit - 3)].rstrip()}..."
+
+
 def _normalize_history_item(item: Any) -> dict[str, str] | None:
     if not isinstance(item, dict):
         return None
-    content = str(item.get("content") or "").strip()
+    content = _compact_history_content(item.get("content"))
     if not content:
         return None
     role = str(item.get("role") or "user").strip().lower()
@@ -64,7 +75,7 @@ def _merge_history(
     request_history: list[dict[str, Any]] | None,
     stored_history: list[dict[str, Any]] | None,
     current_message: str | None = None,
-    limit: int = 20,
+    limit: int = CHAT_HISTORY_LIMIT,
 ) -> list[dict[str, str]]:
     stored_items = [
         item
@@ -92,12 +103,15 @@ def _merge_history(
 
     current_text = (current_message or "").strip()
     if current_text:
+        compact_current = _compact_history_content(current_text)
         merged = [
             item
             for item in merged
-            if not (item.get("role") == "user" and item.get("content") == current_text)
+            if not (
+                item.get("role") == "user"
+                and item.get("content") in {current_text, compact_current}
+            )
         ]
-        merged.append({"role": "user", "content": current_text})
 
     compacted: list[dict[str, str]] = []
     seen: set[tuple[str, str, str]] = set()

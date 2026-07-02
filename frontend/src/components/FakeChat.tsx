@@ -111,6 +111,8 @@ const DEFAULT_CHAT_TITLE = "New chat";
 const CHAT_STORAGE_VERSION = "v1";
 const CHAT_STORAGE_PREFIX = "aqb_chat_history";
 const PUBLIC_CONTACT_STORAGE_KEY = "aqb_public_admission_contact";
+const REQUEST_HISTORY_LIMIT = 8;
+const REQUEST_HISTORY_ITEM_CHARS = 700;
 
 const createId = (prefix: string) =>
   `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -292,17 +294,26 @@ const buildRequestHistory = (
   introMessage: string,
   pendingMessage?: ChatMessage,
 ): ChatHistoryEntry[] => {
-  const source = pendingMessage ? [...messages, pendingMessage] : messages;
+  const source = messages;
+  const currentUserContent = pendingMessage?.role === "user" ? pendingMessage.content : "";
   return source
     .filter((message) => {
       if (message.content === introMessage) return false;
       if (message.status === "pending") return false;
+      if (currentUserContent && message.role === "user" && message.content === currentUserContent) return false;
       return true;
     })
+    .slice(-REQUEST_HISTORY_LIMIT)
     .map((message) => ({
       role: message.role === "bot" ? "assistant" : "user",
-      content: message.content,
+      content: compactHistoryContent(message.content),
     }));
+};
+
+const compactHistoryContent = (value: string) => {
+  const content = value.trim().replace(/\s+/g, " ");
+  if (content.length <= REQUEST_HISTORY_ITEM_CHARS) return content;
+  return `${content.slice(0, REQUEST_HISTORY_ITEM_CHARS - 3).trimEnd()}...`;
 };
 
 const loadChatState = (key: string): ChatHistoryState | null => {
