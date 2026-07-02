@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from fastapi.concurrency import run_in_threadpool
+
 from ..langchain.llm import llm_client
 from .base import AgentResult, BaseAgent
 
@@ -105,7 +107,12 @@ class IntentRouterAgent(BaseAgent):
             history=self._format_history(history),
         )
         messages = [{"role": "user", "content": prompt}]
-        response = llm_client.chat(messages, temperature=0.0, max_tokens=10)
+        response = await run_in_threadpool(
+            llm_client.chat,
+            messages,
+            temperature=0.0,
+            max_tokens=10,
+        )
         intent = (response or "").strip().lower().splitlines()[0]
         if intent not in ALLOWED_INTENTS:
             return self.default_intent

@@ -1,6 +1,8 @@
 """Agent router that wires requests through the orchestrator graph."""
 from typing import Any, Dict, List
 
+from fastapi.concurrency import run_in_threadpool
+
 from ..agents.admission import AdmissionAgent
 from ..agents.dean import DeanCalendarAgent
 from ..agents.intent import IntentRouterAgent
@@ -81,7 +83,8 @@ class AgentRouter:
             if result.get("direct_response"):
                 break
 
-        return self.aggregator.aggregate(
+        return await run_in_threadpool(
+            self.aggregator.aggregate,
             user_payload=payload,
             intents=intents,
             plan=full_plan,

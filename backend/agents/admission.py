@@ -6,6 +6,8 @@ import json
 import re
 from typing import Any, Dict
 
+from fastapi.concurrency import run_in_threadpool
+
 from ..langchain.llm import llm_client
 from ..langchain.tools.admission_info import (
     build_context_entries,
@@ -90,7 +92,8 @@ class AdmissionAgent(BaseAgent):
     """Classifies admission requests and dispatches them to structured data tools."""
 
     async def run(self, payload: Dict[str, Any]) -> AgentResult:
-        response = run_admission_pipeline(
+        response = await run_in_threadpool(
+            run_admission_pipeline,
             query=_payload_query(payload),
             history=payload.get("history"),
             language=payload.get("language"),

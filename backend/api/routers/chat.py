@@ -4,9 +4,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, Iterator
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -447,13 +448,13 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
     router_payload["metadata"] = metadata
     stored_history: list[dict[str, Any]] = []
     if session_id:
-        stored_history = chat_analytics.fetch_session_history(session_id)
+        stored_history = await run_in_threadpool(chat_analytics.fetch_session_history, session_id)
     router_payload["history"] = _merge_history(
         payload.history,
         stored_history,
         current_message=payload.message,
     )
-    _attach_admission_state(router_payload, session_id)
+    await run_in_threadpool(_attach_admission_state, router_payload, session_id)
 
     response = await agent_router.route(router_payload)
     request_payload = _build_request_log_payload(
@@ -465,7 +466,8 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
 
     try:
         _sync_admission_context_snapshot(metadata, response)
-        chat_analytics.save_chat_event(
+        await run_in_threadpool(
+            chat_analytics.save_chat_event,
             session_id=session_id,
             telegram_id=telegram_id,
             person_id=person_id,
@@ -490,7 +492,8 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
 
 @router.post("/public/admission")
 async def handle_public_admission_chat(payload: ChatPayload) -> dict:
-    router_payload, metadata, session_id, channel = _prepare_public_router_payload(
+    router_payload, metadata, session_id, channel = await run_in_threadpool(
+        _prepare_public_router_payload,
         payload,
         endpoint="/chat/public/admission",
     )
@@ -500,14 +503,19 @@ async def handle_public_admission_chat(payload: ChatPayload) -> dict:
             "context": router_payload.get("context") or {},
         }
     )
-    response = _run_public_admission_chat(public_payload, history=router_payload.get("history"))
+    response = await run_in_threadpool(
+        _run_public_admission_chat,
+        public_payload,
+        history=router_payload.get("history"),
+    )
     request_payload = _build_request_log_payload(
         payload=payload,
         router_payload=router_payload,
         metadata=metadata,
     )
     _print_public_request("/chat/public/admission", request_payload)
-    _save_public_admission_analytics(
+    await run_in_threadpool(
+        _save_public_admission_analytics,
         response=response,
         metadata=metadata,
         session_id=session_id,
@@ -518,7 +526,8 @@ async def handle_public_admission_chat(payload: ChatPayload) -> dict:
 
 @router.post("/public/admission/stream")
 async def handle_public_admission_chat_stream(payload: ChatPayload) -> StreamingResponse:
-    router_payload, metadata, session_id, channel = _prepare_public_router_payload(
+    router_payload, metadata, session_id, channel = await run_in_threadpool(
+        _prepare_public_router_payload,
         payload,
         endpoint="/chat/public/admission/stream",
     )
@@ -538,7 +547,8 @@ async def handle_public_admission_chat_stream(payload: ChatPayload) -> Streaming
                     "context": router_payload.get("context") or {},
                 }
             )
-            response = _run_public_admission_chat(
+            response = await run_in_threadpool(
+                _run_public_admission_chat,
                 public_payload,
                 history=router_payload.get("history"),
             )
@@ -551,7 +561,8 @@ async def handle_public_admission_chat_stream(payload: ChatPayload) -> Streaming
                 yield _sse("delta", {"delta": chunk})
                 await asyncio.sleep(0)
 
-            _save_public_admission_analytics(
+            await run_in_threadpool(
+                _save_public_admission_analytics,
                 response=response,
                 metadata=metadata,
                 session_id=session_id,
@@ -578,6 +589,13 @@ def _sse(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _next_stream_chunk(iterator: Iterator[str]) -> tuple[bool, str]:
+    try:
+        return True, next(iterator)
+    except StopIteration:
+        return False, ""
+
+
 @router.post("/stream")
 async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_user)) -> StreamingResponse:
     telegram_id = user["telegram_id"]
@@ -600,13 +618,13 @@ async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_
     router_payload["metadata"] = metadata
     stored_history: list[dict[str, Any]] = []
     if session_id:
-        stored_history = chat_analytics.fetch_session_history(session_id)
+        stored_history = await run_in_threadpool(chat_analytics.fetch_session_history, session_id)
     router_payload["history"] = _merge_history(
         payload.history,
         stored_history,
         current_message=payload.message,
     )
-    _attach_admission_state(router_payload, session_id)
+    await run_in_threadpool(_attach_admission_state, router_payload, session_id)
     request_payload = _build_request_log_payload(
         payload=payload,
         router_payload=router_payload,
@@ -689,7 +707,11 @@ async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ]
-                for chunk in llm_client.chat_stream(messages):
+                stream_iterator = await run_in_threadpool(llm_client.chat_stream, messages)
+                while True:
+                    has_chunk, chunk = await run_in_threadpool(_next_stream_chunk, stream_iterator)
+                    if not has_chunk:
+                        break
                     final_answer_parts.append(chunk)
                     yield _sse("delta", {"delta": chunk})
                     await asyncio.sleep(0)
@@ -729,7 +751,8 @@ async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_
 
             try:
                 _sync_admission_context_snapshot(metadata, response_obj)
-                chat_analytics.save_chat_event(
+                await run_in_threadpool(
+                    chat_analytics.save_chat_event,
                     session_id=session_id,
                     telegram_id=telegram_id,
                     person_id=person_id,
