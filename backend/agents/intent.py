@@ -6,6 +6,7 @@ from typing import Any, Dict
 from fastapi.concurrency import run_in_threadpool
 
 from ..langchain.llm import llm_client
+from ..langchain.tools.admission_info import extract_program
 from .base import AgentResult, BaseAgent
 
 
@@ -92,7 +93,7 @@ class IntentRouterAgent(BaseAgent):
 
     async def run(self, payload: Dict[str, Any]) -> AgentResult:
         text = (payload.get("message") or "").strip()
-        intent = self._detect_intent_by_keywords(text) or await self._classify_intent(text, payload.get("history"))
+        intent = self._detect_intent_by_keywords(text, payload=payload) or await self._classify_intent(text, payload.get("history"))
         priority = "high" if intent in {"password_reset"} else "medium"
         return AgentResult(intents=[intent], priority=priority)
 
@@ -118,13 +119,68 @@ class IntentRouterAgent(BaseAgent):
             return self.default_intent
         return intent
 
-    def _detect_intent_by_keywords(self, text: str) -> str | None:
+    def _detect_intent_by_keywords(self, text: str, *, payload: Dict[str, Any] | None = None) -> str | None:
         normalized = text.lower().strip()
         if not normalized:
             return None
+        if extract_program(text):
+            return "admission"
+        if self._has_admission_context(payload) and self._looks_like_admission_followup(normalized):
+            return "admission"
         if any(keyword in normalized for keyword in ADMISSION_KEYWORDS):
             return "admission"
         return None
+
+    def _has_admission_context(self, payload: Dict[str, Any] | None) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        for source in (
+            payload,
+            payload.get("context") if isinstance(payload.get("context"), dict) else None,
+            payload.get("metadata") if isinstance(payload.get("metadata"), dict) else None,
+        ):
+            if not isinstance(source, dict):
+                continue
+            if isinstance(source.get("admission_profile"), dict) or isinstance(source.get("admission_state"), dict):
+                return True
+            snapshot = source.get("context_snapshot")
+            if isinstance(snapshot, dict) and (
+                isinstance(snapshot.get("admission_profile"), dict)
+                or isinstance(snapshot.get("admission_state"), dict)
+            ):
+                return True
+        return False
+
+    def _looks_like_admission_followup(self, normalized: str) -> bool:
+        terms = {
+            "документ",
+            "құжат",
+            "стоим",
+            "стоит",
+            "цена",
+            "оплат",
+            "срок",
+            "длительность",
+            "балл",
+            "проход",
+            "грант",
+            "предмет",
+            "ент",
+            "ұбт",
+            "форма",
+            "очно",
+            "контакт",
+            "прием",
+            "приём",
+            "поступ",
+            "documents",
+            "tuition",
+            "price",
+            "duration",
+            "score",
+            "grant",
+        }
+        return any(term in normalized for term in terms)
 
     def _format_history(self, history: Any) -> str:
         if not isinstance(history, list) or not history:

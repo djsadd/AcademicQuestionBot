@@ -37,6 +37,7 @@ from .admission_dialogue import (
     build_admission_profile,
     build_follow_up,
     contextual_admission_profile,
+    contextual_admission_profile_from_history,
     contextual_admission_state,
     mark_state_completed,
     should_continue_dialogue,
@@ -126,7 +127,7 @@ def run_admission_pipeline(
     request_payload = payload or {}
     active_state = active_admission_state(request_payload)
     context_state = contextual_admission_state(request_payload)
-    context_profile = contextual_admission_profile(request_payload)
+    context_profile = contextual_admission_profile(request_payload) or contextual_admission_profile_from_history(history)
     classifier = AdmissionIntentClassifier()
     if should_continue_dialogue(resolved_query, active_state):
         classification = AdmissionIntent(

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 
+from backend.agents.intent import IntentRouterAgent
 from backend.agents.admission import run_admission_pipeline
 from backend.langchain.llm import llm_client
 from backend.langchain.tools.admission_info import get_required_documents, get_study_durations
@@ -316,6 +318,23 @@ class AdmissionDialogueTests(unittest.TestCase):
         self.assertEqual(second["admission_profile"]["slots"]["full_name"], "Ерасыл")
         self.assertEqual(second["admission_profile"]["slots"]["education_level"], "school")
 
+    def test_program_from_history_is_used_before_slot_clarification(self) -> None:
+        response = run_admission_pipeline(
+            query="А стоимость обучения?",
+            language="ru",
+            history=[
+                {"role": "user", "content": "Хочу поступить на Психология"},
+                {"role": "assistant", "content": "Информация по программе Психология."},
+            ],
+            payload={},
+        )
+
+        self.assertEqual(response["classification"]["subdomain"], "tuition")
+        self.assertTrue(response["orchestration"]["executed"])
+        self.assertEqual(response["orchestration"]["tool"], "prices")
+        self.assertEqual(response["admission_state"]["missing"], [])
+        self.assertEqual(response["tool_data"]["request_slots"]["program"], "Психология")
+
     def test_context_program_is_fixed_as_admission_profile_slot(self) -> None:
         response = run_admission_pipeline(
             query="А стоимость обучения?",
@@ -363,6 +382,31 @@ class AdmissionDialogueTests(unittest.TestCase):
         self.assertFalse(response["orchestration"]["executed"])
         self.assertEqual(response["admission_state"]["missing"], ["program"])
         self.assertNotIn("program", response["admission_profile"]["slots"])
+
+    def test_intent_router_uses_admission_context_for_documents_followup(self) -> None:
+        agent = IntentRouterAgent(name="intent-router")
+        response = asyncio.run(
+            agent.run(
+                {
+                    "message": "А какие документы нужны?",
+                    "context": {
+                        "admission_profile": {
+                            "domain": "admissions",
+                            "status": "active",
+                            "slots": {"program": "Психология"},
+                        }
+                    },
+                }
+            )
+        )
+
+        self.assertEqual(response["intents"], ["admission"])
+
+    def test_intent_router_routes_program_name_to_admission(self) -> None:
+        agent = IntentRouterAgent(name="intent-router")
+        response = asyncio.run(agent.run({"message": "Психология"}))
+
+        self.assertEqual(response["intents"], ["admission"])
 
     def test_eligibility_requests_current_education_level(self) -> None:
         response = run_admission_pipeline(

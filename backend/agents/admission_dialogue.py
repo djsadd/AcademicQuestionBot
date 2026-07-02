@@ -226,6 +226,41 @@ def contextual_admission_profile(payload: dict[str, Any] | None) -> dict[str, An
     return _profile_from_context_payload(source)
 
 
+def contextual_admission_profile_from_history(history: Any) -> dict[str, Any] | None:
+    if not isinstance(history, list):
+        return None
+
+    slots: dict[str, Any] = {}
+    for item in reversed(history[-8:]):
+        if not isinstance(item, dict):
+            continue
+        role = str(item.get("role") or "user").strip().lower()
+        if role == "bot":
+            role = "assistant"
+        if role != "user":
+            continue
+        content = str(item.get("content") or "").strip()
+        if not content:
+            continue
+        extracted = extract_slots(
+            content,
+            expected_slots=sorted(PROFILE_SLOT_KEYS),
+            accept_freeform_program=False,
+        )
+        for key, value in extracted.items():
+            if key in PROFILE_SLOT_KEYS and not _is_missing(value) and key not in slots:
+                slots[key] = value
+
+    if not slots:
+        return None
+    return {
+        "domain": "admissions",
+        "status": "active",
+        "slots": slots,
+        "updated_fields": sorted(slots),
+    }
+
+
 def build_admission_profile(
     *,
     query: str,
