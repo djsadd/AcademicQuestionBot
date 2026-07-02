@@ -316,6 +316,54 @@ class AdmissionDialogueTests(unittest.TestCase):
         self.assertEqual(second["admission_profile"]["slots"]["full_name"], "Ерасыл")
         self.assertEqual(second["admission_profile"]["slots"]["education_level"], "school")
 
+    def test_context_program_is_fixed_as_admission_profile_slot(self) -> None:
+        response = run_admission_pipeline(
+            query="А стоимость обучения?",
+            language="ru",
+            payload={"context": {"program": "Психология"}},
+        )
+
+        self.assertEqual(response["classification"]["subdomain"], "tuition")
+        self.assertTrue(response["orchestration"]["executed"])
+        self.assertEqual(response["orchestration"]["tool"], "prices")
+        self.assertEqual(response["admission_state"]["missing"], [])
+        self.assertEqual(response["tool_data"]["request_slots"]["program"], "Психология")
+        self.assertEqual(response["admission_profile"]["slots"]["program"], "Психология")
+
+    def test_metadata_context_snapshot_profile_is_reused_for_price_followup(self) -> None:
+        response = run_admission_pipeline(
+            query="А стоимость обучения?",
+            language="ru",
+            payload={
+                "metadata": {
+                    "context_snapshot": {
+                        "admission_profile": {
+                            "domain": "admissions",
+                            "status": "active",
+                            "slots": {"program": "Психология"},
+                        }
+                    }
+                }
+            },
+        )
+
+        self.assertEqual(response["classification"]["subdomain"], "tuition")
+        self.assertTrue(response["orchestration"]["executed"])
+        self.assertEqual(response["orchestration"]["tool"], "prices")
+        self.assertEqual(response["tool_data"]["request_slots"]["program"], "Психология")
+
+    def test_generic_context_program_does_not_fill_admission_program_slot(self) -> None:
+        response = run_admission_pipeline(
+            query="А стоимость обучения?",
+            language="ru",
+            payload={"context": {"program": "admission"}},
+        )
+
+        self.assertEqual(response["classification"]["subdomain"], "tuition")
+        self.assertFalse(response["orchestration"]["executed"])
+        self.assertEqual(response["admission_state"]["missing"], ["program"])
+        self.assertNotIn("program", response["admission_profile"]["slots"])
+
     def test_eligibility_requests_current_education_level(self) -> None:
         response = run_admission_pipeline(
             query="Могу ли я поступить?",
@@ -343,6 +391,24 @@ class AdmissionDialogueTests(unittest.TestCase):
         self.assertEqual(second["classification"]["subdomain"], "address")
         self.assertEqual(second["orchestration"]["tool"], "address")
         self.assertEqual(second["admission_state"]["status"], "completed")
+
+    def test_rural_quota_score_assessment_uses_ent_score(self) -> None:
+        response = run_admission_pipeline(
+            query="У меня 84 балла по ЕНТ,и уменя есть сесльская квота,смогу ли я поступить в Информационные технологии?",
+            language="ru",
+            payload={},
+        )
+
+        self.assertEqual(response["classification"]["subdomain"], "competition")
+        self.assertEqual(response["orchestration"]["tool"], "passing_scores")
+        self.assertEqual(response["tool_data"]["request_slots"]["ent_score"], 84)
+        assessment = response["tool_data"]["score_assessment"][0]
+        self.assertEqual(assessment["threshold_kind"], "rural_quota")
+        self.assertEqual(assessment["threshold"], 65)
+        self.assertTrue(assessment["eligible"])
+        self.assertIn("84", response["answer"])
+        self.assertIn("65", response["answer"])
+        self.assertIn("по баллам вы проходите", response["answer"])
 
     def test_llm_renders_follow_up_without_changing_slots(self) -> None:
         llm_client.api_key = "test-key"

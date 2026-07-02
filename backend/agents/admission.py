@@ -189,6 +189,12 @@ def run_admission_pipeline(
         authenticated=_is_authenticated_payload(request_payload),
         slots=slot_state["slots"],
     )
+    tool_result = _attach_competition_assessment(
+        tool_result,
+        query=resolved_query,
+        slots=slot_state["slots"],
+        language=resolved_language,
+    )
     tool_result["request_slots"] = slot_state["slots"]
     completed_state = mark_state_completed(slot_state)
     completed_profile = build_admission_profile(
@@ -718,6 +724,167 @@ def _applicant_placeholder_result(classification: AdmissionIntent, language: str
         "subdomain": classification.subdomain,
         "answer": messages.get(language, messages["ru"]),
     }
+
+
+def _attach_competition_assessment(
+    tool_result: dict[str, Any],
+    *,
+    query: str,
+    slots: dict[str, Any],
+    language: str,
+) -> dict[str, Any]:
+    if tool_result.get("tool") != "passing_scores":
+        return tool_result
+
+    ent_score = _coerce_int(slots.get("ent_score"))
+    if ent_score is None:
+        return tool_result
+
+    threshold_kind = _requested_threshold_kind(query)
+    if not threshold_kind:
+        return tool_result
+
+    assessments: list[dict[str, Any]] = []
+    for item in tool_result.get("results") or []:
+        if not isinstance(item, dict):
+            continue
+        threshold = _threshold_for_kind(item, threshold_kind)
+        if threshold is None:
+            continue
+        assessments.append(
+            {
+                "program": item.get("program"),
+                "level": item.get("level"),
+                "ent_score": ent_score,
+                "threshold_kind": threshold_kind,
+                "threshold": threshold,
+                "eligible": ent_score >= threshold,
+                "difference": ent_score - threshold,
+            }
+        )
+
+    if not assessments:
+        return tool_result
+
+    enriched = dict(tool_result)
+    enriched["score_assessment"] = assessments
+    base_answer = format_admission_tool_result(enriched, language=language)
+    assessment_answer = _format_competition_assessment(assessments, language=language)
+    if assessment_answer:
+        enriched["answer"] = f"{base_answer}\n{assessment_answer}"
+    return enriched
+
+
+def _requested_threshold_kind(query: str) -> str | None:
+    normalized = _normalize_text(query)
+    if _has_any(normalized, {"сель", "сесль", "сесл", "ауыл", "rural"}):
+        return "rural_quota"
+    if _has_any(normalized, {"целев", "target"}):
+        return "target_grant"
+    if _has_any(normalized, {"платн", "ақылы", "paid"}):
+        return "paid"
+    if _has_any(normalized, {"грант", "grant"}):
+        return "grant"
+    return None
+
+
+def _threshold_for_kind(item: dict[str, Any], kind: str) -> int | None:
+    if kind == "paid":
+        return _coerce_int(item.get("paid"))
+    if kind == "grant":
+        return _coerce_int(item.get("grant_full")) or _coerce_int(item.get("grant"))
+    if kind == "rural_quota":
+        return _extract_note_score(item.get("notes"), ("сельская квота", "ауыл квотасы", "rural quota"))
+    if kind == "target_grant":
+        return _extract_note_score(item.get("notes"), ("целевой грант", "нысаналы грант", "target grant"))
+    return None
+
+
+def _extract_note_score(notes: Any, labels: tuple[str, ...]) -> int | None:
+    if isinstance(notes, str):
+        note_items = [notes]
+    elif isinstance(notes, list):
+        note_items = [str(item) for item in notes]
+    else:
+        return None
+
+    for note in note_items:
+        lowered = note.casefold()
+        if not any(label in lowered for label in labels):
+            continue
+        match = re.search(r"(\d{1,3})", note)
+        if match:
+            return int(match.group(1))
+    return None
+
+
+def _format_competition_assessment(assessments: list[dict[str, Any]], *, language: str) -> str:
+    if not assessments:
+        return ""
+
+    labels = {
+        "ru": {
+            "rural_quota": "сельской квоте",
+            "target_grant": "целевому гранту",
+            "grant": "гранту",
+            "paid": "платному обучению",
+            "eligible": "По указанным данным ваш балл {score} выше или равен порогу по {kind} ({threshold}), поэтому по баллам вы проходите.",
+            "not_eligible": "По указанным данным ваш балл {score} ниже порога по {kind} ({threshold}), поэтому по баллам вы не проходите.",
+            "program_prefix": "Программа: {program}. ",
+            "caveat": "Окончательное зачисление зависит от конкурса, документов и наличия мест.",
+        },
+        "kk": {
+            "rural_quota": "ауыл квотасы",
+            "target_grant": "нысаналы грант",
+            "grant": "грант",
+            "paid": "ақылы оқу",
+            "eligible": "Көрсетілген дерек бойынша сіздің {score} балыңыз {kind} шегінен ({threshold}) жоғары немесе тең, сондықтан балл бойынша өтесіз.",
+            "not_eligible": "Көрсетілген дерек бойынша сіздің {score} балыңыз {kind} шегінен ({threshold}) төмен, сондықтан балл бойынша өтпейсіз.",
+            "program_prefix": "Бағдарлама: {program}. ",
+            "caveat": "Қорытынды қабылдау конкурсқа, құжаттарға және орын санына байланысты.",
+        },
+        "en": {
+            "rural_quota": "rural quota",
+            "target_grant": "target grant",
+            "grant": "grant",
+            "paid": "paid admission",
+            "eligible": "Based on the provided data, your score {score} is at or above the {kind} threshold ({threshold}), so you meet the score requirement.",
+            "not_eligible": "Based on the provided data, your score {score} is below the {kind} threshold ({threshold}), so you do not meet the score requirement.",
+            "program_prefix": "Program: {program}. ",
+            "caveat": "Final admission depends on competition, documents, and available seats.",
+        },
+    }
+    text = labels.get(language, labels["ru"])
+    lines: list[str] = []
+    for assessment in assessments[:3]:
+        kind_label = text.get(str(assessment.get("threshold_kind")), str(assessment.get("threshold_kind")))
+        template = text["eligible"] if assessment.get("eligible") else text["not_eligible"]
+        program = str(assessment.get("program") or "").strip()
+        prefix = text["program_prefix"].format(program=program) if len(assessments) > 1 and program else ""
+        lines.append(
+            prefix
+            + template.format(
+                score=assessment.get("ent_score"),
+                kind=kind_label,
+                threshold=assessment.get("threshold"),
+            )
+        )
+    lines.append(text["caveat"])
+    return "\n".join(lines)
+
+
+def _coerce_int(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, str):
+        match = re.search(r"\d{1,3}", value)
+        if match:
+            return int(match.group(0))
+    return None
 
 
 def _events_placeholder_result(language: str) -> dict[str, Any]:

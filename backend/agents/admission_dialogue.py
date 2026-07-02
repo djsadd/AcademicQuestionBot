@@ -190,14 +190,15 @@ def active_admission_state(payload: dict[str, Any] | None) -> dict[str, Any] | N
 
 def contextual_admission_state(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     source = payload or {}
+    metadata = source.get("metadata") if isinstance(source.get("metadata"), dict) else {}
+    snapshot = metadata.get("context_snapshot") if isinstance(metadata, dict) else None
     candidates = [
         source.get("admission_state"),
         (source.get("context") or {}).get("admission_state")
         if isinstance(source.get("context"), dict)
         else None,
-        (source.get("metadata") or {}).get("admission_state")
-        if isinstance(source.get("metadata"), dict)
-        else None,
+        metadata.get("admission_state") if isinstance(metadata, dict) else None,
+        snapshot.get("admission_state") if isinstance(snapshot, dict) else None,
     ]
     for candidate in candidates:
         state = normalize_admission_state(candidate)
@@ -208,20 +209,21 @@ def contextual_admission_state(payload: dict[str, Any] | None) -> dict[str, Any]
 
 def contextual_admission_profile(payload: dict[str, Any] | None) -> dict[str, Any] | None:
     source = payload or {}
+    metadata = source.get("metadata") if isinstance(source.get("metadata"), dict) else {}
+    snapshot = metadata.get("context_snapshot") if isinstance(metadata, dict) else None
     candidates = [
         source.get("admission_profile"),
         (source.get("context") or {}).get("admission_profile")
         if isinstance(source.get("context"), dict)
         else None,
-        (source.get("metadata") or {}).get("admission_profile")
-        if isinstance(source.get("metadata"), dict)
-        else None,
+        metadata.get("admission_profile") if isinstance(metadata, dict) else None,
+        snapshot.get("admission_profile") if isinstance(snapshot, dict) else None,
     ]
     for candidate in candidates:
         profile = normalize_admission_profile(candidate)
         if profile:
             return profile
-    return None
+    return _profile_from_context_payload(source)
 
 
 def build_admission_profile(
@@ -276,6 +278,82 @@ def build_admission_profile(
         "slots": slots,
         "updated_fields": updated_fields,
     }
+
+
+def _profile_from_context_payload(payload: dict[str, Any]) -> dict[str, Any] | None:
+    slots: dict[str, Any] = {}
+    for context in _iter_context_sources(payload):
+        slots.update(_extract_context_slots(context))
+    if not slots:
+        return None
+    return {
+        "domain": "admissions",
+        "status": "active",
+        "slots": slots,
+        "updated_fields": sorted(slots),
+    }
+
+
+def _iter_context_sources(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    context = payload.get("context")
+    if isinstance(context, dict):
+        sources.append(context)
+    metadata = payload.get("metadata")
+    if isinstance(metadata, dict):
+        snapshot = metadata.get("context_snapshot")
+        if isinstance(snapshot, dict):
+            sources.append(snapshot)
+    return sources
+
+
+def _extract_context_slots(context: dict[str, Any]) -> dict[str, Any]:
+    slots: dict[str, Any] = {}
+    data = load_admission_data()
+
+    program = _canonical_context_program(context.get("program"), data=data)
+    if program:
+        slots["program"] = program
+
+    degree = _canonical_context_degree(context.get("degree") or context.get("level"))
+    if degree:
+        slots["degree"] = degree
+
+    language = _match_alias(_normalize(str(context.get("language") or "")), LANGUAGE_ALIASES)
+    if language:
+        slots["language"] = language
+
+    return slots
+
+
+def _canonical_context_program(value: Any, *, data: dict[str, Any]) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+
+    program = extract_program(text, data=data)
+    if program:
+        return program
+
+    normalized = _normalize(text)
+    for item in data.get("programs") or []:
+        if not isinstance(item, dict):
+            continue
+        item_id = str(item.get("id") or "").strip()
+        if item_id and _normalize(item_id) == normalized:
+            return str(item.get("name_ru") or item.get("name") or item_id)
+    return None
+
+
+def _canonical_context_degree(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    degree = extract_level(text)
+    if degree:
+        return degree
+    normalized = _normalize(text)
+    return normalized if normalized in {"bachelor", "master", "doctorate", "second_higher"} else None
 
 
 def extract_slots(
