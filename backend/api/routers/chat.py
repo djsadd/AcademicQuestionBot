@@ -54,7 +54,32 @@ def _compact_history_content(value: Any, limit: int = CHAT_HISTORY_ITEM_CHARS) -
     return f"{content[: max(0, limit - 3)].rstrip()}..."
 
 
-def _normalize_history_item(item: Any) -> dict[str, str] | None:
+def _compact_history_details(value: Any) -> dict[str, Any] | None:
+    if not isinstance(value, dict):
+        return None
+
+    details: dict[str, Any] = {}
+    tool_data = value.get("tool_data")
+    if isinstance(tool_data, dict):
+        compact_tool: dict[str, Any] = {}
+        request_slots = tool_data.get("request_slots")
+        if isinstance(request_slots, dict) and request_slots:
+            compact_tool["request_slots"] = request_slots
+        tool_name = tool_data.get("tool")
+        if tool_name:
+            compact_tool["tool"] = tool_name
+        if compact_tool:
+            details["tool_data"] = compact_tool
+
+    for key in ("admission_state", "admission_profile", "classification", "orchestration"):
+        nested = value.get(key)
+        if isinstance(nested, dict) and nested:
+            details[key] = nested
+
+    return details or None
+
+
+def _normalize_history_item(item: Any) -> dict[str, Any] | None:
     if not isinstance(item, dict):
         return None
     content = _compact_history_content(item.get("content"))
@@ -65,10 +90,13 @@ def _normalize_history_item(item: Any) -> dict[str, str] | None:
         role = "assistant"
     if role not in {"user", "assistant", "system"}:
         role = "user"
-    normalized = {"role": role, "content": content}
+    normalized: dict[str, Any] = {"role": role, "content": content}
     created_at = item.get("created_at")
     if created_at:
         normalized["created_at"] = str(created_at)
+    details = _compact_history_details(item.get("details"))
+    if details:
+        normalized["details"] = details
     return normalized
 
 
@@ -77,7 +105,7 @@ def _merge_history(
     stored_history: list[dict[str, Any]] | None,
     current_message: str | None = None,
     limit: int = CHAT_HISTORY_LIMIT,
-) -> list[dict[str, str]]:
+) -> list[dict[str, Any]]:
     stored_items = [
         item
         for item in (_normalize_history_item(raw_item) for raw_item in (stored_history or []))
@@ -89,18 +117,26 @@ def _merge_history(
         if item
     ]
 
-    merged: list[dict[str, str]] = []
-    request_signatures = {
-        (item["role"], item["content"])
-        for item in request_items
-    }
+    merged: list[dict[str, Any]] = []
+    merged_by_signature: dict[tuple[str, str], dict[str, Any]] = {}
 
-    for item in stored_items:
-        if (item["role"], item["content"]) in request_signatures:
+    for item in [*stored_items, *request_items]:
+        signature = (item["role"], item["content"])
+        existing = merged_by_signature.get(signature)
+        if existing is None:
+            merged.append(item)
+            merged_by_signature[signature] = item
             continue
-        merged.append(item)
 
-    merged.extend(request_items)
+        existing_details = existing.get("details")
+        item_details = item.get("details")
+        if isinstance(item_details, dict):
+            if isinstance(existing_details, dict):
+                existing["details"] = {**existing_details, **item_details}
+            else:
+                existing["details"] = item_details
+        if not existing.get("created_at") and item.get("created_at"):
+            existing["created_at"] = item["created_at"]
 
     current_text = (current_message or "").strip()
     if current_text:
@@ -114,7 +150,7 @@ def _merge_history(
             )
         ]
 
-    compacted: list[dict[str, str]] = []
+    compacted: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
     for item in merged:
         if not item:

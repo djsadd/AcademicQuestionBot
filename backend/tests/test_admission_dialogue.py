@@ -283,6 +283,57 @@ class AdmissionDialogueTests(unittest.TestCase):
         self.assertEqual(response["admission_state"]["missing"], [])
         self.assertEqual(response["tool_data"]["request_slots"]["program"], "Юриспруденция")
 
+    def test_jurist_tuition_then_threshold_followup_reuses_program_from_history(self) -> None:
+        first = run_admission_pipeline(
+            query="сколько стоит обучение на юриста",
+            language="ru",
+            payload={},
+        )
+        second = run_admission_pipeline(
+            query="а пороговый балл",
+            language="ru",
+            history=[
+                {"role": "user", "content": "сколько стоит обучение на юриста"},
+                {"role": "assistant", "content": first["answer"]},
+            ],
+            payload={},
+        )
+
+        self.assertEqual(first["classification"]["subdomain"], "tuition")
+        self.assertEqual(first["tool_data"]["request_slots"]["program"], "Юриспруденция")
+        self.assertEqual(second["classification"]["subdomain"], "competition")
+        self.assertTrue(second["orchestration"]["executed"])
+        self.assertEqual(second["orchestration"]["tool"], "passing_scores")
+        self.assertEqual(second["tool_data"]["request_slots"]["program"], "Юриспруденция")
+        self.assertNotEqual(second["tool_data"]["status"], "not_found")
+
+    def test_followup_reuses_program_from_history_details(self) -> None:
+        program = "\u041f\u0441\u0438\u0445\u043e\u043b\u043e\u0433\u0438\u044f"
+        response = run_admission_pipeline(
+            query="what is the passing score?",
+            language="en",
+            history=[
+                {"role": "user", "content": "How much is tuition?"},
+                {
+                    "role": "assistant",
+                    "content": "Tuition details were sent earlier.",
+                    "details": {
+                        "tool_data": {
+                            "tool": "prices",
+                            "request_slots": {"program": program},
+                        }
+                    },
+                },
+            ],
+            payload={},
+        )
+
+        self.assertEqual(response["classification"]["subdomain"], "competition")
+        self.assertTrue(response["orchestration"]["executed"])
+        self.assertEqual(response["orchestration"]["tool"], "passing_scores")
+        self.assertEqual(response["admission_state"]["missing"], [])
+        self.assertEqual(response["tool_data"]["request_slots"]["program"], program)
+
     def test_admission_profile_collects_important_session_facts(self) -> None:
         response = run_admission_pipeline(
             query="Меня зовут Ерасыл, я из РФ, после школы, хочу на Психология, у меня 90 баллов",

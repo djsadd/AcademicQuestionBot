@@ -278,6 +278,7 @@ const mapHistorySession = (session: ChatHistorySession): ChatSession => {
     id: message.id,
     role: message.role,
     content: message.content,
+    details: message.details,
   }));
   return {
     id: `chat-${session.session_id}`,
@@ -287,6 +288,40 @@ const mapHistorySession = (session: ChatHistorySession): ChatSession => {
     sessionId: session.session_id,
     messages: messages.length ? messages : [createModeIntroMessage("private")],
   };
+};
+
+const compactHistoryDetails = (details?: ChatResult): Record<string, unknown> | undefined => {
+  if (!details) return undefined;
+
+  const compact: Record<string, unknown> = {};
+  if (details.tool_data && typeof details.tool_data === "object") {
+    const toolData = details.tool_data as Record<string, unknown>;
+    const compactTool: Record<string, unknown> = {};
+    if (toolData.request_slots && typeof toolData.request_slots === "object") {
+      compactTool.request_slots = toolData.request_slots;
+    }
+    if (toolData.tool) {
+      compactTool.tool = toolData.tool;
+    }
+    if (Object.keys(compactTool).length > 0) {
+      compact.tool_data = compactTool;
+    }
+  }
+
+  if (details.admission_state) {
+    compact.admission_state = details.admission_state;
+  }
+  if (details.admission_profile) {
+    compact.admission_profile = details.admission_profile;
+  }
+  if (details.classification) {
+    compact.classification = details.classification;
+  }
+  if (details.orchestration) {
+    compact.orchestration = details.orchestration;
+  }
+
+  return Object.keys(compact).length > 0 ? compact : undefined;
 };
 
 const buildRequestHistory = (
@@ -304,10 +339,14 @@ const buildRequestHistory = (
       return true;
     })
     .slice(-REQUEST_HISTORY_LIMIT)
-    .map((message) => ({
-      role: message.role === "bot" ? "assistant" : "user",
-      content: compactHistoryContent(message.content),
-    }));
+    .map((message) => {
+      const details = compactHistoryDetails(message.details);
+      return {
+        role: message.role === "bot" ? "assistant" : "user",
+        content: compactHistoryContent(message.content),
+        ...(details ? { details } : {}),
+      };
+    });
 };
 
 const compactHistoryContent = (value: string) => {

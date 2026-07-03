@@ -858,11 +858,36 @@ def fetch_chat_history(telegram_id: int) -> list[dict[str, Any]]:
     return sessions_list
 
 
+def _history_details_from_response_payload(response_payload: Any) -> dict[str, Any] | None:
+    if not isinstance(response_payload, dict):
+        return None
+
+    details: dict[str, Any] = {}
+    tool_data = response_payload.get("tool_data")
+    if isinstance(tool_data, dict):
+        compact_tool: dict[str, Any] = {}
+        request_slots = tool_data.get("request_slots")
+        if isinstance(request_slots, dict) and request_slots:
+            compact_tool["request_slots"] = request_slots
+        tool_name = tool_data.get("tool")
+        if tool_name:
+            compact_tool["tool"] = tool_name
+        if compact_tool:
+            details["tool_data"] = compact_tool
+
+    for key in ("admission_state", "admission_profile", "classification", "orchestration"):
+        nested = response_payload.get(key)
+        if isinstance(nested, dict) and nested:
+            details[key] = nested
+
+    return details or None
+
+
 def fetch_session_history(session_id: str, limit: int = 20) -> list[dict[str, Any]]:
     with _get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             """
-            SELECT query, response, created_at
+            SELECT query, response, response_payload, created_at
             FROM chat_analytics
             WHERE session_id = %s
             ORDER BY created_at DESC
@@ -874,16 +899,18 @@ def fetch_session_history(session_id: str, limit: int = 20) -> list[dict[str, An
 
     rows.reverse()
     history: list[dict[str, Any]] = []
-    for query, response, created_at in rows:
+    for query, response, response_payload, created_at in rows:
         timestamp = created_at.isoformat()
         if query:
             history.append(
                 {"role": "user", "content": query, "created_at": timestamp}
             )
         if response:
-            history.append(
-                {"role": "assistant", "content": response, "created_at": timestamp}
-            )
+            assistant_message = {"role": "assistant", "content": response, "created_at": timestamp}
+            details = _history_details_from_response_payload(response_payload)
+            if details:
+                assistant_message["details"] = details
+            history.append(assistant_message)
     return history
 
 
@@ -935,7 +962,7 @@ def fetch_public_session_history(session_id: str, limit: int = 20) -> list[dict[
     with _get_connection() as conn, conn.cursor() as cursor:
         cursor.execute(
             """
-            SELECT query, response, created_at
+            SELECT query, response, response_payload, created_at
             FROM chat_analytics
             WHERE session_id = %s
               AND telegram_id IS NULL
@@ -953,16 +980,18 @@ def fetch_public_session_history(session_id: str, limit: int = 20) -> list[dict[
 
     rows.reverse()
     history: list[dict[str, Any]] = []
-    for query, response, created_at in rows:
+    for query, response, response_payload, created_at in rows:
         timestamp = created_at.isoformat()
         if query:
             history.append(
                 {"role": "user", "content": query, "created_at": timestamp}
             )
         if response:
-            history.append(
-                {"role": "assistant", "content": response, "created_at": timestamp}
-            )
+            assistant_message = {"role": "assistant", "content": response, "created_at": timestamp}
+            details = _history_details_from_response_payload(response_payload)
+            if details:
+                assistant_message["details"] = details
+            history.append(assistant_message)
     return history
 
 

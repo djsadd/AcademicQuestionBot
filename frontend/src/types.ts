@@ -91,6 +91,7 @@ export type ChatHistoryEntry = {
   role: "user" | "assistant" | "bot";
   content: string;
   created_at?: string;
+  details?: Record<string, unknown>;
 };
 
 export type ChatRequestPayload = {
@@ -159,6 +160,7 @@ export type ChatHistoryMessage = {
   role: "user" | "bot";
   content: string;
   created_at: string;
+  details?: ChatResult;
 };
 
 export type ChatHistorySession = {
