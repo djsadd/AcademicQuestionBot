@@ -2,11 +2,23 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Academic Question Bot</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="Academiq — академический ИИ-ассистент Turan-Astana University: поступление, учёба, регламенты и расписание." />
+    <meta name="theme-color" content="#8b1d3f" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0e0e12" media="(prefers-color-scheme: dark)" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <title>Academiq · TAU</title>
+    <script>
+      // Apply the saved theme before first paint to avoid a flash.
+      try {
+        var t = localStorage.getItem("aqb_theme");
+        if (t === "light" || t === "dark") document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {}
+    </script>
   </head>
-  <body class="antialiased bg-slate-50 text-slate-900">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

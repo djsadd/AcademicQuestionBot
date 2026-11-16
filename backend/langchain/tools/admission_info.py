@@ -3165,18 +3165,35 @@ def _program_matches(requested_program: str, candidate: str) -> bool:
     )
 
 
+def _word_stem(word: str) -> str:
+    """Crude stem for inflected Russian/Kazakh word forms ("психология" → "психолог")."""
+    if len(word) >= 7:
+        return word[:-2]
+    if len(word) >= 5:
+        return word[:-1]
+    return word
+
+
 def _term_matches_query(term: str, normalized_query: str) -> bool:
     normalized_term = _normalize_text(term)
     if not normalized_term:
         return False
-    if " " in normalized_term:
-        return normalized_term in normalized_query
+    if " " in normalized_term and normalized_term in normalized_query:
+        return True
 
     query_words = normalized_query.split()
-    return any(
-        word == normalized_term or word.startswith(normalized_term)
-        for word in query_words
-    )
+    term_words = normalized_term.split()
+    if len(term_words) == 1:
+        stem = _word_stem(normalized_term)
+        return any(word == normalized_term or word.startswith(stem) for word in query_words)
+
+    # Multi-word names: every word must match the consecutive query words by stem,
+    # so "на программной инженерии" matches "программная инженерия".
+    stems = [_word_stem(word) for word in term_words]
+    for start in range(len(query_words) - len(stems) + 1):
+        if all(query_words[start + offset].startswith(stem) for offset, stem in enumerate(stems)):
+            return True
+    return False
 
 
 def _not_found(

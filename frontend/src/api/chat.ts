@@ -1,5 +1,6 @@
 import { apiClient, API_BASE_URL, authStorage, refreshTokens } from "./client";
-import type { ChatHistoryResponse, ChatHistorySession, ChatRequestPayload, ChatResponse } from "../types";
+import type { ChatHistoryResponse, ChatHistorySession, ChatRequestPayload, ChatResponse, ChatStageEvent } from "../types";
+import { describeHttpError } from "./client";
 
 export async function sendChatMessage(payload: ChatRequestPayload): Promise<ChatResponse> {
   return apiClient.post<ChatResponse>("/chat/", JSON.stringify(payload));
@@ -21,6 +22,7 @@ export async function getPublicChatHistory(sessionId: string): Promise<{ session
 
 type StreamHandlers = {
   onDelta?: (delta: string) => void;
+  onStage?: (stage: ChatStageEvent) => void;
   onError?: (error: string) => void;
 };
 
@@ -67,8 +69,7 @@ async function streamChatRequest(
   }
 
   if (!response.ok || !response.body) {
-    const detail = await response.text();
-    throw new Error(detail || `Stream failed with status ${response.status}`);
+    throw new Error(await describeHttpError(response));
   }
 
   const decoder = new TextDecoder();
@@ -95,6 +96,8 @@ async function streamChatRequest(
       const data = JSON.parse(dataText) as any;
       if (eventType === "delta" && typeof data.delta === "string") {
         handlers.onDelta?.(data.delta);
+      } else if (eventType === "stage" && typeof data.stage === "string") {
+        handlers.onStage?.(data as ChatStageEvent);
       } else if (eventType === "done" && data.result) {
         donePayload = { result: data.result };
       } else if (eventType === "error" && typeof data.error === "string") {

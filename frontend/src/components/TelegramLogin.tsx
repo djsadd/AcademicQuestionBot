@@ -1,6 +1,9 @@
-import { FormEvent, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { FormEvent, useEffect, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { apiClient, authStorage } from "../api/client";
+import { Icon } from "./ui/Icon";
+import { Logo } from "./ui/Logo";
+import { ThemeToggle } from "./ui/ThemeToggle";
 
 type PasswordLoginResponse = {
   status: string;
@@ -29,8 +32,12 @@ export function TelegramLogin() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [profile, setProfile] = useState<PasswordLoginResponse | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
   const navigate = useNavigate();
+
+  useEffect(() => {
+    document.title = "Вход · Academiq";
+  }, []);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -50,8 +57,7 @@ export function TelegramLogin() {
         }),
       );
       authStorage.setTokens(response.access_token, response.refresh_token);
-      setProfile(response);
-      navigate("/profile", { replace: true });
+      navigate("/chat", { replace: true });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Login failed.";
       setError(message);
@@ -61,55 +67,83 @@ export function TelegramLogin() {
   }
 
   return (
-    <section className="telegram-login login-screen">
-      <div className="mini-app__card telegram-login__card login-form-card">
-        <div className="login-form-card__hero">
-          <h2>Вход в аккаунт</h2>
-          <p className="muted">
-            Войдите в систему, чтобы открыть персональный доступ к сервисам AcademicQuestionBot.
-          </p>
+    <div className="auth-page">
+      <aside className="auth-page__brand">
+        <Logo to="/" subtitle="Turan-Astana University" />
+        <div className="auth-page__pitch">
+          <h2>Ваш академический ассистент</h2>
+          <ul>
+            <li><Icon name="calendar" size={18} /> Персональный академический календарь из Platonus</li>
+            <li><Icon name="book" size={18} /> Ответы по регламентам и документам университета</li>
+            <li><Icon name="sparkles" size={18} /> История диалогов на всех устройствах</li>
+          </ul>
         </div>
-        <form className="mini-app__form" onSubmit={handleSubmit}>
-          <label className="mini-app__field">
-            <span>Логин</span>
-            <input
-              name="login"
-              autoComplete="username"
-              placeholder="Введите логин"
-              value={login}
-              onChange={(event) => setLogin(event.target.value)}
-              disabled={busy}
-            />
-          </label>
-          <label className="mini-app__field">
-            <span>Пароль</span>
-            <input
-              type="password"
-              name="password"
-              autoComplete="current-password"
-              placeholder="Введите пароль"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              disabled={busy}
-            />
-          </label>
-          <button className="primary" type="submit" disabled={busy}>
-            {busy ? "Проверяем..." : "Войти"}
-          </button>
-        </form>
-        {error ? <p className="mini-app__status error">{error}</p> : null}
-        {profile ? (
-          <div className="status-card">
-            <div className="status-card__header">
-              <strong>Профиль</strong>
-              <span className="status-pill status-success">OK</span>
-            </div>
-            <p className="muted">Логин: {profile.user.username ?? "—"}</p>
-            <p className="muted">Внутренний ID: {profile.user.telegram_id}</p>
-            <p className="muted">Доступ подтвержден.</p>
+        <span className="auth-page__copy">© {new Date().getFullYear()} Turan-Astana University</span>
+      </aside>
+
+      <main className="auth-page__main">
+        <div className="auth-page__top">
+          <Link to="/" className="auth-page__back">
+            <Icon name="arrowRight" size={16} style={{ transform: "rotate(180deg)" }} /> На главную
+          </Link>
+          <ThemeToggle />
+        </div>
+        <div className="auth-card">
+          <div className="auth-card__head">
+            <h1>Вход в аккаунт</h1>
+            <p className="muted">Используйте логин и пароль от Platonus.</p>
           </div>
-        ) : null}
-      </div>
-    </section>
+          <form className="auth-form" onSubmit={handleSubmit} noValidate>
+            <label className="field">
+              <span className="field__label">Логин</span>
+              <input
+                name="login"
+                autoComplete="username"
+                placeholder="Логин Platonus"
+                value={login}
+                onChange={(event) => setLogin(event.target.value)}
+                disabled={busy}
+                autoFocus
+              />
+            </label>
+            <label className="field">
+              <span className="field__label">Пароль</span>
+              <span className="field__control">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  name="password"
+                  autoComplete="current-password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  disabled={busy}
+                />
+                <button
+                  type="button"
+                  className="field__suffix"
+                  onClick={() => setShowPassword((value) => !value)}
+                  aria-label={showPassword ? "Скрыть пароль" : "Показать пароль"}
+                >
+                  {showPassword ? "Скрыть" : "Показать"}
+                </button>
+              </span>
+            </label>
+            {error ? (
+              <div className="auth-form__error" role="alert">
+                <Icon name="alert" size={16} /> {error}
+              </div>
+            ) : null}
+            <button className="primary btn--lg auth-form__submit" type="submit" disabled={busy}>
+              {busy ? <span className="spinner spinner--on-brand" /> : null}
+              {busy ? "Проверяем…" : "Войти"}
+            </button>
+          </form>
+          <div className="auth-card__foot">
+            <span className="muted">Абитуриент?</span>
+            <Link to="/chat">Спросить приёмную комиссию без входа</Link>
+          </div>
+        </div>
+      </main>
+    </div>
   );
 }

@@ -1,24 +1,14 @@
 """Postgres persistence for Telegram chat sessions and history."""
 from __future__ import annotations
 
-import os
 import uuid
-from contextlib import contextmanager
-from typing import Iterator, Optional
-
-import psycopg2
+from typing import Optional
 
 
-@contextmanager
-def _get_connection() -> Iterator[psycopg2.extensions.connection]:
-    dsn = os.getenv("POSTGRES_DSN", "").strip()
-    if not dsn:
-        raise SystemExit("POSTGRES_DSN is not set.")
-    conn = psycopg2.connect(dsn)
-    try:
-        yield conn
-    finally:
-        conn.close()
+from .session import get_connection
+
+
+_get_connection = get_connection
 
 
 def ensure_tables() -> None:

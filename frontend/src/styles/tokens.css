@@ -1,0 +1,129 @@
+/* Design tokens — TAU brand (burgundy) on a neutral, calm UI.
+ * Light by default; dark follows the OS unless the user picked a theme
+ * (html[data-theme="light" | "dark"]). */
+
+:root {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 22px;
+  --radius-full: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+
+  --sidebar-width: 264px;
+  --topbar-height: 60px;
+  --content-max: 1280px;
+  --chat-max: 780px;
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --duration: 160ms;
+
+  color-scheme: light;
+  --bg: #f6f6f8;
+  --surface: #ffffff;
+  --surface-2: #f3f3f6;
+  --surface-3: #e9e9ee;
+  --surface-raised: #ffffff;
+  --border: #e5e5ea;
+  --border-strong: #d2d2da;
+  --text: #16161d;
+  --text-muted: #5c5c69;
+  --text-subtle: #8b8b98;
+  --brand: #8b1d3f;
+  --brand-solid: #8b1d3f;
+  --brand-solid-hover: #6b132f;
+  --brand-strong: #6b132f;
+  --brand-soft: #f9ecf0;
+  --brand-ring: color-mix(in srgb, #8b1d3f 28%, transparent);
+  --on-brand: #ffffff;
+  --success: #11805a;
+  --success-soft: #e5f5ee;
+  --warning: #a35f00;
+  --warning-soft: #fff3df;
+  --danger: #c22f4a;
+  --danger-soft: #fdebee;
+  --info: #2a65e0;
+  --info-soft: #e9f0fd;
+  --shadow-color: #0f172a;
+  --shadow-sm: 0 1px 2px color-mix(in srgb, var(--shadow-color) 6%, transparent);
+  --shadow-md: 0 4px 16px -4px color-mix(in srgb, var(--shadow-color) 12%, transparent),
+    0 1px 3px color-mix(in srgb, var(--shadow-color) 6%, transparent);
+  --shadow-lg: 0 24px 48px -12px color-mix(in srgb, var(--shadow-color) 22%, transparent);
+  --hero-glow: radial-gradient(60% 60% at 70% 0%, color-mix(in srgb, #8b1d3f 14%, transparent) 0%, transparent 70%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: #0e0e12;
+    --surface: #16161c;
+    --surface-2: #1d1d24;
+    --surface-3: #26262f;
+    --surface-raised: #1b1b22;
+    --border: #2a2a33;
+    --border-strong: #3a3a45;
+    --text: #ededf2;
+    --text-muted: #a6a6b3;
+    --text-subtle: #767683;
+    --brand: #f0789c;
+    --brand-solid: #b0305a;
+    --brand-solid-hover: #c23d68;
+    --brand-strong: #ff94b4;
+    --brand-soft: color-mix(in srgb, #f0789c 14%, transparent);
+    --brand-ring: color-mix(in srgb, #f0789c 35%, transparent);
+    --on-brand: #ffffff;
+    --success: #4cd29b;
+    --success-soft: color-mix(in srgb, #4cd29b 14%, transparent);
+    --warning: #f2b552;
+    --warning-soft: color-mix(in srgb, #f2b552 14%, transparent);
+    --danger: #ff6f86;
+    --danger-soft: color-mix(in srgb, #ff6f86 14%, transparent);
+    --info: #7aa6ff;
+    --info-soft: color-mix(in srgb, #7aa6ff 14%, transparent);
+    --shadow-color: #000000;
+    --hero-glow: radial-gradient(60% 60% at 70% 0%, color-mix(in srgb, #f0789c 16%, transparent) 0%, transparent 70%);
+  }
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0e0e12;
+  --surface: #16161c;
+  --surface-2: #1d1d24;
+  --surface-3: #26262f;
+  --surface-raised: #1b1b22;
+  --border: #2a2a33;
+  --border-strong: #3a3a45;
+  --text: #ededf2;
+  --text-muted: #a6a6b3;
+  --text-subtle: #767683;
+  --brand: #f0789c;
+  --brand-solid: #b0305a;
+  --brand-solid-hover: #c23d68;
+  --brand-strong: #ff94b4;
+  --brand-soft: color-mix(in srgb, #f0789c 14%, transparent);
+  --brand-ring: color-mix(in srgb, #f0789c 35%, transparent);
+  --on-brand: #ffffff;
+  --success: #4cd29b;
+  --success-soft: color-mix(in srgb, #4cd29b 14%, transparent);
+  --warning: #f2b552;
+  --warning-soft: color-mix(in srgb, #f2b552 14%, transparent);
+  --danger: #ff6f86;
+  --danger-soft: color-mix(in srgb, #ff6f86 14%, transparent);
+  --info: #7aa6ff;
+  --info-soft: color-mix(in srgb, #7aa6ff 14%, transparent);
+  --shadow-color: #000000;
+  --hero-glow: radial-gradient(60% 60% at 70% 0%, color-mix(in srgb, #f0789c 16%, transparent) 0%, transparent 70%);
+}

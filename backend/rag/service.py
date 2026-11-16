@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -12,6 +14,8 @@ from typing import Any, Dict, List, Optional
 from . import embeddings, loader, retriever
 from .compression import compress_context
 from .vector_store import VectorStore
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -42,13 +46,22 @@ class RAGService:
     def __init__(self, storage_dir: Path | str | None = None) -> None:
         storage_root = storage_dir or os.getenv("RAG_STORAGE_PATH", "storage/documents")
         self.storage_dir = Path(storage_root)
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.manifest_path = self.storage_dir / "manifest.json"
         self._manifest: List[DocumentRecord] = self._load_manifest()
-        self.vector_store = VectorStore(
-            url=os.getenv("QDRANT_URL", "http://localhost:6333"),
-            collection_name=os.getenv("QDRANT_COLLECTION", "academic_documents"),
-        )
+        self._vector_store: Optional[VectorStore] = None
+        self._store_lock = threading.Lock()
+
+    @property
+    def vector_store(self) -> VectorStore:
+        """Connect to Qdrant lazily, on first use, instead of at import time."""
+        if self._vector_store is None:
+            with self._store_lock:
+                if self._vector_store is None:
+                    self._vector_store = VectorStore(
+                        url=os.getenv("QDRANT_URL", "http://localhost:6333"),
+                        collection_name=os.getenv("QDRANT_COLLECTION", "academic_documents"),
+                    )
+        return self._vector_store
 
     def ingest_path(
         self,
@@ -67,8 +80,8 @@ class RAGService:
             metadata_payload.setdefault("stored_file", stored_file)
         document_chunks = loader.load_file(path, metadata=metadata_payload)
         vectors = embeddings.embed_documents(document_chunks)
-        for chunk, vector in zip(document_chunks, vectors):
-            self.vector_store.add(chunk, vector)
+        self.vector_store.add_many(list(zip(document_chunks, vectors)))
+        logger.info("Ingested %s chunks from %s", len(document_chunks), path.name)
         result = {
             "document_id": doc_id,
             "chunks": len(document_chunks),
@@ -90,8 +103,10 @@ class RAGService:
         return result
 
     def save_upload(self, filename: str, data: bytes) -> Path:
-        """Persist uploaded bytes to disk."""
-        safe_name = f"{uuid.uuid4().hex}_{filename}"
+        """Persist uploaded bytes to disk (the client file name is never trusted as a path)."""
+        base_name = Path(filename or "upload").name.replace("\\", "_") or "upload"
+        safe_name = f"{uuid.uuid4().hex}_{base_name}"
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
         destination = self.storage_dir / safe_name
         destination.write_bytes(data)
         return destination
@@ -145,9 +160,18 @@ class RAGService:
         *,
         top_k: int = 3,
         compress: bool = False,
+        min_score: Optional[float] = None,
     ) -> List[Dict[str, Any]]:
-        """Retrieve relevant chunks for the provided query."""
-        results = retriever.retrieve(query, self.vector_store, top_k=top_k)
+        """Retrieve relevant chunks for the provided query.
+
+        ``min_score`` drops weakly related chunks so they neither cost
+        compression calls nor pollute the final prompt.
+        """
+        try:
+            results = retriever.retrieve(query, self.vector_store, top_k=top_k)
+        except Exception as exc:  # pragma: no cover - infra failure
+            logger.warning("RAG search failed: %s", exc)
+            return []
         payload = [
             {
                 "content": result.chunk.content,
@@ -155,6 +179,7 @@ class RAGService:
                 "metadata": result.chunk.metadata,
             }
             for result in results
+            if min_score is None or result.score >= min_score
         ]
         if compress:
             return compress_context(query, payload)
@@ -227,6 +252,7 @@ class RAGService:
 
     def _save_manifest(self) -> None:
         serialized = [record.to_dict() for record in self._manifest]
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.manifest_path.write_text(json.dumps(serialized, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

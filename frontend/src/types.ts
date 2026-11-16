@@ -131,6 +131,8 @@ export type ChatResult = {
   citations?: Record<string, unknown>[];
   supporting_context?: Record<string, unknown>[];
   llm: ChatLLMInfo;
+  timings_ms?: Record<string, number>;
+  language?: string | null;
   tool_data?: Record<string, unknown>;
   classification?: Record<string, unknown>;
   orchestration?: Record<string, unknown>;
@@ -149,6 +151,14 @@ export type ChatResult = {
     slots: Record<string, unknown>;
     updated_fields: string[];
   };
+};
+
+export type ChatStageEvent = {
+  stage: string;
+  status: "running" | "done" | "error";
+  label?: string;
+  detail?: Record<string, unknown>;
+  duration_ms?: number;
 };
 
 export type ChatResponse = {

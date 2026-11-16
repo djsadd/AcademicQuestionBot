@@ -2,24 +2,14 @@
 from __future__ import annotations
 
 import json
-import os
 import uuid
-from contextlib import contextmanager
-from typing import Any, Dict, Iterator, List, Optional
-
-import psycopg2
+from typing import Any, Dict, List, Optional
 
 
-@contextmanager
-def _get_connection() -> Iterator[psycopg2.extensions.connection]:
-    dsn = os.getenv("POSTGRES_DSN", "").strip()
-    if not dsn:
-        raise SystemExit("POSTGRES_DSN is not set.")
-    conn = psycopg2.connect(dsn)
-    try:
-        yield conn
-    finally:
-        conn.close()
+from .session import get_connection
+
+
+_get_connection = get_connection
 
 
 def ensure_tables() -> None:

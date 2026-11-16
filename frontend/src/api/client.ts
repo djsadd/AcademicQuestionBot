@@ -28,6 +28,40 @@ export { AUTH_STORAGE_EVENT };
 
 let refreshRequest: Promise<void> | null = null;
 
+const STATUS_MESSAGES: Record<number, string> = {
+  401: "Сессия истекла. Войдите снова.",
+  403: "Недостаточно прав для этого действия.",
+  404: "Не найдено.",
+  413: "Файл слишком большой.",
+  415: "Неподдерживаемый формат файла.",
+  429: "Слишком много запросов. Подождите немного и попробуйте снова.",
+  500: "Ошибка сервера. Попробуйте позже.",
+  502: "Сервис временно недоступен. Попробуйте позже.",
+  503: "Сервис временно недоступен. Попробуйте позже.",
+  504: "Сервер не ответил вовремя. Попробуйте ещё раз.",
+};
+
+/** Turn an error response into a human-readable message (FastAPI `detail` aware). */
+export async function describeHttpError(response: Response): Promise<string> {
+  let text = "";
+  try {
+    text = await response.text();
+  } catch {
+    // ignore body read errors
+  }
+  try {
+    const data = JSON.parse(text) as { detail?: unknown };
+    if (typeof data.detail === "string" && data.detail.trim()) return data.detail;
+    if (Array.isArray(data.detail) && data.detail.length) {
+      const first = data.detail[0] as { msg?: string };
+      if (first?.msg) return first.msg.replace(/^Value error, /, "");
+    }
+  } catch {
+    // not JSON
+  }
+  return STATUS_MESSAGES[response.status] ?? (text.length < 200 && text ? text : `Ошибка запроса (${response.status})`);
+}
+
 export function hasStoredSession(): boolean {
   return Boolean(authStorage.getAccessToken() || authStorage.getRefreshToken());
 }
@@ -84,8 +118,7 @@ async function request<T>(url: string, init?: RequestInit, retried?: boolean): P
   }
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(detail || `Request failed with status ${response.status}`);
+    throw new Error(await describeHttpError(response));
   }
 
   if (response.status === 204) {

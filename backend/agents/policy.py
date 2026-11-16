@@ -3,6 +3,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
+from fastapi.concurrency import run_in_threadpool
+
+from ..core.config import get_settings
 from ..langchain.tools.admission_info import (
     build_context_entries,
     detect_requested_tool,
@@ -11,7 +14,7 @@ from ..langchain.tools.admission_info import (
     normalize_language,
 )
 from ..rag.service import rag_service
-from .base import AgentResult, BaseAgent
+from .base import AgentResult, BaseAgent, citations_from_context, shared_context
 
 
 def validate_answer(answer: str, citations: List[Dict[str, Any]]) -> Tuple[bool, List[str]]:
@@ -47,6 +50,8 @@ def validate_answer(answer: str, citations: List[Dict[str, Any]]) -> Tuple[bool,
 class AcademicPolicyAgent(BaseAgent):
     """Answers policy and regulation questions using RAG."""
 
+    uses_rag = True
+
     def __init__(self, name: str) -> None:
         super().__init__(name=name)
         self.max_guidelines = 4
@@ -72,9 +77,22 @@ class AcademicPolicyAgent(BaseAgent):
                 tool_data=result,
             )
 
-        related_context = rag_service.search(query, top_k=5, compress=True)
+        related_context = shared_context(payload)
+        if related_context is None:
+            settings = get_settings()
+            related_context = await run_in_threadpool(
+                rag_service.search,
+                str(query),
+                top_k=settings.rag_top_k,
+                compress=True,
+                min_score=settings.rag_min_score,
+            )
+        if not related_context:
+            # No evidence: return nothing so the synthesizer does not
+            # receive (or echo) placeholder text.
+            return AgentResult(answer="", context=[], intent="policy", citations=[], validation={"is_valid": False, "issues": ["no_context"]})
         guidelines = self._build_guidelines(related_context)
-        citations = self._build_citations(related_context)
+        citations = citations_from_context(related_context, limit=self.max_guidelines)
         explanation = self._compose_answer(query, guidelines, citations)
         is_valid, issues = validate_answer(explanation, citations)
 
@@ -90,23 +108,10 @@ class AcademicPolicyAgent(BaseAgent):
     def _build_guidelines(self, context: List[Dict[str, Any]]) -> List[str]:
         guidelines: List[str] = []
         for item in context[: self.max_guidelines]:
-            source = item["metadata"].get("file_name", "Документ")
-            snippet = item["content"].strip().replace("\n", " ")
+            source = (item.get("metadata") or {}).get("file_name") or "Документ"
+            snippet = " ".join(str(item.get("content") or "").split())
             guidelines.append(f"{source}: {snippet[:320]}")
         return guidelines
-
-    def _build_citations(self, context: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        citations: List[Dict[str, Any]] = []
-        for item in context[: self.max_guidelines]:
-            metadata = item["metadata"]
-            citations.append(
-                {
-                    "file_name": metadata.get("file_name"),
-                    "source_path": metadata.get("source_path"),
-                    "chunk_index": metadata.get("chunk_index"),
-                }
-            )
-        return citations
 
     def _compose_answer(
         self,

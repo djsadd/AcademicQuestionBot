@@ -4,23 +4,22 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Iterator
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from ...agents.admission import (
     detect_question_language,
     run_admission_pipeline,
 )
+from ...core.config import get_settings
+from ...core.rate_limit import private_chat_limit, public_chat_limit
 from ...db import chat_analytics
-from ...langchain.llm import llm_client
-from ...services.permissions import require_user
-
 from ...orchestrator.router import AgentRouter
-from ...orchestrator.aggregator import SYSTEM_PROMPT
+from ...services.permissions import require_user
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 agent_router = AgentRouter()
@@ -37,6 +36,22 @@ class ChatPayload(BaseModel):
     context: dict[str, Any] | None = None
     metadata: dict[str, Any] | None = None
     history: list[dict[str, Any]] | None = None
+
+    @field_validator("message")
+    @classmethod
+    def _validate_message(cls, value: str) -> str:
+        value = (value or "").strip()
+        if not value:
+            raise ValueError("message must not be empty")
+        limit = get_settings().max_message_chars
+        if len(value) > limit:
+            raise ValueError(f"message is too long (max {limit} characters)")
+        return value
+
+    @field_validator("history")
+    @classmethod
+    def _limit_history(cls, value: list[dict[str, Any]] | None) -> list[dict[str, Any]] | None:
+        return value[-50:] if value else value
 
 
 PUBLIC_ADMISSION_PLAN = [
@@ -330,14 +345,13 @@ def _redact_public_request_payload(request_payload: dict[str, Any]) -> dict[str,
 
 def _print_public_request(endpoint: str, request_payload: dict[str, Any]) -> None:
     safe_payload = _redact_public_request_payload(request_payload)
-    try:
-        print(
-            f"[public-request] {endpoint} :: "
-            f"{json.dumps(safe_payload, ensure_ascii=False, default=str)}",
-            flush=True,
-        )
-    except Exception:
-        print(f"[public-request] {endpoint} :: {safe_payload}", flush=True)
+    logger.info(
+        "public-request %s message_len=%s history=%s session=%s",
+        endpoint,
+        len(str(safe_payload.get("message") or "")),
+        safe_payload.get("history_size"),
+        (safe_payload.get("metadata") or {}).get("session_id"),
+    )
 
 
 def _assemble_public_admission_response(
@@ -462,14 +476,19 @@ def _prepare_public_router_payload(
     return router_payload, metadata, session_id, channel
 
 
-@router.post("/")
-async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) -> dict:
+def _prepare_private_router_payload(
+    payload: ChatPayload,
+    user: dict[str, Any],
+    *,
+    endpoint: str,
+) -> tuple[dict[str, Any], dict[str, Any], str | None, str, dict[str, Any]]:
+    """Build the orchestrator payload for an authenticated chat request (blocking: DB)."""
     telegram_id = user["telegram_id"]
     person_id = payload.person_id or user.get("platonus_person_id")
     metadata, session_id = _build_analytics_metadata(
         payload=payload,
         channel=str((payload.metadata or {}).get("channel") or "web"),
-        endpoint="/chat/",
+        endpoint=endpoint,
         chat_mode="private",
         auth_mode="authenticated",
         user=user,
@@ -477,42 +496,49 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
     channel = str(metadata.get("channel") or "web")
 
     router_payload = payload.model_dump()
+    # Identity always comes from the verified token, never from the request body.
     router_payload["telegram_id"] = telegram_id
     router_payload["user_id"] = telegram_id
-    if person_id:
-        router_payload["person_id"] = person_id
+    router_payload["person_id"] = person_id
     router_payload["metadata"] = metadata
-    stored_history: list[dict[str, Any]] = []
-    if session_id:
-        stored_history = await run_in_threadpool(chat_analytics.fetch_session_history, session_id)
+    stored_history = chat_analytics.fetch_session_history(session_id) if session_id else []
     router_payload["history"] = _merge_history(
         payload.history,
         stored_history,
         current_message=payload.message,
     )
-    await run_in_threadpool(_attach_admission_state, router_payload, session_id)
-
-    response = await agent_router.route(router_payload)
+    _attach_admission_state(router_payload, session_id)
     request_payload = _build_request_log_payload(
         payload=payload,
         router_payload=router_payload,
         metadata=metadata,
         user=user,
     )
+    return router_payload, metadata, session_id, channel, request_payload
 
+
+def _save_private_analytics(
+    *,
+    response: dict[str, Any],
+    router_payload: dict[str, Any],
+    metadata: dict[str, Any],
+    session_id: str | None,
+    channel: str,
+    request_payload: dict[str, Any],
+) -> None:
     try:
         _sync_admission_context_snapshot(metadata, response)
-        await run_in_threadpool(
-            chat_analytics.save_chat_event,
+        llm_meta = response.get("llm") or {}
+        chat_analytics.save_chat_event(
             session_id=session_id,
-            telegram_id=telegram_id,
-            person_id=person_id,
-            channel=str(channel) if channel is not None else None,
+            telegram_id=router_payload.get("telegram_id"),
+            person_id=router_payload.get("person_id"),
+            channel=channel,
             query=response.get("query"),
             response=response.get("final_answer"),
-            llm_model=(response.get("llm") or {}).get("model"),
-            llm_used=(response.get("llm") or {}).get("used"),
-            llm_error=(response.get("llm") or {}).get("error"),
+            llm_model=llm_meta.get("model"),
+            llm_used=llm_meta.get("used"),
+            llm_error=llm_meta.get("error"),
             intents=response.get("intents"),
             agents=response.get("plan"),
             trace=response.get("trace"),
@@ -523,10 +549,33 @@ async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) 
     except Exception as exc:
         logger.exception("Chat analytics failed: %s", exc)
 
+
+SSE_HEADERS = {
+    "Cache-Control": "no-cache",
+    "Connection": "keep-alive",
+    "X-Accel-Buffering": "no",
+}
+
+
+@router.post("/", dependencies=[Depends(private_chat_limit)])
+async def handle_chat(payload: ChatPayload, user: dict = Depends(require_user)) -> dict:
+    router_payload, metadata, session_id, channel, request_payload = await run_in_threadpool(
+        _prepare_private_router_payload, payload, user, endpoint="/chat/"
+    )
+    response = await agent_router.route(router_payload)
+    await run_in_threadpool(
+        _save_private_analytics,
+        response=response,
+        router_payload=router_payload,
+        metadata=metadata,
+        session_id=session_id,
+        channel=channel,
+        request_payload=request_payload,
+    )
     return {"result": response}
 
 
-@router.post("/public/admission")
+@router.post("/public/admission", dependencies=[Depends(public_chat_limit)])
 async def handle_public_admission_chat(payload: ChatPayload) -> dict:
     router_payload, metadata, session_id, channel = await run_in_threadpool(
         _prepare_public_router_payload,
@@ -560,7 +609,8 @@ async def handle_public_admission_chat(payload: ChatPayload) -> dict:
     )
     return {"result": response}
 
-@router.post("/public/admission/stream")
+
+@router.post("/public/admission/stream", dependencies=[Depends(public_chat_limit)])
 async def handle_public_admission_chat_stream(payload: ChatPayload) -> StreamingResponse:
     router_payload, metadata, session_id, channel = await run_in_threadpool(
         _prepare_public_router_payload,
@@ -575,8 +625,8 @@ async def handle_public_admission_chat_stream(payload: ChatPayload) -> Streaming
     _print_public_request("/chat/public/admission/stream", request_payload)
 
     async def event_stream():
-        final_answer_parts: list[str] = []
         try:
+            yield _sse("stage", {"stage": "admission", "status": "running", "label": "Admission Agent"})
             public_payload = payload.model_copy(
                 update={
                     "history": router_payload.get("history") or [],
@@ -588,13 +638,10 @@ async def handle_public_admission_chat_stream(payload: ChatPayload) -> Streaming
                 public_payload,
                 history=router_payload.get("history"),
             )
+            yield _sse("stage", {"stage": "admission", "status": "done", "label": "Admission Agent"})
             final_answer = str(response.get("final_answer") or "")
-            for idx in range(0, len(final_answer), 140):
-                chunk = final_answer[idx: idx + 140]
-                if not chunk:
-                    continue
-                final_answer_parts.append(chunk)
-                yield _sse("delta", {"delta": chunk})
+            for idx in range(0, len(final_answer), 160):
+                yield _sse("delta", {"delta": final_answer[idx: idx + 160]})
                 await asyncio.sleep(0)
 
             await run_in_threadpool(
@@ -606,227 +653,53 @@ async def handle_public_admission_chat_stream(payload: ChatPayload) -> Streaming
                 request_payload=request_payload,
             )
             yield _sse("done", {"result": response})
-        except Exception as exc:
-            logger.exception("Public admission streaming failed: %s", exc)
-            yield _sse("error", {"error": str(exc)})
+        except Exception:
+            logger.exception("Public admission streaming failed")
+            yield _sse("error", {"error": "Не удалось получить ответ. Попробуйте ещё раз."})
 
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 def _sse(event: str, payload: dict) -> str:
-    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+    return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False, default=str)}\n\n"
 
 
-def _next_stream_chunk(iterator: Iterator[str]) -> tuple[bool, str]:
-    try:
-        return True, next(iterator)
-    except StopIteration:
-        return False, ""
-
-
-@router.post("/stream")
+@router.post("/stream", dependencies=[Depends(private_chat_limit)])
 async def handle_chat_stream(payload: ChatPayload, user: dict = Depends(require_user)) -> StreamingResponse:
-    telegram_id = user["telegram_id"]
-    person_id = payload.person_id or user.get("platonus_person_id")
-    metadata, session_id = _build_analytics_metadata(
-        payload=payload,
-        channel=str((payload.metadata or {}).get("channel") or "web"),
-        endpoint="/chat/stream",
-        chat_mode="private",
-        auth_mode="authenticated",
-        user=user,
-    )
-    channel = str(metadata.get("channel") or "web")
-
-    router_payload = payload.model_dump()
-    router_payload["telegram_id"] = telegram_id
-    router_payload["user_id"] = telegram_id
-    if person_id:
-        router_payload["person_id"] = person_id
-    router_payload["metadata"] = metadata
-    stored_history: list[dict[str, Any]] = []
-    if session_id:
-        stored_history = await run_in_threadpool(chat_analytics.fetch_session_history, session_id)
-    router_payload["history"] = _merge_history(
-        payload.history,
-        stored_history,
-        current_message=payload.message,
-    )
-    await run_in_threadpool(_attach_admission_state, router_payload, session_id)
-    request_payload = _build_request_log_payload(
-        payload=payload,
-        router_payload=router_payload,
-        metadata=metadata,
-        user=user,
+    router_payload, metadata, session_id, channel, request_payload = await run_in_threadpool(
+        _prepare_private_router_payload, payload, user, endpoint="/chat/stream"
     )
 
     async def event_stream():
-        final_answer_parts: list[str] = []
-        response_obj: dict | None = None
         try:
-            intents = await agent_router.intent_agent.run(router_payload)
-            plan_steps = agent_router.graph.plan(intents)
-            full_plan = [agent_router.intent_step, *plan_steps]
-
-            shared_context: dict[str, Any] = {
-                **router_payload,
-                "intents": intents.get("intents", []),
-            }
-            execution_trace: list[dict[str, Any]] = [
-                {
-                    "key": "intent",
-                    "name": agent_router.intent_agent.name,
-                    "description": agent_router.intent_step.description,
-                    "output": intents,
-                }
-            ]
-
-            for step in plan_steps:
-                agent = agent_router.agent_registry.get(step.key)
-                if not agent:
-                    execution_trace.append(
-                        {
-                            "key": step.key,
-                            "name": "unregistered",
-                            "description": step.description,
-                            "output": {"error": "agent is not registered"},
-                        }
+            async for event in agent_router.stream(router_payload):
+                kind = event.get("type")
+                if kind == "delta":
+                    yield _sse("delta", {"delta": event["delta"]})
+                elif kind in {"stage", "plan"}:
+                    yield _sse(kind, {k: v for k, v in event.items() if k != "type"})
+                elif kind == "done":
+                    response = event["result"]
+                    await run_in_threadpool(
+                        _save_private_analytics,
+                        response=response,
+                        router_payload=router_payload,
+                        metadata=metadata,
+                        session_id=session_id,
+                        channel=channel,
+                        request_payload=request_payload,
                     )
-                    continue
+                    yield _sse("done", {"result": response})
+        except Exception:
+            logger.exception("Streaming chat failed")
+            yield _sse("error", {"error": "Не удалось получить ответ. Попробуйте ещё раз."})
 
-                agent_payload = {
-                    **shared_context,
-                    "agent_history": execution_trace,
-                }
-                result = await agent.run(agent_payload)
-                shared_context.update(result)
-                execution_trace.append(
-                    {
-                        "key": step.key,
-                        "name": agent.name,
-                        "description": step.description,
-                        "output": result,
-                    }
-                )
-                if result.get("direct_response"):
-                    break
-
-            artifacts = agent_router.aggregator._collect_artifacts(execution_trace)
-            fallback_answer = agent_router.aggregator._fallback_answer(artifacts.answers)
-            llm_answer = ""
-
-            if artifacts.direct_response:
-                for idx in range(0, len(artifacts.direct_response), 140):
-                    chunk = artifacts.direct_response[idx: idx + 140]
-                    if not chunk:
-                        continue
-                    final_answer_parts.append(chunk)
-                    yield _sse("delta", {"delta": chunk})
-                    await asyncio.sleep(0)
-            elif llm_client.is_configured and artifacts.answers:
-                prompt = agent_router.aggregator._render_prompt(
-                    user_payload=router_payload,
-                    intents=intents,
-                    answers=artifacts.answers,
-                    context=artifacts.context,
-                    citations=artifacts.citations,
-                )
-                messages = [
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ]
-                stream_iterator = await run_in_threadpool(llm_client.chat_stream, messages)
-                while True:
-                    has_chunk, chunk = await run_in_threadpool(_next_stream_chunk, stream_iterator)
-                    if not has_chunk:
-                        break
-                    final_answer_parts.append(chunk)
-                    yield _sse("delta", {"delta": chunk})
-                    await asyncio.sleep(0)
-                llm_answer = "".join(final_answer_parts).strip()
-            else:
-                for idx in range(0, len(fallback_answer), 140):
-                    chunk = fallback_answer[idx: idx + 140]
-                    if not chunk:
-                        continue
-                    final_answer_parts.append(chunk)
-                    yield _sse("delta", {"delta": chunk})
-                    await asyncio.sleep(0)
-
-            final_answer = llm_answer or "".join(final_answer_parts).strip() or fallback_answer
-            plan_view = [{"agent": step.key, "description": step.description} for step in full_plan]
-            response_obj = {
-                "query": router_payload.get("message"),
-                "intents": intents.get("intents", []),
-                "priority": intents.get("priority"),
-                "plan": plan_view,
-                "trace": execution_trace,
-                "final_answer": final_answer,
-                "validation": artifacts.validator,
-                "citations": artifacts.citations,
-                "supporting_context": artifacts.context,
-                "llm": {
-                    "model": getattr(llm_client, "model", None),
-                    "used": bool(llm_answer),
-                    "error": getattr(llm_client, "last_error", None),
-                    "raw_request": {
-                        "intents": intents.get("intents", []),
-                        "plan": [step.key for step in full_plan],
-                    } if not llm_answer else None,
-                },
-                **agent_router.aggregator._collect_admission_metadata(execution_trace),
-            }
-
-            try:
-                _sync_admission_context_snapshot(metadata, response_obj)
-                await run_in_threadpool(
-                    chat_analytics.save_chat_event,
-                    session_id=session_id,
-                    telegram_id=telegram_id,
-                    person_id=person_id,
-                    channel=str(channel) if channel is not None else None,
-                    query=response_obj.get("query"),
-                    response=response_obj.get("final_answer"),
-                    llm_model=(response_obj.get("llm") or {}).get("model"),
-                    llm_used=(response_obj.get("llm") or {}).get("used"),
-                    llm_error=(response_obj.get("llm") or {}).get("error"),
-                    intents=response_obj.get("intents"),
-                    agents=response_obj.get("plan"),
-                    trace=response_obj.get("trace"),
-                    metadata=metadata,
-                    request_payload=request_payload,
-                    response_payload=response_obj,
-                )
-            except Exception as exc:
-                logger.exception("Chat analytics failed: %s", exc)
-
-            yield _sse("done", {"result": response_obj})
-        except Exception as exc:
-            logger.exception("Streaming chat failed: %s", exc)
-            yield _sse("error", {"error": str(exc)})
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
-    )
+    return StreamingResponse(event_stream(), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 @router.get("/history")
 async def get_chat_history(user: dict = Depends(require_user)) -> dict:
-    history = chat_analytics.fetch_chat_history(user["telegram_id"])
+    history = await run_in_threadpool(chat_analytics.fetch_chat_history, user["telegram_id"])
     return {"sessions": history}
 
 
@@ -836,7 +709,9 @@ async def get_public_chat_history(session_id: str) -> dict:
     if not normalized_session_id:
         raise HTTPException(status_code=400, detail="session_id is required")
 
-    session = chat_analytics.fetch_public_chat_session(normalized_session_id)
+    if len(normalized_session_id) > 128:
+        raise HTTPException(status_code=400, detail="session_id is too long")
+    session = await run_in_threadpool(chat_analytics.fetch_public_chat_session, normalized_session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Public chat session not found")
 

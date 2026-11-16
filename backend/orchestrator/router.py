@@ -1,7 +1,11 @@
-"""Agent router that wires requests through the orchestrator graph."""
-from typing import Any, Dict, List
+"""Agent router: wires concrete agents into the shared pipeline.
 
-from fastapi.concurrency import run_in_threadpool
+Kept as a thin façade so existing callers (HTTP API, Telegram bot) keep using
+``AgentRouter().route(payload)``; streaming callers use ``stream(payload)``.
+"""
+from __future__ import annotations
+
+from typing import Any, AsyncIterator, Dict
 
 from ..agents.admission import AdmissionAgent
 from ..agents.dean import DeanCalendarAgent
@@ -11,10 +15,11 @@ from ..agents.tutor import AcademicTutorAgent
 from ..agents.validator import ValidatorAgent
 from .aggregator import ResponseAggregator
 from .graph import AgentPlanStep, OrchestratorGraph
+from .pipeline import AgentPipeline
 
 
 class AgentRouter:
-    """Coordinates the multi-agent flow defined in README."""
+    """Coordinates the multi-agent flow."""
 
     def __init__(self) -> None:
         self.intent_agent = IntentRouterAgent(name="intent-router")
@@ -30,63 +35,18 @@ class AgentRouter:
             "policy": self.policy_agent,
             "admission": self.admission_agent,
             "dean": self.dean_agent,
-            "validator": self.validator_agent,
         }
-        self.intent_step = AgentPlanStep(
-            key="intent", description="Intent Router Agent"
+        self.intent_step = AgentPlanStep(key="intent", description="Intent Router Agent")
+        self.pipeline = AgentPipeline(
+            intent_agent=self.intent_agent,
+            registry=self.agent_registry,
+            graph=self.graph,
+            aggregator=self.aggregator,
+            validator=self.validator_agent,
         )
 
     async def route(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        intents = await self.intent_agent.run(payload)
-        plan_steps = self.graph.plan(intents)
-        full_plan: List[AgentPlanStep] = [self.intent_step, *plan_steps]
-        shared_context: Dict[str, Any] = {
-            **payload,
-            "intents": intents.get("intents", []),
-        }
-        execution_trace: List[Dict[str, Any]] = [
-            {
-                "key": "intent",
-                "name": self.intent_agent.name,
-                "description": self.intent_step.description,
-                "output": intents,
-            }
-        ]
+        return await self.pipeline.run(payload)
 
-        for step in plan_steps:
-            agent = self.agent_registry.get(step.key)
-            if not agent:
-                execution_trace.append(
-                    {
-                        "key": step.key,
-                        "name": "unregistered",
-                        "description": step.description,
-                        "output": {"error": "agent is not registered"},
-                    }
-                )
-                continue
-
-            agent_payload = {
-                **shared_context,
-                "agent_history": execution_trace,
-            }
-            result = await agent.run(agent_payload)
-            shared_context.update(result)
-            execution_trace.append(
-                {
-                    "key": step.key,
-                    "name": agent.name,
-                    "description": step.description,
-                    "output": result,
-                }
-            )
-            if result.get("direct_response"):
-                break
-
-        return await run_in_threadpool(
-            self.aggregator.aggregate,
-            user_payload=payload,
-            intents=intents,
-            plan=full_plan,
-            trace=execution_trace,
-        )
+    def stream(self, payload: Dict[str, Any]) -> AsyncIterator[Dict[str, Any]]:
+        return self.pipeline.stream(payload)

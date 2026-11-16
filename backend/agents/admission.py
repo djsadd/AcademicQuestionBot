@@ -27,7 +27,6 @@ from ..langchain.tools.admission_info import (
     get_scholarships,
     get_study_formats,
     get_student_house,
-    get_study_durations,
     load_admission_data,
 )
 from .base import AgentResult, BaseAgent

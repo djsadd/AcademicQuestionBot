@@ -63,7 +63,7 @@ def _get_login_max_age() -> int | None:
 
 
 @router.post("/telegram")
-async def telegram_login(payload: TelegramLoginPayload) -> dict:
+def telegram_login(payload: TelegramLoginPayload) -> dict:
     if not verify_login_payload(payload.model_dump(), _get_bot_token(), _get_login_max_age()):
         raise HTTPException(status_code=401, detail="Telegram login validation failed.")
 
@@ -169,7 +169,7 @@ async def password_login(payload: PasswordLoginPayload) -> dict:
 
 
 @router.post("/refresh")
-async def refresh_token(payload: RefreshPayload) -> dict:
+def refresh_token(payload: RefreshPayload) -> dict:
     if not payload.refresh_token.strip():
         raise HTTPException(status_code=400, detail="Refresh token required.")
 
@@ -191,7 +191,7 @@ async def refresh_token(payload: RefreshPayload) -> dict:
 
 
 @router.post("/logout")
-async def logout(payload: RefreshPayload) -> dict:
+def logout(payload: RefreshPayload) -> dict:
     if not payload.refresh_token.strip():
         raise HTTPException(status_code=400, detail="Refresh token required.")
     revoked = auth_tokens.revoke_refresh_token(payload.refresh_token)
@@ -201,7 +201,7 @@ async def logout(payload: RefreshPayload) -> dict:
 
 
 @router.get("/me")
-async def auth_me(user: dict = Depends(get_current_user)) -> dict:
+def auth_me(user: dict = Depends(get_current_user)) -> dict:
     return {
         "status": "ok",
         "user": {

@@ -143,7 +143,7 @@ async def telegram_auth(payload: TelegramAuthPayload) -> dict:
 
 
 @router.post("/login")
-async def telegram_login(payload: TelegramLoginPayload) -> dict:
+def telegram_login(payload: TelegramLoginPayload) -> dict:
     bot_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     if not bot_token:
         raise HTTPException(status_code=500, detail="TELEGRAM_BOT_TOKEN is not configured.")

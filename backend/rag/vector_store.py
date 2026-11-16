@@ -45,6 +45,10 @@ class InMemoryVectorStore:
         results.sort(key=lambda item: item.score, reverse=True)
         return results[:top_k]
 
+    def add_many(self, items: List[tuple[DocumentChunk, List[float]]]) -> None:
+        for chunk, vector in items:
+            self.add(chunk, vector)
+
     def delete_document(self, document_id: str) -> None:
         self._items = [
             (chunk, vector)
@@ -95,7 +99,7 @@ class VectorStore:
 
         self._init_qdrant()
 
-    def add(self, chunk: DocumentChunk, vector: List[float]) -> None:
+    def add(self, chunk: DocumentChunk, vector: List[float], _retried: bool = False) -> None:
         payload = {"content": chunk.content, **chunk.metadata}
         vector_payload = _coerce_vector(vector, self._vector_size)
 
@@ -118,14 +122,60 @@ class VectorStore:
                 )
                 return
             except Exception:
-                if self._try_reconnect():
-                    return self.add(chunk, vector_payload)
+                if not _retried and self._try_reconnect():
+                    return self.add(chunk, vector_payload, _retried=True)
                 if not self._fallback_enabled:
                     raise
         if self._fallback_store:
             self._fallback_store.add(chunk, vector_payload)
 
-    def search(self, vector: List[float], *, top_k: int = 3) -> List[VectorSearchResult]:
+    def add_many(self, items: List[tuple[DocumentChunk, List[float]]], *, batch_size: int = 128) -> None:
+        """Upsert many chunks with one request per batch (much faster than ``add`` in a loop)."""
+        if not items:
+            return
+        if self._client is None:
+            self._init_qdrant()
+        if self._client is None and self._strict:
+            raise RuntimeError("Qdrant is unavailable; strict mode enabled.")
+        if self._client:
+            try:
+                for start in range(0, len(items), batch_size):
+                    points = [
+                        qdrant_models.PointStruct(
+                            id=chunk.id,
+                            vector=_coerce_vector(vector, self._vector_size),
+                            payload={"content": chunk.content, **chunk.metadata},
+                        )
+                        for chunk, vector in items[start : start + batch_size]
+                    ]
+                    self._with_retry(
+                        lambda points=points: self._client.upsert(
+                            collection_name=self._collection_name,
+                            points=points,
+                        )
+                    )
+                return
+            except Exception:
+                if not self._fallback_enabled:
+                    raise
+        if self._fallback_store:
+            self._fallback_store.add_many(items)
+
+    def ping(self) -> bool:
+        """Readiness probe: True when Qdrant answers (or the fallback store is active)."""
+        if self._client is None:
+            return self._fallback_store is not None
+        try:
+            self._client.get_collections()
+            return True
+        except Exception:
+            return False
+
+    @property
+    def mode(self) -> str:
+        return "qdrant" if self._client is not None else ("memory" if self._fallback_store else "offline")
+
+    def search(self, vector: List[float], *, top_k: int = 3, _retried: bool = False) -> List[VectorSearchResult]:
         vector_payload = _coerce_vector(vector, self._vector_size)
         if self._client is None:
             self._init_qdrant()
@@ -133,25 +183,21 @@ class VectorStore:
             raise RuntimeError("Qdrant is unavailable; strict mode enabled.")
         if self._client:
             try:
-                hits = self._with_retry(
-                    lambda: self._client.search(
-                        collection_name=self._collection_name,
-                        query_vector=vector_payload,
-                        limit=top_k,
-                        with_payload=True,
-                    )
-                )
+                hits = self._with_retry(lambda: self._search_points(vector_payload, top_k))
                 return [_to_search_result(hit) for hit in hits]
             except Exception:
-                if self._try_reconnect():
-                    return self.search(vector_payload, top_k=top_k)
+                # Reconnect at most once: a persistent error (e.g. vector size
+                # mismatch) previously caused endless reconnect recursion.
+                logger.warning("Qdrant search failed", exc_info=True)
+                if not _retried and self._try_reconnect():
+                    return self.search(vector_payload, top_k=top_k, _retried=True)
                 if not self._fallback_enabled:
                     raise
         if self._fallback_store:
             return self._fallback_store.search(vector_payload, top_k=top_k)
         return []
 
-    def delete_document(self, document_id: str) -> None:
+    def delete_document(self, document_id: str, _retried: bool = False) -> None:
         if self._client is None:
             self._init_qdrant()
         if self._client is None and self._strict:
@@ -173,14 +219,14 @@ class VectorStore:
                     )
                 )
             except Exception:
-                if self._try_reconnect():
-                    return self.delete_document(document_id)
+                if not _retried and self._try_reconnect():
+                    return self.delete_document(document_id, _retried=True)
                 if not self._fallback_enabled:
                     raise
         if self._fallback_store:
             self._fallback_store.delete_document(document_id)
 
-    def list_document_chunks(self, document_id: str, *, limit: int = 200) -> List[DocumentChunk]:
+    def list_document_chunks(self, document_id: str, *, limit: int = 200, _retried: bool = False) -> List[DocumentChunk]:
         if limit <= 0:
             return []
         if self._client is None:
@@ -218,13 +264,30 @@ class VectorStore:
                 collected.sort(key=_chunk_sort_key)
                 return collected
             except Exception:
-                if self._try_reconnect():
-                    return self.list_document_chunks(document_id, limit=limit)
+                if not _retried and self._try_reconnect():
+                    return self.list_document_chunks(document_id, limit=limit, _retried=True)
                 if not self._fallback_enabled:
                     raise
         if self._fallback_store:
             return self._fallback_store.list_document_chunks(document_id, limit=limit)
         return []
+
+    def _search_points(self, vector: List[float], top_k: int):
+        """Search across qdrant-client versions (``search`` was replaced by ``query_points``)."""
+        if hasattr(self._client, "query_points"):
+            response = self._client.query_points(
+                collection_name=self._collection_name,
+                query=vector,
+                limit=top_k,
+                with_payload=True,
+            )
+            return response.points
+        return self._client.search(
+            collection_name=self._collection_name,
+            query_vector=vector,
+            limit=top_k,
+            with_payload=True,
+        )
 
     def _init_qdrant(self) -> None:
         for attempt in range(self._retry_attempts):
@@ -286,6 +349,13 @@ class VectorStore:
         for attempt in range(self._retry_attempts):
             try:
                 return operation()
+            except UnexpectedResponse as exc:
+                # Client errors (bad request, wrong vector size, ...) never succeed on retry.
+                if exc.status_code is not None and 400 <= exc.status_code < 500 and exc.status_code != 429:
+                    raise
+                if attempt == self._retry_attempts - 1:
+                    raise
+                time.sleep(_next_delay(self._retry_delay, self._retry_max_delay, attempt))
             except Exception:
                 if attempt == self._retry_attempts - 1:
                     raise

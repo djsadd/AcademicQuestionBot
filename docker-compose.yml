@@ -1,47 +1,70 @@
+x-backend-env: &backend-env
+  env_file:
+    - .env
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+x-admission-data: &admission-data
+  - ./backend/data/admission_info.json:/app/backend/data/admission_info.json
+  - ./backend/data/admission_info_kk.json:/app/backend/data/admission_info_kk.json
+  - ./backend/data/admission_info_en.json:/app/backend/data/admission_info_en.json
+
 services:
   api:
+    <<: *backend-env
     build:
       context: .
       dockerfile: docker/Dockerfile
-    env_file:
-      - .env
     environment:
       - PLATONUS_API_URL=${PLATONUS_API_URL:-http://platonus-api:8001}
+    command:
+      - uvicorn
+      - backend.api.main:app
+      - --host=0.0.0.0
+      - --port=8000
+      - --workers=${API_WORKERS:-2}
+      - --proxy-headers
+      - --forwarded-allow-ips=*
+      - --timeout-keep-alive=75
     volumes:
       - rag_storage:/app/storage
       - ./backend/data/admission_info.json:/app/backend/data/admission_info.json
       - ./backend/data/admission_info_kk.json:/app/backend/data/admission_info_kk.json
       - ./backend/data/admission_info_en.json:/app/backend/data/admission_info_en.json
     ports:
-      - "${API_PORT:-18000}:8000"
+      - "${API_BIND:-127.0.0.1}:${API_PORT:-18000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     depends_on:
-      - postgresql
-      - qdrant
-      - redis
+      postgresql:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+      redis:
+        condition: service_healthy
 
   platonus-api:
+    <<: *backend-env
     build:
       context: .
       dockerfile: docker/Dockerfile
-    env_file:
-      - .env
     environment:
       - PLATONUS_API_URL=
-    volumes:
-      - ./backend/data/admission_info.json:/app/backend/data/admission_info.json
-      - ./backend/data/admission_info_kk.json:/app/backend/data/admission_info_kk.json
-      - ./backend/data/admission_info_en.json:/app/backend/data/admission_info_en.json
+    volumes: *admission-data
     ports:
-      - "${PLATONUS_API_PORT:-18001}:8001"
+      - "127.0.0.1:${PLATONUS_API_PORT:-18001}:8001"
     depends_on:
-      - postgresql
-    command:
-      - uvicorn
-      - backend.platonus_api.main:app
-      - --host
-      - 0.0.0.0
-      - --port
-      - "8001"
+      postgresql:
+        condition: service_healthy
+    command: ["uvicorn", "backend.platonus_api.main:app", "--host", "0.0.0.0", "--port", "8001"]
 
   frontend:
     build:
@@ -50,68 +73,87 @@ services:
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
         VITE_TELEGRAM_BOT_USERNAME: ${VITE_TELEGRAM_BOT_USERNAME:-}
+    restart: unless-stopped
     ports:
       - "${FRONTEND_PORT:-18030}:80"
     depends_on:
-      - api
+      api:
+        condition: service_healthy
 
   telegram:
+    <<: *backend-env
     build:
       context: .
       dockerfile: docker/Dockerfile
-    env_file:
-      - .env
     environment:
       - PLATONUS_API_URL=${PLATONUS_API_URL:-http://platonus-api:8001}
-    volumes:
-      - ./backend/data/admission_info.json:/app/backend/data/admission_info.json
-      - ./backend/data/admission_info_kk.json:/app/backend/data/admission_info_kk.json
-      - ./backend/data/admission_info_en.json:/app/backend/data/admission_info_en.json
+    volumes: *admission-data
     depends_on:
-      - postgresql
-    command:
-      - python
-      - -m
-      - backend.telegram_service.polling
+      postgresql:
+        condition: service_healthy
+    command: ["python", "-m", "backend.telegram_service.polling"]
 
   celery:
+    <<: *backend-env
     build:
       context: .
       dockerfile: docker/Dockerfile.worker
-    env_file:
-      - .env
     volumes:
       - rag_storage:/app/storage
       - ./backend/data/admission_info.json:/app/backend/data/admission_info.json
       - ./backend/data/admission_info_kk.json:/app/backend/data/admission_info_kk.json
       - ./backend/data/admission_info_en.json:/app/backend/data/admission_info_en.json
     depends_on:
-      - postgresql
-      - redis
+      postgresql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   postgresql:
     image: postgres:15
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: bot
-      POSTGRES_PASSWORD: bot
-      POSTGRES_DB: bot
+      POSTGRES_USER: ${POSTGRES_USER:-bot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bot}
+      POSTGRES_DB: ${POSTGRES_DB:-bot}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
     ports:
-      - "${POSTGRES_PORT:-15432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-15432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bot} -d ${POSTGRES_DB:-bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
   qdrant:
-    image: qdrant/qdrant:latest
+    image: qdrant/qdrant:${QDRANT_VERSION:-latest}
+    restart: unless-stopped
     ports:
-      - "${QDRANT_PORT:-16333}:6333"
+      - "127.0.0.1:${QDRANT_PORT:-16333}:6333"
     volumes:
       - qdrant_data:/qdrant/storage
 
   redis:
-    image: redis:7
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis_data:/data
     ports:
-      - "${REDIS_PORT:-16379}:6379"
+      - "127.0.0.1:${REDIS_PORT:-16379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
 volumes:
   rag_storage:
     name: academicquestionbot_rag_storage
   qdrant_data:
     name: academicquestionbot_qdrant_data
+  postgres_data:
+    name: academicquestionbot_postgres_data
+  redis_data:
+    name: academicquestionbot_redis_data

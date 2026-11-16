@@ -1,8 +1,10 @@
-﻿"""Dean agent for academic calendar responses."""
+"""Dean agent for academic calendar responses."""
 from __future__ import annotations
 
 import logging
 from typing import Any, Dict, List
+
+from fastapi.concurrency import run_in_threadpool
 
 from ..langchain.tools.academic_calendar import get_academic_calendar
 from ..langchain.tools.password_reset import reset_password
@@ -17,6 +19,16 @@ class DeanCalendarAgent(BaseAgent):
     async def run(self, payload: Dict[str, Any]) -> AgentResult:
         intents = payload.get("intents") or []
         telegram_id = payload.get("telegram_id") or payload.get("user_id")
+        # Password help must work for users who cannot log in.
+        if "password_reset" in intents:
+            reset_data = reset_password(str(payload.get("person_id") or telegram_id or ""))
+            return AgentResult(
+                answer=reset_data["message"],
+                intent="password_reset",
+                tool_data={key: value for key, value in reset_data.items() if key != "message"},
+                direct_response=True,
+            )
+
         if not telegram_id:
             answer = (
                 "Для этого запроса нужен авторизованный доступ. "
@@ -31,19 +43,8 @@ class DeanCalendarAgent(BaseAgent):
                 direct_response=True,
             )
 
-        if "password_reset" in intents:
-            login = str(
-                payload.get("login")
-                or payload.get("username")
-                or payload.get("user_id")
-                or "unknown"
-            )
-            reset_data = reset_password(login)
-            answer = _format_password_reset(reset_data)
-            return AgentResult(answer=answer, intent="password_reset", tool_data=reset_data)
-
         logger.info("DeanCalendarAgent calendar request for telegram_id=%s", telegram_id)
-        calendar = get_academic_calendar(telegram_id)
+        calendar = await run_in_threadpool(get_academic_calendar, telegram_id)
         logger.info("DeanCalendarAgent calendar status=%s", calendar.get("status"))
         answer = _format_calendar(calendar)
         context = _build_calendar_context(calendar, answer)
@@ -55,26 +56,34 @@ class DeanCalendarAgent(BaseAgent):
         )
 
 
+CALENDAR_STATUS_MESSAGES = {
+    "missing_person_id": "К вашему профилю не привязана учётная запись Platonus, поэтому персональный календарь недоступен. Войдите через логин и пароль Platonus.",
+    "user_not_found": "Профиль не найден. Пожалуйста, войдите в систему заново.",
+    "missing_telegram_id": "Для просмотра календаря нужно войти в систему.",
+    "platonus_api_error": "Platonus сейчас не отвечает. Попробуйте позже или уточните даты в деканате.",
+}
+
+
 def _format_calendar(calendar: Dict[str, Any]) -> str:
     status = calendar.get("status")
     if status != "ok":
-        return (
-            "Failed to get academic calendar.\n"
-            f"Status: {status or 'unknown'}"
+        return CALENDAR_STATUS_MESSAGES.get(
+            str(status),
+            "Не удалось получить академический календарь из Platonus. Попробуйте позже или обратитесь в деканат.",
         )
 
     calendar_data = calendar.get("calendar") or {}
-    title = calendar_data.get("title") or "Academic calendar"
+    title = calendar_data.get("title") or "Академический календарь"
     sections = calendar_data.get("sections") or []
 
     lines = [title]
     for section in sections:
-        section_title = section.get("title") or "Section"
+        section_title = section.get("title") or "Раздел"
         lines.append(f"\n{section_title}")
         for item in section.get("items") or []:
             name = item.get("name") or "-"
             period = item.get("period") or "-"
-            lines.append(f"{name}\t{period}")
+            lines.append(f"- {name}: {period}")
     return "\n".join(lines)
 
 
@@ -96,13 +105,3 @@ def _build_calendar_context(
 
     return [{"content": formatted_answer, "metadata": {"source_path": "platonus_calendar"}}]
 
-
-def _format_password_reset(reset_data: Dict[str, str]) -> str:
-    return (
-        "Password reset request received.\n"
-        f"Login: {reset_data.get('login')}\n"
-        f"Request ID: {reset_data.get('request_id')}\n"
-        f"Temporary password: {reset_data.get('temporary_password')}\n"
-        f"Expires in minutes: {reset_data.get('expires_in_minutes')}\n"
-        f"Note: {reset_data.get('note')}"
-    )

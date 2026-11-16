@@ -1,91 +1,83 @@
-"""Intent Router Agent."""
+"""Intent Router Agent.
+
+Two-tier classification:
+1. Deterministic keyword rules (free, ~0 ms) for unambiguous requests.
+2. LLM classification returning JSON with up to two intents, so mixed
+   questions ("как поднять GPA и не вылететь?") can fan out to several agents.
+"""
 from __future__ import annotations
 
-from typing import Any, Dict
+import re
+from typing import Any, Dict, List
 
 from fastapi.concurrency import run_in_threadpool
 
+from ..core.config import get_settings
 from ..langchain.llm import llm_client
 from ..langchain.tools.admission_info import extract_program
 from .base import AgentResult, BaseAgent
 
+MAX_INTENTS = 2
+
+INTENT_DESCRIPTIONS: Dict[str, str] = {
+    "password_reset": "не может войти, забыл пароль/логин, доступ заблокирован",
+    "calendar": "академический календарь, даты сессии, каникулы, расписание периодов",
+    "deadline": "дедлайны, сроки сдачи, последние даты подачи заявлений",
+    "documents": "справки, заявления, приказы, документы студента",
+    "gpa": "GPA, оценки, кредиты, пересдачи, отчисление, академическая задолженность",
+    "admission": "поступление, абитуриенты, программы, стоимость, гранты, ЕНТ",
+    "study": "учебный процесс, объяснение тем, подготовка к экзаменам",
+    "general": "всё остальное",
+}
+ALLOWED_INTENTS = set(INTENT_DESCRIPTIONS)
 
 INTENT_PROMPT = (
-    "\u0422\u044b \u043a\u043b\u0430\u0441\u0441\u0438\u0444\u0438\u043a\u0430\u0442\u043e\u0440 "
-    "\u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c\u0441\u043a\u0438\u0445 "
-    "\u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432 \u0434\u043b\u044f "
-    "\u0443\u043d\u0438\u0432\u0435\u0440\u0441\u0438\u0442\u0435\u0442\u0441\u043a\u043e\u0433\u043e "
-    "\u0431\u043e\u0442\u0430.\n\n"
-    "\u0412\u044b\u0431\u0435\u0440\u0438 \u041e\u0414\u0418\u041d intent \u0438\u0437 "
-    "\u0441\u043f\u0438\u0441\u043a\u0430:\n\n"
-    "- password_reset \u2014 \u043f\u043e\u043b\u044c\u0437\u043e\u0432\u0430\u0442\u0435\u043b\u044c "
-    "\u043d\u0435 \u043c\u043e\u0436\u0435\u0442 \u0432\u043e\u0439\u0442\u0438, "
-    "\u0437\u0430\u0431\u044b\u043b \u043f\u0430\u0440\u043e\u043b\u044c, "
-    "\u0434\u043e\u0441\u0442\u0443\u043f \u0437\u0430\u0431\u043b\u043e\u043a\u0438\u0440\u043e\u0432\u0430\u043d\n"
-    "- calendar \u2014 \u0432\u043e\u043f\u0440\u043e\u0441\u044b \u043f\u0440\u043e "
-    "\u0430\u043a\u0430\u0434\u0435\u043c\u0438\u0447\u0435\u0441\u043a\u0438\u0439 "
-    "\u043a\u0430\u043b\u0435\u043d\u0434\u0430\u0440\u044c\n"
-    "- documents \u2014 \u0441\u043f\u0440\u0430\u0432\u043a\u0438, \u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442\u044b\n"
-    "- admission \u2014 \u043f\u043e\u0441\u0442\u0443\u043f\u043b\u0435\u043d\u0438\u0435\n"
-    "- study \u2014 \u0443\u0447\u0435\u0431\u043d\u044b\u0439 \u043f\u0440\u043e\u0446\u0435\u0441\u0441\n"
-    "- general \u2014 \u0432\u0441\u0451 \u043e\u0441\u0442\u0430\u043b\u044c\u043d\u043e\u0435\n\n"
-    "\u041f\u0440\u0438\u043c\u0435\u0440\u044b:\n"
-    "\"\u042f \u043d\u0435 \u043c\u043e\u0433\u0443 \u0432\u043e\u0439\u0442\u0438 \u0432 "
-    "\u0441\u0438\u0441\u0442\u0435\u043c\u0443\" \u2192 password_reset\n"
-    "\"\u0421\u0430\u0439\u0442 \u043f\u0438\u0448\u0435\u0442 \u043d\u0435\u0432\u0435\u0440\u043d\u044b\u0439 "
-    "\u043f\u0430\u0440\u043e\u043b\u044c\" \u2192 password_reset\n"
-    "\"\u0417\u0430\u0431\u044b\u043b \u043b\u043e\u0433\u0438\u043d \u0438 "
-    "\u043f\u0430\u0440\u043e\u043b\u044c\" \u2192 password_reset\n"
-    "\"\u041a\u043e\u0433\u0434\u0430 \u043d\u0430\u0447\u0438\u043d\u0430\u0435\u0442\u0441\u044f "
-    "\u0441\u0435\u0441\u0441\u0438\u044f?\" \u2192 calendar\n\n"
-    "\u0418\u0441\u0442\u043e\u0440\u0438\u044f "
-    "\u0434\u0438\u0430\u043b\u043e\u0433\u0430 (\u0435\u0441\u043b\u0438 "
-    "\u0435\u0441\u0442\u044c):\n{history}\n\n"
-    "\u0412\u0435\u0440\u043d\u0438 \u0422\u041e\u041b\u042c\u041a\u041e "
-    "\u043d\u0430\u0437\u0432\u0430\u043d\u0438\u0435 intent.\n\n"
-    "\u0417\u0430\u043f\u0440\u043e\u0441: {query}"
+    "Ты классификатор запросов для чат-бота университета.\n"
+    "Выбери от 1 до 2 intent из списка (первый — главный):\n"
+    + "\n".join(f"- {key} — {value}" for key, value in INTENT_DESCRIPTIONS.items())
+    + "\n\nПримеры:\n"
+    '"Я не могу войти в систему" → {{"intents": ["password_reset"]}}\n'
+    '"Когда начинается сессия?" → {{"intents": ["calendar"]}}\n'
+    '"Как поднять GPA и не вылететь?" → {{"intents": ["gpa", "study"]}}\n\n'
+    "История диалога:\n{history}\n\n"
+    'Верни ТОЛЬКО JSON вида {{"intents": ["..."]}}.\n\n'
+    "Запрос: {query}"
 )
-
-ALLOWED_INTENTS = {
-    "password_reset",
-    "calendar",
-    "documents",
-    "admission",
-    "study",
-    "general",
-}
 
 ADMISSION_KEYWORDS = (
-    "поступ",
-    "абитури",
-    "прием",
-    "приём",
-    "специальност",
-    "програм",
-    "магистрат",
-    "бакалав",
-    "докторант",
-    "грант",
-    "ент",
-    "цена",
-    "стоимость",
-    "оплата",
-    "tuition",
-    "price",
-    "cost",
-    "стоимость обучения",
-    "проходной балл",
-    "академическая мобильность",
-    "внутренняя академическая мобильность",
-    "международная академическая мобильность",
-    "академическое сотрудничество",
-    "двудипломное",
-    "double degree",
+    "поступ", "абитури", "прием", "приём", "специальност", "програм", "магистрат",
+    "бакалав", "докторант", "грант", "ент", "ұбт", "цена", "стоимост", "сколько стоит", "оплата",
+    "tuition", "price", "cost", "проходной балл", "академическая мобильность",
+    "академическое сотрудничество", "двудипломное", "double degree", "түсу", "талапкер",
 )
+
+def _word_start_pattern(keywords: tuple[str, ...] | set[str]) -> re.Pattern[str]:
+    """Match keywords only at the start of a word: "ент" must not hit "студент"."""
+    alternatives = "|".join(sorted((re.escape(k) for k in keywords), key=len, reverse=True))
+    return re.compile(rf"(?<!\w)(?:{alternatives})", re.IGNORECASE)
+
+
+ADMISSION_PATTERN = _word_start_pattern(ADMISSION_KEYWORDS)
+
+RULES: List[tuple[str, tuple[str, ...]]] = [
+    ("password_reset", ("забыл пароль", "сбросить пароль", "сброс пароля", "восстановить пароль",
+                        "не могу войти", "неверный пароль", "забыл логин", "заблокирован",
+                        "reset password", "forgot password", "құпия сөз")),
+    ("calendar", ("академический календарь", "академ календарь", "когда сессия", "когда начинается сессия",
+                  "начало семестра", "каникулы", "academic calendar", "күнтізбе")),
+    ("documents", ("справк", "заявлени", "приказ", "академическ отпуск", "академический отпуск")),
+    ("gpa", ("gpa", "джипиэй", "пересдач", "отчисл", "академическая задолж", "академической задолж", "кредит")),
+]
+RULE_PATTERNS = [(intent, _word_start_pattern(keywords)) for intent, keywords in RULES]
+FOLLOWUP_PATTERN = _word_start_pattern({
+    "документ", "құжат", "стоим", "стоит", "цена", "оплат", "срок", "длительность",
+    "балл", "проход", "грант", "предмет", "ент", "ұбт", "форма", "очно", "контакт",
+    "прием", "приём", "поступ", "documents", "tuition", "price", "duration", "score", "grant",
+})
 
 
 class IntentRouterAgent(BaseAgent):
-    """Classifies incoming messages into intents."""
+    """Classifies incoming messages into one or more intents."""
 
     def __init__(self, name: str) -> None:
         super().__init__(name=name)
@@ -93,42 +85,57 @@ class IntentRouterAgent(BaseAgent):
 
     async def run(self, payload: Dict[str, Any]) -> AgentResult:
         text = (payload.get("message") or "").strip()
-        intent = self._detect_intent_by_keywords(text, payload=payload) or await self._classify_intent(text, payload.get("history"))
-        priority = "high" if intent in {"password_reset"} else "medium"
-        return AgentResult(intents=[intent], priority=priority)
+        rule_intent = self._detect_intent_by_keywords(text, payload=payload)
+        if rule_intent:
+            intents, source = [rule_intent], "rules"
+        else:
+            intents, llm_ok = await self._classify_intent(text, payload.get("history"))
+            source = "llm" if llm_ok else "default"
+        priority = "high" if "password_reset" in intents else "medium"
+        return AgentResult(intents=intents, priority=priority, source=source)
 
-    async def _classify_intent(self, text: str, history: Any = None) -> str:
-        if not text:
-            return self.default_intent
-        if not llm_client.is_configured:
-            return self.default_intent
+    async def _classify_intent(self, text: str, history: Any = None) -> tuple[List[str], bool]:
+        if not text or not llm_client.is_configured:
+            return [self.default_intent], False
+        prompt = INTENT_PROMPT.format(query=text, history=self._format_history(history))
+        data = await run_in_threadpool(
+            llm_client.chat_json,
+            [{"role": "user", "content": prompt}],
+            max_tokens=40,
+            model=get_settings().fast_model,
+        )
+        return self._parse_intents(data), data is not None
 
-        prompt = INTENT_PROMPT.format(
-            query=text,
-            history=self._format_history(history),
-        )
-        messages = [{"role": "user", "content": prompt}]
-        response = await run_in_threadpool(
-            llm_client.chat,
-            messages,
-            temperature=0.0,
-            max_tokens=10,
-        )
-        intent = (response or "").strip().lower().splitlines()[0]
-        if intent not in ALLOWED_INTENTS:
-            return self.default_intent
-        return intent
+    def _parse_intents(self, data: Any) -> List[str]:
+        raw = data.get("intents") if isinstance(data, dict) else None
+        if isinstance(raw, str):
+            raw = [raw]
+        intents: List[str] = []
+        for item in raw or []:
+            value = str(item).strip().lower()
+            if value in ALLOWED_INTENTS and value not in intents:
+                intents.append(value)
+        intents = intents[:MAX_INTENTS]
+        if len(intents) > 1 and "general" in intents:
+            intents.remove("general")
+        return intents or [self.default_intent]
 
     def _detect_intent_by_keywords(self, text: str, *, payload: Dict[str, Any] | None = None) -> str | None:
         normalized = text.lower().strip()
         if not normalized:
             return None
+        for intent, pattern in RULE_PATTERNS[:2]:  # access & calendar are unambiguous
+            if pattern.search(normalized):
+                return intent
         if extract_program(text):
             return "admission"
         if self._has_admission_context(payload) and self._looks_like_admission_followup(normalized):
             return "admission"
-        if any(keyword in normalized for keyword in ADMISSION_KEYWORDS):
+        if ADMISSION_PATTERN.search(normalized):
             return "admission"
+        for intent, pattern in RULE_PATTERNS[2:]:
+            if pattern.search(normalized):
+                return intent
         return None
 
     def _has_admission_context(self, payload: Dict[str, Any] | None) -> bool:
@@ -152,50 +159,19 @@ class IntentRouterAgent(BaseAgent):
         return False
 
     def _looks_like_admission_followup(self, normalized: str) -> bool:
-        terms = {
-            "документ",
-            "құжат",
-            "стоим",
-            "стоит",
-            "цена",
-            "оплат",
-            "срок",
-            "длительность",
-            "балл",
-            "проход",
-            "грант",
-            "предмет",
-            "ент",
-            "ұбт",
-            "форма",
-            "очно",
-            "контакт",
-            "прием",
-            "приём",
-            "поступ",
-            "documents",
-            "tuition",
-            "price",
-            "duration",
-            "score",
-            "grant",
-        }
-        return any(term in normalized for term in terms)
+        return bool(FOLLOWUP_PATTERN.search(normalized))
 
     def _format_history(self, history: Any) -> str:
         if not isinstance(history, list) or not history:
             return "- no previous messages"
-
         lines: list[str] = []
-        for item in history[-12:]:
+        for item in history[-6:]:
             if not isinstance(item, dict):
                 continue
             role = str(item.get("role") or "user").strip().lower()
             if role == "bot":
                 role = "assistant"
-            content = str(item.get("content") or "").strip()
-            if not content:
-                continue
-            lines.append(f"- {role}: {content}")
-
+            content = " ".join(str(item.get("content") or "").split())
+            if content:
+                lines.append(f"- {role}: {content[:300]}")
         return "\n".join(lines) if lines else "- no previous messages"
