@@ -9,6 +9,7 @@ psycopg2-binary==2.9.9
 qdrant-client==1.7.3
 redis==5.0.1
 celery==5.3.6
+kombu==5.3.7
 pypdf==4.0.1
 python-docx==1.1.0
 pytesseract==0.3.10
