@@ -1,254 +1,239 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { deleteDocument, fetchDocuments, fetchIngestionStatus, uploadDocument } from "../api/rag";
+import { deleteDocument, downloadDocument, fetchDocuments, fetchStats, reindexAll, reindexDocument } from "../api/rag";
 import type { RagDocument } from "../types";
-import { formatBytes, formatDate } from "../utils/format";
+import { formatBytes, formatNumber, formatRelative, pluralize } from "../utils/format";
+import { SearchPlayground } from "./rag/SearchPlayground";
+import { UploadPanel } from "./rag/UploadPanel";
+import { Callout, EmptyState, PageHeader, StatCard, StatusBadge, Tabs } from "./ui/Admin";
+import { Icon } from "./ui/Icon";
 
-interface RagManagerProps {
-  sectionId?: string;
-}
+type Tab = "documents" | "search";
+const ACTIVE = new Set(["queued", "processing"]);
+const STALE_MS = 10 * 60 * 1000;
 
-export function RagManager({ sectionId }: RagManagerProps) {
+// A job stuck in the queue (worker restarted, broker lost the message) can be retried.
+const isStale = (doc: RagDocument) =>
+  ACTIVE.has(doc.status ?? "") && Date.now() - new Date(doc.updated_at ?? doc.uploaded_at).getTime() > STALE_MS;
+
+export function RagManager() {
   const queryClient = useQueryClient();
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [metadataRaw, setMetadataRaw] = useState("{}");
-  const [metadataError, setMetadataError] = useState<string | null>(null);
-  const [activeTask, setActiveTask] = useState<{
-    taskId: string;
-    documentId: string;
-    fileName: string;
-    storedFile: string;
-    sizeBytes: number;
-  } | null>(null);
+  const [tab, setTab] = useState<Tab>("documents");
+  const [showUpload, setShowUpload] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [category, setCategory] = useState("");
+  const [status, setStatus] = useState("");
+  const [actionError, setActionError] = useState<string | null>(null);
 
+  const statsQuery = useQuery({ queryKey: ["rag-stats"], queryFn: fetchStats, refetchInterval: 15_000 });
   const documentsQuery = useQuery({
     queryKey: ["rag-documents"],
     queryFn: fetchDocuments,
+    // Poll only while something is being indexed.
+    refetchInterval: (query) => ((query.state.data ?? []).some((doc) => ACTIVE.has(doc.status ?? "")) ? 2500 : false),
   });
 
-  const uploadMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedFile) {
-        throw new Error("Select a file to upload.");
-      }
-      let metadata: Record<string, unknown> | undefined;
-      if (metadataRaw.trim()) {
-        try {
-          metadata = JSON.parse(metadataRaw);
-          setMetadataError(null);
-        } catch (error) {
-          setMetadataError("Metadata must be valid JSON.");
-          throw error;
-        }
-      }
-      return uploadDocument(selectedFile, metadata);
-    },
-    onSuccess: (data) => {
-      const fileSize = selectedFile?.size ?? 0;
-      setSelectedFile(null);
-      setMetadataRaw("{}");
-      setActiveTask({
-        taskId: data.task_id,
-        documentId: data.document_id,
-        fileName: data.file_name,
-        storedFile: data.stored_file,
-        sizeBytes: fileSize,
-      });
-    },
-  });
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["rag-documents"] });
+    queryClient.invalidateQueries({ queryKey: ["rag-stats"] });
+  };
+  const onError = (error: unknown) => setActionError(error instanceof Error ? error.message : "Действие не выполнено.");
 
-  const deleteMutation = useMutation({
-    mutationFn: (documentId: string) => deleteDocument(documentId),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["rag-documents"] }),
-  });
+  const deleteMutation = useMutation({ mutationFn: deleteDocument, onSuccess: refresh, onError });
+  const reindexMutation = useMutation({ mutationFn: reindexDocument, onSuccess: refresh, onError });
+  const reindexAllMutation = useMutation({ mutationFn: (recreate: boolean) => reindexAll(recreate), onSuccess: refresh, onError });
 
-  const taskStatusQuery = useQuery({
-    queryKey: ["rag-ingest-status", activeTask?.taskId],
-    queryFn: () => fetchIngestionStatus(activeTask!.taskId),
-    enabled: Boolean(activeTask?.taskId),
-    refetchInterval: (query) => {
-      const data = query.state.data;
-      if (!data) {
-        return 2000;
-      }
-      return data.status === "SUCCESS" || data.status === "FAILURE" ? false : 2000;
-    },
-  });
-
-  useEffect(() => {
-    if (!activeTask) {
-      return;
-    }
-    const status = taskStatusQuery.data?.status;
-    if (status === "SUCCESS") {
-      queryClient.invalidateQueries({ queryKey: ["rag-documents"] });
-    }
-  }, [activeTask, queryClient, taskStatusQuery.data?.status]);
-
+  const stats = statsQuery.data;
+  const categories = stats?.categories ?? {};
   const documents = useMemo(() => documentsQuery.data ?? [], [documentsQuery.data]);
-  const hasPending =
-    Boolean(activeTask) && !documents.some((doc) => doc.document_id === activeTask?.documentId);
-  const displayDocuments = useMemo(() => {
-    if (!activeTask || !hasPending) {
-      return documents;
-    }
-    const pendingDoc: RagDocument = {
-      document_id: activeTask.documentId,
-      original_file: activeTask.fileName,
-      stored_file: activeTask.storedFile,
-      size_bytes: activeTask.sizeBytes,
-      chunks: 0,
-      uploaded_at: new Date().toISOString(),
-      metadata: { status: "queued" },
-    };
-    return [pendingDoc, ...documents];
-  }, [activeTask, documents, hasPending]);
+  const filtered = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    return documents.filter((doc) => {
+      if (category && doc.category !== category) return false;
+      if (status && doc.status !== status) return false;
+      if (!needle) return true;
+      return [doc.title, doc.original_file, doc.metadata?.description].some((value) => String(value ?? "").toLowerCase().includes(needle));
+    });
+  }, [documents, filter, category, status]);
 
-  const ingestionStatus = taskStatusQuery.data?.status;
-  const ingestionResult = taskStatusQuery.data?.result;
-  const ingestionError = taskStatusQuery.data?.error;
+  const byStatus = stats?.registry.by_status ?? {};
+  const inProgress = (byStatus.queued ?? 0) + (byStatus.processing ?? 0);
+  const failed = byStatus.failed ?? 0;
+  const index = stats?.index;
+
+  const confirmDelete = (doc: RagDocument) => {
+    if (window.confirm(`Удалить «${doc.title ?? doc.original_file}»? Документ исчезнет из поиска агентов.`)) {
+      deleteMutation.mutate(doc.document_id);
+    }
+  };
 
   return (
-    <section className="rag-manager" id={sectionId}>
-      <header className="section-header">
-        <div>
-          <p className="eyebrow">RAG</p>
-          <h2>Document ingestion</h2>
-          <p className="muted">
-            Upload files to add them to the retrieval index. Ingestion runs in the background.
-          </p>
-        </div>
-      </header>
+    <div className="stack-lg">
+      <PageHeader
+        eyebrow="RAG"
+        title="База знаний"
+        description="Документы, на которые опираются ИИ-агенты: регламенты, приказы, учебные планы и инструкции. Всё, что загружено сюда, попадает в поиск ассистента."
+        actions={
+          <>
+            <button
+              type="button"
+              className="ghost"
+              disabled={reindexAllMutation.isPending || !documents.length}
+              onClick={() => window.confirm("Переиндексировать все документы? Это займёт время и потратит запросы к API эмбеддингов.") && reindexAllMutation.mutate(false)}
+            >
+              <Icon name="refresh" size={16} /> Переиндексировать всё
+            </button>
+            <button type="button" className="primary" onClick={() => { setShowUpload(true); setTab("documents"); }}>
+              <Icon name="upload" size={16} /> Загрузить
+            </button>
+          </>
+        }
+      />
 
-      <div className="panel">
-        <h3>Upload document</h3>
-        <div className="upload-grid">
-          <label className="file-input">
-            <span>File</span>
-            <input
-              type="file"
-              accept=".pdf,.doc,.docx,.txt,.md"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                setSelectedFile(file ?? null);
-              }}
-            />
-            {selectedFile ? (
-              <small>
-                Selected file: <strong>{selectedFile.name}</strong>
-              </small>
-            ) : (
-              <small>Pick a file to upload.</small>
-            )}
-          </label>
+      {index?.dimension_mismatch ? (
+        <Callout
+          tone="danger"
+          title="Индекс несовместим с моделью эмбеддингов"
+          action={
+            <button
+              type="button"
+              className="primary btn--sm"
+              disabled={reindexAllMutation.isPending}
+              onClick={() => window.confirm("Пересоздать коллекцию и заново проиндексировать все документы?") && reindexAllMutation.mutate(true)}
+            >
+              Пересоздать индекс
+            </button>
+          }
+        >
+          Коллекция «{index.collection}» хранит векторы размерности {index.vector_size}, а модель «{index.embeddings.model}» выдаёт {index.configured_vector_size}. Поиск по документам сейчас не работает.
+        </Callout>
+      ) : null}
+      {index?.error && !index.dimension_mismatch ? <Callout tone="danger" title="Векторное хранилище недоступно">{index.error}</Callout> : null}
+      {index && !index.embeddings.remote ? (
+        <Callout tone="warning" title="Не настроен API эмбеддингов">
+          Без OPENAI_API_KEY используются упрощённые локальные векторы — качество поиска будет низким.
+        </Callout>
+      ) : null}
+      {actionError ? <Callout tone="danger" title="Ошибка" action={<button type="button" className="ghost btn--sm" onClick={() => setActionError(null)}>Скрыть</button>}>{actionError}</Callout> : null}
 
-          <label className="metadata-input">
-            <span>Metadata (JSON)</span>
-            <textarea value={metadataRaw} onChange={(e) => setMetadataRaw(e.target.value)} rows={6} />
-            {metadataError ? (
-              <small className="error">{metadataError}</small>
-            ) : (
-              <small>Example: {`{ "faculty": "CS" }`}</small>
-            )}
-          </label>
-        </div>
-        <div className="actions">
-          <button
-            className="primary"
-            onClick={() => uploadMutation.mutate()}
-            disabled={uploadMutation.isPending}
-          >
-            {uploadMutation.isPending ? "Uploading..." : "Upload"}
-          </button>
-          {uploadMutation.isSuccess && <span className="success">Upload queued.</span>}
-          {uploadMutation.isError && !metadataError && (
-            <span className="error">Failed to upload document.</span>
-          )}
-        </div>
-        {activeTask && (
-          <div className="status-card">
-            <div className="status-card__header">
-              <strong>Document ingestion status</strong>
-              <span className={`status-pill status-${ingestionStatus?.toLowerCase() || "pending"}`}>
-                {ingestionStatus || "PENDING"}
-              </span>
-            </div>
-            <p className="muted">
-              {activeTask.fileName} - ID {activeTask.documentId}
-            </p>
-            {ingestionStatus === "SUCCESS" && (
-              <p className="success">
-                Ingested successfully: {ingestionResult?.chunks ?? "-"} chunks
-              </p>
-            )}
-            {ingestionStatus === "FAILURE" && (
-              <p className="error">Ingestion failed: {ingestionError || "unknown error"}</p>
-            )}
-          </div>
-        )}
+      <div className="stat-grid">
+        <StatCard label="Документы" icon="file" value={formatNumber(stats?.registry.documents)} hint={stats ? formatBytes(stats.registry.size_bytes) : undefined} />
+        <StatCard label="Фрагменты в индексе" icon="database" value={formatNumber(index?.points ?? stats?.registry.chunks)} hint={index ? `${index.mode === "qdrant" ? "Qdrant" : index.mode} · ${index.embeddings.model}` : undefined} />
+        <StatCard label="В обработке" icon="clock" tone={inProgress ? "warning" : undefined} value={formatNumber(inProgress)} hint={inProgress ? "обновляется автоматически" : "очередь пуста"} />
+        <StatCard label="С ошибками" icon="alert" tone={failed ? "danger" : "success"} value={formatNumber(failed)} hint={failed ? "нажмите «Повторить» в строке" : "всё проиндексировано"} />
       </div>
 
-      <div className="panel">
-        <h3>Uploaded documents</h3>
-        {documentsQuery.isLoading ? (
-          <p>Loading documents...</p>
-        ) : displayDocuments.length === 0 ? (
-          <p className="muted">No documents yet.</p>
-        ) : (
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>File</th>
-                  <th>Size</th>
-                  <th>Chunks</th>
-                  <th>Uploaded</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {displayDocuments.map((doc) => {
-                  const status =
-                    typeof doc.status === "string"
-                      ? doc.status
-                      : doc.metadata && typeof doc.metadata.status === "string"
-                        ? doc.metadata.status
-                        : null;
-                  return (
+      {showUpload ? <UploadPanel stats={stats} onClose={() => setShowUpload(false)} /> : null}
+
+      <Tabs<Tab>
+        value={tab}
+        onChange={setTab}
+        items={[
+          { value: "documents", label: "Документы", count: documents.length, icon: "file" },
+          { value: "search", label: "Проверка поиска", icon: "search" },
+        ]}
+      />
+
+      {tab === "search" ? (
+        <SearchPlayground />
+      ) : (
+        <section className="panel">
+          <div className="toolbar">
+            <label className="toolbar__search">
+              <Icon name="search" size={16} />
+              <input type="search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Поиск по названию" />
+            </label>
+            <select value={category} onChange={(event) => setCategory(event.target.value)} aria-label="Категория">
+              <option value="">Все категории</option>
+              {Object.entries(categories).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <select value={status} onChange={(event) => setStatus(event.target.value)} aria-label="Статус">
+              <option value="">Все статусы</option>
+              <option value="ingested">Готов</option>
+              <option value="processing">Индексация</option>
+              <option value="queued">В очереди</option>
+              <option value="failed">Ошибка</option>
+            </select>
+          </div>
+
+          {documentsQuery.isLoading ? (
+            <div className="skeleton-list">{[0, 1, 2].map((i) => <div key={i} className="skeleton" style={{ height: 56 }} />)}</div>
+          ) : documentsQuery.isError ? (
+            <Callout tone="danger" title="Не удалось загрузить документы">{(documentsQuery.error as Error).message}</Callout>
+          ) : !documents.length ? (
+            <EmptyState
+              icon="database"
+              title="База знаний пуста"
+              text="Загрузите регламенты и положения университета — агенты начнут отвечать по ним."
+              action={<button type="button" className="primary" onClick={() => setShowUpload(true)}><Icon name="upload" size={16} /> Загрузить первый документ</button>}
+            />
+          ) : !filtered.length ? (
+            <EmptyState icon="filter" title="Ничего не найдено" text="Измените фильтры." />
+          ) : (
+            <div className="table-wrapper">
+              <table className="doc-table">
+                <thead>
+                  <tr>
+                    <th>Документ</th>
+                    <th>Категория</th>
+                    <th>Статус</th>
+                    <th className="num">Фрагменты</th>
+                    <th>Обновлён</th>
+                    <th aria-label="Действия" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map((doc) => (
                     <tr key={doc.document_id}>
                       <td>
-                        <div className="doc-name">
-                          <strong>{doc.original_file}</strong>
-                          <small>ID: {doc.document_id}</small>
-                          {status && <small>Status: {status}</small>}
-                        </div>
+                        <Link to={`/rag/${doc.document_id}`} className="doc-cell">
+                          <span className="doc-cell__icon">{(doc.original_file.split(".").pop() ?? "").toUpperCase().slice(0, 4)}</span>
+                          <span className="doc-cell__text">
+                            <strong>{doc.title ?? doc.original_file}</strong>
+                            <span>
+                              {doc.original_file} · {formatBytes(doc.size_bytes)}
+                              {doc.metadata?.pages ? ` · ${doc.metadata.pages} ${pluralize(Number(doc.metadata.pages), ["стр.", "стр.", "стр."])}` : ""}
+                            </span>
+                          </span>
+                        </Link>
                       </td>
-                      <td>{formatBytes(doc.size_bytes)}</td>
-                      <td>{doc.chunks}</td>
-                      <td>{formatDate(doc.uploaded_at)}</td>
                       <td>
-                        <div className="table-actions">
-                          <Link className="ghost" to={`/rag/${doc.document_id}`}>
-                            View
-                          </Link>
-                          <button
-                            className="ghost"
-                            onClick={() => deleteMutation.mutate(doc.document_id)}
-                            disabled={deleteMutation.isPending}
-                          >
-                            Delete
+                        <span className="tag">{categories[doc.category ?? ""] ?? "—"}</span>
+                        {doc.audience && doc.audience !== "all" ? <span className="tag tag--muted">{stats?.audiences[doc.audience] ?? doc.audience}</span> : null}
+                      </td>
+                      <td>
+                        <StatusBadge status={doc.status} />
+                        {doc.status === "failed" && doc.error ? <div className="cell-error" title={doc.error}>{doc.error}</div> : null}
+                      </td>
+                      <td className="num">{doc.status === "ingested" ? formatNumber(doc.chunks) : "—"}</td>
+                      <td className="nowrap muted">{formatRelative(doc.updated_at ?? doc.uploaded_at)}</td>
+                      <td>
+                        <div className="row-actions">
+                          {doc.status === "failed" || isStale(doc) ? (
+                            <button type="button" className="ghost btn--sm" onClick={() => reindexMutation.mutate(doc.document_id)}>
+                              <Icon name="refresh" size={14} /> Повторить
+                            </button>
+                          ) : null}
+                          <button type="button" className="icon-button" title="Переиндексировать" aria-label="Переиндексировать" disabled={ACTIVE.has(doc.status ?? "") && !isStale(doc)} onClick={() => reindexMutation.mutate(doc.document_id)}>
+                            <Icon name="refresh" size={16} />
+                          </button>
+                          <button type="button" className="icon-button" title="Скачать" aria-label="Скачать" onClick={() => downloadDocument(doc).catch(onError)}>
+                            <Icon name="download" size={16} />
+                          </button>
+                          <button type="button" className="icon-button icon-button--danger" title="Удалить" aria-label="Удалить" onClick={() => confirmDelete(doc)}>
+                            <Icon name="trash" size={16} />
                           </button>
                         </div>
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    </section>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+    </div>
   );
 }

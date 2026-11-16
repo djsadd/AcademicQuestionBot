@@ -1,53 +1,71 @@
-"""High level RAG service used by agents and API endpoints."""
+"""High level RAG service used by agents, API endpoints and the Celery worker.
+
+PostgreSQL (``backend.db.rag_documents``) is the single registry of uploaded
+documents; this service owns the files on disk and the vectors in Qdrant.
+
+Retrieval is *hybrid*: the vector index returns a wider candidate set which
+is re-ranked with a lexical score (stemmed term overlap). Short, exact
+queries such as "пересдача" or "приказ 123" benefit a lot from this compared
+to pure semantic search.
+"""
 from __future__ import annotations
 
-import json
+import hashlib
 import logging
+
 import os
+import re
 import threading
 import uuid
-from dataclasses import dataclass, field
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from . import embeddings, loader, retriever
+from . import embeddings, loader
 from .compression import compress_context
+from .embeddings import EmbeddingError
 from .vector_store import VectorStore
 
 logger = logging.getLogger(__name__)
 
+VECTOR_WEIGHT = 0.75
+LEXICAL_WEIGHT = 0.25
+CANDIDATE_MULTIPLIER = 3
+_WORD = re.compile(r"[0-9a-zа-яёәіңғүұқөһ]+", re.IGNORECASE)
+_STOPWORDS = {
+    "и", "в", "во", "на", "с", "со", "по", "к", "о", "об", "у", "за", "из", "от", "до", "для", "не", "ли", "а", "но",
+    "как", "что", "это", "мне", "мой", "моя", "я", "ты", "вы", "он", "она", "они", "какой", "какие", "какая", "где",
+    "когда", "можно", "нужно", "ли", "the", "a", "an", "of", "to", "in", "is", "for", "and", "or", "how", "what",
+}
 
-@dataclass
-class DocumentRecord:
-    document_id: str
-    original_file: str
-    stored_file: str
-    size_bytes: int
-    chunks: int
-    uploaded_at: str
-    metadata: Dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "document_id": self.document_id,
-            "original_file": self.original_file,
-            "stored_file": self.stored_file,
-            "size_bytes": self.size_bytes,
-            "chunks": self.chunks,
-            "uploaded_at": self.uploaded_at,
-            "metadata": self.metadata,
-        }
+def _terms(text: str) -> List[str]:
+    """Lower-cased, crudely stemmed content words."""
+    terms: List[str] = []
+    for word in _WORD.findall((text or "").lower()):
+        if word in _STOPWORDS or len(word) < 2:
+            continue
+        terms.append(word[:-2] if len(word) >= 7 else word[:-1] if len(word) >= 5 else word)
+    return terms
+
+
+def lexical_score(query: str, content: str) -> float:
+    query_terms = set(_terms(query))
+    if not query_terms:
+        return 0.0
+    content_terms = _terms(content)
+    if not content_terms:
+        return 0.0
+    content_set = set(content_terms)
+    hits = sum(1 for term in query_terms if term in content_set or any(c.startswith(term) for c in content_set))
+    return hits / len(query_terms)
 
 
 class RAGService:
-    """Wraps loader, embeddings, vector store, and document registry."""
+    """Files on disk + vectors in Qdrant."""
 
     def __init__(self, storage_dir: Path | str | None = None) -> None:
         storage_root = storage_dir or os.getenv("RAG_STORAGE_PATH", "storage/documents")
         self.storage_dir = Path(storage_root)
-        self.manifest_path = self.storage_dir / "manifest.json"
-        self._manifest: List[DocumentRecord] = self._load_manifest()
         self._vector_store: Optional[VectorStore] = None
         self._store_lock = threading.Lock()
 
@@ -63,97 +81,67 @@ class RAGService:
                     )
         return self._vector_store
 
+    # ------------------------------------------------------------ files
+    def save_upload(self, filename: str, data: bytes) -> Path:
+        """Persist uploaded bytes to disk (the client file name is never trusted as a path)."""
+        base_name = Path(filename or "upload").name.replace("\\", "_") or "upload"
+        self.storage_dir.mkdir(parents=True, exist_ok=True)
+        destination = self.storage_dir / f"{uuid.uuid4().hex}_{base_name}"
+        destination.write_bytes(data)
+        return destination
+
+    def file_path(self, stored_file: str) -> Path:
+        path = (self.storage_dir / Path(stored_file).name).resolve()
+        if self.storage_dir.resolve() not in path.parents:
+            raise ValueError("Invalid stored file name")
+        return path
+
+    def remove_file(self, stored_file: Optional[str]) -> None:
+        if not stored_file:
+            return
+        try:
+            path = self.file_path(stored_file)
+            if path.exists():
+                path.unlink()
+        except (OSError, ValueError):
+            logger.warning("Could not remove stored file %s", stored_file, exc_info=True)
+
+    @staticmethod
+    def content_hash(data: bytes) -> str:
+        return hashlib.sha256(data).hexdigest()
+
+    # ---------------------------------------------------------- indexing
     def ingest_path(
         self,
         path: Path,
         *,
         metadata: Optional[Dict[str, Any]] = None,
         document_id: Optional[str] = None,
-        register: bool = False,
-        stored_file: Optional[str] = None,
+        **_: Any,
     ) -> Dict[str, Any]:
-        """Load a file from disk, chunk it and add to the store."""
+        """Parse, chunk, embed and (re)index a document. Idempotent per document_id."""
         doc_id = document_id or (metadata or {}).get("document_id") or uuid.uuid4().hex
-        metadata_payload = dict(metadata or {})
-        metadata_payload.setdefault("document_id", doc_id)
-        if stored_file:
-            metadata_payload.setdefault("stored_file", stored_file)
-        document_chunks = loader.load_file(path, metadata=metadata_payload)
-        vectors = embeddings.embed_documents(document_chunks)
-        self.vector_store.add_many(list(zip(document_chunks, vectors)))
-        logger.info("Ingested %s chunks from %s", len(document_chunks), path.name)
-        result = {
+        metadata_payload = {**(metadata or {}), "document_id": doc_id}
+        chunks = loader.load_file(path, metadata=metadata_payload)
+        vectors = embeddings.embed_texts([loader.embedding_text(chunk) for chunk in chunks])
+        # Re-indexing: drop the old points first so shrinking documents leave no orphans.
+        self.vector_store.delete_document(doc_id)
+        self.vector_store.add_many(list(zip(chunks, vectors)))
+        pages = {chunk.metadata.get("page_end") or chunk.metadata.get("page") for chunk in chunks}
+        pages.discard(None)
+        logger.info("Indexed %s chunks from %s", len(chunks), path.name)
+        return {
             "document_id": doc_id,
-            "chunks": len(document_chunks),
+            "chunks": len(chunks),
+            "pages": max(pages) if pages else None,
+            "characters": sum(len(chunk.content) for chunk in chunks),
             "file_name": path.name,
         }
-        if register:
-            self._register_document(
-                document_id=doc_id,
-                original_file=metadata_payload.get("original_file", path.name),
-                stored_file=stored_file or metadata_payload.get("stored_file") or path.name,
-                chunk_count=len(document_chunks),
-                size_bytes=path.stat().st_size if path.exists() else 0,
-                metadata={
-                    k: v
-                    for k, v in metadata_payload.items()
-                    if k not in {"stored_file", "document_id"}
-                },
-            )
-        return result
 
-    def save_upload(self, filename: str, data: bytes) -> Path:
-        """Persist uploaded bytes to disk (the client file name is never trusted as a path)."""
-        base_name = Path(filename or "upload").name.replace("\\", "_") or "upload"
-        safe_name = f"{uuid.uuid4().hex}_{base_name}"
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
-        destination = self.storage_dir / safe_name
-        destination.write_bytes(data)
-        return destination
-
-    def ingest_upload(
-        self,
-        *,
-        filename: str,
-        data: bytes,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Dict[str, Any]:
-        """Persist the uploaded file and ingest it into the vector store."""
-        stored_path = self.save_upload(filename, data)
-        document_id = uuid.uuid4().hex
-        upload_metadata = {
-            "original_file": filename,
-            "stored_file": stored_path.name,
-            "document_id": document_id,
-            **(metadata or {}),
-        }
-        result = self.ingest_path(
-            stored_path,
-            metadata=upload_metadata,
-            document_id=document_id,
-            register=True,
-            stored_file=stored_path.name,
-        )
-        return {**result, "stored_file": stored_path.name}
-
-    def list_documents(self) -> List[Dict[str, Any]]:
-        """Return information about ingested documents."""
-        return [record.to_dict() for record in sorted(self._manifest, key=lambda x: x.uploaded_at, reverse=True)]
-
-    def delete_document(self, document_id: str) -> Dict[str, Any]:
-        """Delete stored file and remove vectors from the store."""
-        record = self._find_document(document_id)
-        if not record:
-            raise KeyError(f"document {document_id} not found")
-        stored_file = record.stored_file
-        file_path = self.storage_dir / stored_file
-        if file_path.exists():
-            file_path.unlink()
+    def delete_vectors(self, document_id: str) -> None:
         self.vector_store.delete_document(document_id)
-        self._manifest = [doc for doc in self._manifest if doc.document_id != document_id]
-        self._save_manifest()
-        return record.to_dict()
 
+    # ----------------------------------------------------------- search
     def search(
         self,
         query: str,
@@ -161,99 +149,60 @@ class RAGService:
         top_k: int = 3,
         compress: bool = False,
         min_score: Optional[float] = None,
+        hybrid: bool = True,
     ) -> List[Dict[str, Any]]:
-        """Retrieve relevant chunks for the provided query.
-
-        ``min_score`` drops weakly related chunks so they neither cost
-        compression calls nor pollute the final prompt.
-        """
+        """Hybrid retrieval: vector candidates re-ranked with a lexical score."""
+        query = (query or "").strip()
+        if not query:
+            return []
+        candidates = top_k * CANDIDATE_MULTIPLIER if hybrid else top_k
         try:
-            results = retriever.retrieve(query, self.vector_store, top_k=top_k)
+            vector = embeddings.embed_text(query)
+            results = self.vector_store.search(vector, top_k=max(candidates, top_k))
+        except EmbeddingError as exc:
+            logger.warning("RAG search skipped: %s", exc)
+            return []
         except Exception as exc:  # pragma: no cover - infra failure
             logger.warning("RAG search failed: %s", exc)
             return []
-        payload = [
-            {
-                "content": result.chunk.content,
-                "score": result.score,
-                "metadata": result.chunk.metadata,
-            }
-            for result in results
-            if min_score is None or result.score >= min_score
-        ]
+
+        payload: List[Dict[str, Any]] = []
+        seen_content: set[str] = set()
+        for result in results:
+            fingerprint = hashlib.sha1(result.chunk.content.encode("utf-8")).hexdigest()
+            if fingerprint in seen_content:  # duplicate uploads / orphaned points
+                continue
+            seen_content.add(fingerprint)
+            vector_score = float(result.score)
+            if min_score is not None and vector_score < min_score:
+                continue
+            keyword = lexical_score(query, f"{result.chunk.metadata.get('section') or ''} {result.chunk.content}") if hybrid else 0.0
+            payload.append(
+                {
+                    "content": result.chunk.content,
+                    "score": round(VECTOR_WEIGHT * vector_score + LEXICAL_WEIGHT * keyword, 4) if hybrid else vector_score,
+                    "vector_score": round(vector_score, 4),
+                    "keyword_score": round(keyword, 4),
+                    "metadata": result.chunk.metadata,
+                }
+            )
+        payload.sort(key=lambda item: item["score"], reverse=True)
+        payload = payload[:top_k]
         if compress:
             return compress_context(query, payload)
         return payload
 
-    def list_document_chunks(self, document_id: str, *, limit: int = 200) -> List[Dict[str, Any]]:
+    def list_document_chunks(self, document_id: str, *, limit: int = 500) -> List[Dict[str, Any]]:
         chunks = self.vector_store.list_document_chunks(document_id, limit=limit)
-        return [
-            {
-                "id": chunk.id,
-                "content": chunk.content,
-                "metadata": chunk.metadata,
-            }
-            for chunk in chunks
-        ]
+        return [{"id": chunk.id, "content": chunk.content, "metadata": chunk.metadata} for chunk in chunks]
 
-    def _register_document(
-        self,
-        *,
-        document_id: str,
-        original_file: str,
-        stored_file: str,
-        chunk_count: int,
-        size_bytes: int,
-        metadata: Dict[str, Any],
-    ) -> None:
-        record = DocumentRecord(
-            document_id=document_id,
-            original_file=original_file,
-            stored_file=stored_file,
-            size_bytes=size_bytes,
-            chunks=chunk_count,
-            uploaded_at=datetime.utcnow().isoformat() + "Z",
-            metadata=metadata,
-        )
-        self._manifest = [doc for doc in self._manifest if doc.document_id != document_id]
-        self._manifest.append(record)
-        self._save_manifest()
-
-    def _find_document(self, document_id: str) -> Optional[DocumentRecord]:
-        for record in self._manifest:
-            if record.document_id == document_id:
-                return record
-        return None
-
-    def _load_manifest(self) -> List[DocumentRecord]:
-        if not self.manifest_path.exists():
-            return []
-        try:
-            raw = json.loads(self.manifest_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            return []
-        records: List[DocumentRecord] = []
-        for item in raw:
-            try:
-                records.append(
-                    DocumentRecord(
-                        document_id=item["document_id"],
-                        original_file=item.get("original_file", ""),
-                        stored_file=item.get("stored_file", ""),
-                        size_bytes=item.get("size_bytes", 0),
-                        chunks=item.get("chunks", 0),
-                        uploaded_at=item.get("uploaded_at", ""),
-                        metadata=item.get("metadata", {}),
-                    )
-                )
-            except KeyError:
-                continue
-        return records
-
-    def _save_manifest(self) -> None:
-        serialized = [record.to_dict() for record in self._manifest]
-        self.storage_dir.mkdir(parents=True, exist_ok=True)
-        self.manifest_path.write_text(json.dumps(serialized, ensure_ascii=False, indent=2), encoding="utf-8")
+    # ------------------------------------------------------------ stats
+    def index_info(self) -> Dict[str, Any]:
+        info = self.vector_store.info()
+        info["embeddings"] = embeddings.embeddings_info()
+        return info
 
 
 rag_service = RAGService()
+
+__all__ = ["RAGService", "rag_service", "lexical_score"]

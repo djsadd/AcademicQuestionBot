@@ -19,8 +19,8 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     title: "База знаний",
     items: [
-      { path: "/rag", label: "Документы", icon: "file", adminOnly: true },
-      { path: "/rag-jobs", label: "Загрузки", icon: "layers", adminOnly: true },
+      { path: "/rag", label: "Документы", icon: "database", adminOnly: true },
+      { path: "/rag-jobs", label: "Журнал индексации", icon: "layers", adminOnly: true },
       { path: "/admissions", label: "Приёмная комиссия", icon: "cap", adminOnly: true },
     ],
   },
@@ -35,9 +35,10 @@ export const NAV_GROUPS: NavGroup[] = [
   },
 ];
 
-const PAGE_TITLES: Record<string, string> = Object.fromEntries(
-  NAV_GROUPS.flatMap((group) => group.items.map((item) => [item.path, item.label])),
-);
+const PAGE_TITLES: Record<string, string> = {
+  ...Object.fromEntries(NAV_GROUPS.flatMap((group) => group.items.map((item) => [item.path, item.label]))),
+  "/rag": "База знаний",
+};
 
 function usePageTitle(pathname: string) {
   const match = Object.keys(PAGE_TITLES)

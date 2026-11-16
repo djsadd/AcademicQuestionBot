@@ -18,7 +18,7 @@ from ...services.auth_tokens import (
     build_access_token,
     build_refresh_ttl_seconds,
 )
-from ...services.permissions import get_current_user
+from ...services.permissions import get_current_user, is_admin
 from ...services.platonus_client import verify_platonus_credentials
 from ...services.telegram_login import verify_login_payload
 
@@ -104,6 +104,7 @@ def telegram_login(payload: TelegramLoginPayload) -> dict:
             "statusName": user.get("platonus_status_name"),
             "email": user.get("platonus_email"),
             "birthDate": user.get("platonus_birth_date"),
+            "is_admin": is_admin(user),
         },
     }
 
@@ -164,6 +165,7 @@ async def password_login(payload: PasswordLoginPayload) -> dict:
             "statusName": user.get("platonus_status_name"),
             "email": user.get("platonus_email"),
             "birthDate": user.get("platonus_birth_date"),
+            "is_admin": is_admin(user),
         },
     }
 
@@ -217,5 +219,6 @@ def auth_me(user: dict = Depends(get_current_user)) -> dict:
             "statusName": user.get("platonus_status_name"),
             "email": user.get("platonus_email"),
             "birthDate": user.get("platonus_birth_date"),
+            "is_admin": is_admin(user),
         },
     }

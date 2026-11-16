@@ -11,22 +11,29 @@ type Props = {
 };
 
 function Sources({ message }: { message: ChatMessage }) {
-  const names = useMemo(() => {
-    const citations = message.details?.citations ?? [];
-    const list = citations
-      .map((cite) => String((cite as Record<string, unknown>).file_name ?? "").trim())
-      .filter((name) => name && !name.endsWith(".json"))
-      .map((name) => name.replace(/^[0-9a-f]{32}_/, ""));
-    return Array.from(new Set(list)).slice(0, 4);
+  const sources = useMemo(() => {
+    const seen = new Set<string>();
+    const list: { label: string; title: string }[] = [];
+    for (const raw of message.details?.citations ?? []) {
+      const cite = raw as Record<string, unknown>;
+      const name = String(cite.title ?? cite.file_name ?? "").replace(/^[0-9a-f]{32}_/, "").trim();
+      if (!name || name.endsWith(".json")) continue;
+      const page = cite.page ? `, стр. ${cite.page}` : "";
+      const key = `${name}${page}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      list.push({ label: key, title: [name, cite.section].filter(Boolean).join(" — ") });
+    }
+    return list.slice(0, 4);
   }, [message.details?.citations]);
-  if (!names.length) return null;
+  if (!sources.length) return null;
   return (
     <div className="message-sources" aria-label="Источники">
       <span className="message-sources__label">Источники</span>
-      {names.map((name) => (
-        <span key={name} className="message-source" title={name}>
+      {sources.map((source) => (
+        <span key={source.label} className="message-source" title={source.title}>
           <Icon name="file" size={13} />
-          <span>{name}</span>
+          <span>{source.label}</span>
         </span>
       ))}
     </div>

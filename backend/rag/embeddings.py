@@ -43,6 +43,15 @@ _embedding_dimension = int(
 VECTOR_SIZE = _embedding_dimension if _api_key else FALLBACK_VECTOR_SIZE
 
 _session = requests.Session()
+_last_error: str | None = None
+
+
+class EmbeddingError(RuntimeError):
+    """Embeddings could not be produced by the configured provider."""
+
+
+def embeddings_info() -> dict:
+    return {"model": _embedding_model if _api_key else "local-hash", "dimension": VECTOR_SIZE, "remote": bool(_api_key)}
 
 
 def embed_documents(documents: Iterable[DocumentChunk]) -> List[List[float]]:
@@ -62,14 +71,17 @@ def embed_texts(texts: Sequence[str]) -> List[List[float]]:
         batch = [(text or " ")[:MAX_INPUT_CHARS] for text in texts[start : start + EMBED_BATCH_SIZE]]
         remote = _remote_embeddings(batch)
         if len(remote) != len(batch):
-            logger.warning("Remote embeddings failed for batch at %s; using local fallback", start)
-            remote = [_local_embedding(text) for text in batch]
+            # Never mix in character-histogram vectors: they live in a different
+            # space and silently poison the index. Fail the ingestion instead.
+            raise EmbeddingError(
+                f"Сервис эмбеддингов недоступен ({_last_error or 'нет ответа'}). Повторите индексацию позже."
+            )
         vectors.extend(remote)
     return vectors
 
 
 def embed_text(text: str) -> List[float]:
-    """Embed a single query (cached)."""
+    """Embed a single query (cached). Raises EmbeddingError if the provider fails."""
     return list(_cached_query_embedding((text or "").strip()))
 
 
@@ -77,12 +89,14 @@ def embed_text(text: str) -> List[float]:
 def _cached_query_embedding(text: str) -> tuple[float, ...]:
     if _api_key:
         remote = _remote_embeddings([text or " "])
-        if remote:
-            return tuple(remote[0])
+        if not remote:  # not cached: lru_cache does not store exceptions
+            raise EmbeddingError(f"Сервис эмбеддингов недоступен ({_last_error or 'нет ответа'}).")
+        return tuple(remote[0])
     return tuple(_local_embedding(text))
 
 
 def _remote_embeddings(batch: List[str], *, attempts: int = 3) -> List[List[float]]:
+    global _last_error
     endpoint = os.getenv("OPENAI_EMBEDDINGS_URL", "https://api.openai.com/v1/embeddings")
     headers = {
         "Authorization": f"Bearer {_api_key}",
@@ -104,6 +118,7 @@ def _remote_embeddings(batch: List[str], *, attempts: int = 3) -> List[List[floa
             if attempt + 1 < attempts:
                 time.sleep(0.5 * (2**attempt))
                 continue
+            _last_error = str(exc)[:200]
             logger.warning("Embedding request failed: %s", exc)
     return []
 

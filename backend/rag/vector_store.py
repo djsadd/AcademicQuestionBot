@@ -171,6 +171,53 @@ class VectorStore:
         except Exception:
             return False
 
+    def info(self) -> dict:
+        """Collection statistics for the admin UI (points, vector size, mismatch flag)."""
+        result: dict = {
+            "mode": self.mode,
+            "collection": self._collection_name,
+            "configured_vector_size": self._vector_size,
+            "vector_size": None,
+            "points": None,
+            "status": None,
+        }
+        if self._client is None:
+            try:
+                self._init_qdrant()
+            except Exception as exc:
+                result["error"] = str(exc)[:200]
+        if self._client is not None:
+            try:
+                collection = self._client.get_collection(self._collection_name)
+                vectors = collection.config.params.vectors
+                size = getattr(vectors, "size", None)
+                if size is None and isinstance(vectors, dict) and vectors:
+                    size = next(iter(vectors.values())).size
+                result.update(
+                    vector_size=size,
+                    points=getattr(collection, "points_count", None) or getattr(collection, "vectors_count", None) or 0,
+                    status=str(getattr(collection, "status", "")).split(".")[-1].lower() or None,
+                )
+            except Exception as exc:
+                result["error"] = str(exc)[:200]
+        elif self._fallback_store is not None:
+            result.update(vector_size=self._vector_size, points=len(self._fallback_store._items), status="memory")
+        result["dimension_mismatch"] = bool(result["vector_size"] and result["vector_size"] != self._vector_size)
+        return result
+
+    def recreate(self) -> None:
+        """Drop and recreate the collection with the configured vector size."""
+        if self._client is None:
+            self._init_qdrant()
+        if self._client is not None:
+            try:
+                self._client.delete_collection(self._collection_name)
+            except Exception:
+                logger.warning("Collection delete failed", exc_info=True)
+            self._ensure_collection(self._client)
+        elif self._fallback_store is not None:
+            self._fallback_store._items.clear()
+
     @property
     def mode(self) -> str:
         return "qdrant" if self._client is not None else ("memory" if self._fallback_store else "offline")
@@ -339,6 +386,14 @@ class VectorStore:
                 ),
             )
             logger.info("Qdrant collection created: %s", self._collection_name)
+            try:  # fast filtered deletes / chunk listing per document
+                client.create_payload_index(
+                    collection_name=self._collection_name,
+                    field_name="document_id",
+                    field_schema=qdrant_models.PayloadSchemaType.KEYWORD,
+                )
+            except Exception:  # pragma: no cover - optional optimisation
+                logger.debug("Payload index creation skipped", exc_info=True)
         except UnexpectedResponse as exc:
             if exc.status_code == 409:
                 logger.info("Qdrant collection already exists: %s", self._collection_name)

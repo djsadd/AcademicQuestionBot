@@ -82,8 +82,9 @@ export default function App() {
     let active = true;
     setIsAdminResolved(false);
     apiClient
-      .get<{ status: string; user: { role?: string | null } }>("/auth/me")
-      .then((response) => active && setIsAdmin(isAdminRole(response.user.role ?? null)))
+      .get<{ status: string; user: { role?: string | null; is_admin?: boolean } }>("/auth/me")
+      // The backend decides (ADMIN_ROLES / ADMIN_LOGINS); the local list is only a fallback for old APIs.
+      .then((response) => active && setIsAdmin(response.user.is_admin ?? isAdminRole(response.user.role ?? null)))
       .catch(() => active && setIsAdmin(false))
       .finally(() => active && setIsAdminResolved(true));
     return () => {

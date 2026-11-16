@@ -1,170 +1,200 @@
-"""Endpoints for uploading documents, querying, and managing RAG storage."""
+"""Knowledge-base (RAG) administration API."""
 from __future__ import annotations
 
 import json
 import os
-import uuid
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
-from ...rag.service import rag_service
 from ...db import rag_documents
-from ...workers.tasks import celery_app, ingest_documents
+from ...rag.loader import SUPPORTED_SUFFIXES, DocumentParseError
+from ...rag.service import rag_service
+from ...services import knowledge_base as kb
 from ...services.permissions import require_admin
+from ...workers.tasks import celery_app
 
 router = APIRouter(prefix="/rag", tags=["rag"], dependencies=[Depends(require_admin)])
 
-
-ALLOWED_EXTENSIONS = {".pdf", ".docx", ".txt", ".md"}
+ALLOWED_EXTENSIONS = SUPPORTED_SUFFIXES
 MAX_UPLOAD_BYTES = int(os.getenv("RAG_MAX_UPLOAD_MB", "50")) * 1024 * 1024
 
 
+class MetadataPatch(BaseModel):
+    title: Optional[str] = None
+    category: Optional[str] = None
+    audience: Optional[str] = None
+    description: Optional[str] = None
+
+
+# ----------------------------------------------------------------- overview
+@router.get("/stats")
+def knowledge_base_stats() -> Dict[str, Any]:
+    """Registry counters + vector index health (dimension mismatch, points)."""
+    return {
+        "registry": rag_documents.stats(),
+        "index": rag_service.index_info(),
+        "categories": kb.CATEGORIES,
+        "audiences": kb.AUDIENCES,
+        "limits": {"max_upload_mb": MAX_UPLOAD_BYTES // (1024 * 1024), "extensions": sorted(ALLOWED_EXTENSIONS)},
+    }
+
+
+# ------------------------------------------------------------------ upload
 @router.post("/documents/upload")
 async def upload_document(
     file: UploadFile = File(...),
+    title: Optional[str] = Form(None),
+    category: Optional[str] = Form(None),
+    audience: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
     metadata: Optional[str] = Form(None),
-) -> Dict[str, object]:
-    """Validate the upload, persist it and queue ingestion in the Celery worker."""
+    allow_duplicate: bool = Form(False),
+) -> Dict[str, Any]:
+    """Validate the upload, register it and queue indexing."""
     filename = Path(file.filename or "").name
     if Path(filename).suffix.lower() not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=415,
-            detail=f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
+            detail=f"Неподдерживаемый формат. Допустимо: {', '.join(sorted(ALLOWED_EXTENSIONS))}",
         )
     contents = await file.read(MAX_UPLOAD_BYTES + 1)
     if not contents:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+        raise HTTPException(status_code=400, detail="Файл пустой.")
     if len(contents) > MAX_UPLOAD_BYTES:
-        raise HTTPException(status_code=413, detail="File is too large.")
+        raise HTTPException(status_code=413, detail=f"Файл больше {MAX_UPLOAD_BYTES // (1024 * 1024)} МБ.")
     try:
-        parsed_metadata = _parse_metadata(metadata)
+        extra = _parse_metadata(metadata)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return await run_in_threadpool(_store_and_enqueue, filename, file.content_type, contents, parsed_metadata)
+    fields = {**extra, "title": title, "category": category, "audience": audience, "description": description}
 
-
-def _store_and_enqueue(
-    filename: str,
-    content_type: Optional[str],
-    contents: bytes,
-    parsed_metadata: Dict[str, object],
-) -> Dict[str, object]:
-    stored_path = rag_service.save_upload(filename, contents)
-    document_id = uuid.uuid4().hex
-    file_id = rag_documents.create_file(
-        original_name=filename,
-        stored_name=stored_path.name,
-        content_type=content_type,
-        size_bytes=len(contents),
-    )
-    job_id = rag_documents.create_job(file_id=file_id, document_id=document_id, status="queued")
-    upload_metadata = {
-        "original_file": filename,
-        "file_name": filename,
-        "stored_file": stored_path.name,
-        "document_id": document_id,
-        **parsed_metadata,
-    }
-    try:
-        task = ingest_documents.delay(
-            str(stored_path),
-            metadata=upload_metadata,
-            document_id=document_id,
-            stored_file=stored_path.name,
-            job_id=job_id,
-            file_id=file_id,
-            db_metadata=parsed_metadata,
+    def _register() -> Dict[str, Any]:
+        registered = kb.register_upload(
+            filename=filename,
+            content_type=file.content_type,
+            data=contents,
+            metadata={key: value for key, value in fields.items() if value},
+            allow_duplicate=allow_duplicate,
         )
-    except Exception as exc:
-        rag_documents.update_job_status(job_id=job_id, status="failed", error=str(exc), finished=True)
-        raise HTTPException(status_code=503, detail="Failed to enqueue ingestion.") from exc
+        task_id = kb.enqueue_index(registered["document_id"])
+        return {"status": "queued", "task_id": task_id, **registered}
 
-    return {
-        "status": "queued",
-        "task_id": task.id,
-        "document_id": document_id,
-        "stored_file": stored_path.name,
-        "file_name": filename,
-        "job_id": job_id,
-    }
+    try:
+        return await run_in_threadpool(_register)
+    except kb.DuplicateDocumentError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Этот файл уже загружен как «{exc.existing.get('title')}».",
+        ) from exc
+    except DocumentParseError as exc:
+        raise HTTPException(status_code=415, detail=str(exc)) from exc
 
 
+# --------------------------------------------------------------- documents
 @router.get("/documents")
-def list_documents() -> Dict[str, object]:
-    """List all ingested documents."""
+def list_documents() -> Dict[str, Any]:
     return {"documents": rag_documents.list_documents()}
 
 
 @router.get("/documents/search")
-def search_documents(query: str, top_k: int = 3) -> Dict[str, object]:
-    """Return the most relevant chunks for the provided query."""
-    if not query:
-        raise HTTPException(status_code=400, detail="Query parameter is required.")
-
-    results = rag_service.search(query, top_k=max(1, min(top_k, 20)))
+def search_documents(
+    query: str = Query(..., min_length=1, max_length=500),
+    top_k: int = Query(5, ge=1, le=20),
+    compress: bool = False,
+    hybrid: bool = True,
+) -> Dict[str, Any]:
+    """Retrieval playground: exactly what agents receive for this query."""
+    results = rag_service.search(query, top_k=top_k, compress=compress, hybrid=hybrid)
     return {"query": query, "results": results}
 
 
 @router.get("/documents/{document_id}")
-def get_document(document_id: str) -> Dict[str, object]:
-    """Return metadata for a single document."""
+def get_document(document_id: str) -> Dict[str, Any]:
     record = rag_documents.get_document_detail(document_id)
     if not record:
-        raise HTTPException(status_code=404, detail=f"document {document_id} not found")
+        raise HTTPException(status_code=404, detail="Документ не найден.")
     return {"document": record}
 
 
-@router.get("/documents/{document_id}/chunks")
-def list_document_chunks(document_id: str, limit: int = 200) -> Dict[str, object]:
-    """Return raw chunks stored in the vector index for a document."""
-    if limit <= 0:
-        raise HTTPException(status_code=400, detail="limit must be greater than 0")
-    record = rag_documents.get_document_detail(document_id)
+@router.patch("/documents/{document_id}")
+def update_document(document_id: str, payload: MetadataPatch) -> Dict[str, Any]:
+    patch = kb.clean_metadata(payload.model_dump(exclude_none=True))
+    if not patch:
+        raise HTTPException(status_code=400, detail="Нет полей для обновления.")
+    record = rag_documents.update_metadata(document_id, patch)
     if not record:
-        raise HTTPException(status_code=404, detail=f"document {document_id} not found")
+        raise HTTPException(status_code=404, detail="Документ не найден.")
+    return {"document": record, "reindex_recommended": "title" in patch}
+
+
+@router.get("/documents/{document_id}/chunks")
+def list_document_chunks(document_id: str, limit: int = Query(500, ge=1, le=2000)) -> Dict[str, Any]:
+    if not rag_documents.get_document_detail(document_id):
+        raise HTTPException(status_code=404, detail="Документ не найден.")
     chunks = rag_service.list_document_chunks(document_id, limit=limit)
     return {"document_id": document_id, "chunks": chunks}
 
 
+@router.get("/documents/{document_id}/file")
+def download_document(document_id: str) -> FileResponse:
+    record = rag_documents.get_document_detail(document_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Документ не найден.")
+    path = rag_service.file_path(record["stored_file"])
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Файл отсутствует в хранилище.")
+    return FileResponse(path, filename=record["original_file"], media_type=record.get("content_type") or None)
+
+
+@router.post("/documents/{document_id}/reindex")
+def reindex_document(document_id: str) -> Dict[str, Any]:
+    if not rag_documents.get_document_detail(document_id):
+        raise HTTPException(status_code=404, detail="Документ не найден.")
+    return {"status": "queued", "task_id": kb.enqueue_index(document_id)}
+
+
+@router.delete("/documents/{document_id}")
+def delete_document(document_id: str) -> Dict[str, Any]:
+    record = kb.delete_document(document_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Документ не найден.")
+    return {"status": "deleted", "document": record}
+
+
+@router.post("/reindex-all")
+def reindex_all(recreate_collection: bool = False) -> Dict[str, Any]:
+    """Re-index every document (optionally recreating the collection after an embeddings model change)."""
+    queued = kb.reindex_all(recreate_collection=recreate_collection)
+    return {"status": "queued", "documents": len(queued)}
+
+
+# -------------------------------------------------------------------- jobs
 @router.get("/jobs")
-def list_jobs() -> Dict[str, object]:
-    """List all ingestion jobs."""
+def list_jobs() -> Dict[str, Any]:
     return {"jobs": rag_documents.list_jobs()}
 
 
 @router.get("/jobs/{job_id}")
-def get_job(job_id: str) -> Dict[str, object]:
-    """Return a single ingestion job."""
+def get_job(job_id: str) -> Dict[str, Any]:
     job = rag_documents.get_job(job_id)
     if not job:
-        raise HTTPException(status_code=404, detail=f"job {job_id} not found")
+        raise HTTPException(status_code=404, detail="Задача не найдена.")
     return {"job": job}
 
 
-@router.delete("/documents/{document_id}")
-def delete_document(document_id: str) -> Dict[str, object]:
-    """Delete the stored file and remove its vectors."""
-    record = rag_documents.get_document(document_id)
-    if not record:
-        raise HTTPException(status_code=404, detail=f"document {document_id} not found")
-    try:
-        deleted = rag_service.delete_document(document_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    rag_documents.delete_document_records(document_id)
-    return {"status": "deleted", "document": deleted, "db_record": record}
-
-
-
-
 @router.get("/tasks/{task_id}")
-def task_status(task_id: str) -> Dict[str, object]:
-    """Return Celery task status for document ingestion."""
+def task_status(task_id: str) -> Dict[str, Any]:
+    if task_id.startswith("local-"):
+        record = rag_documents.get_document_detail(task_id.removeprefix("local-"))
+        status = (record or {}).get("status") or "PENDING"
+        return {"task_id": task_id, "status": {"ingested": "SUCCESS", "failed": "FAILURE"}.get(status, "PENDING")}
     result = celery_app.AsyncResult(task_id)
-    payload: Dict[str, object] = {"task_id": task_id, "status": result.status}
+    payload: Dict[str, Any] = {"task_id": task_id, "status": result.status}
     if result.successful():
         payload["result"] = result.result
     elif result.failed():
@@ -172,13 +202,13 @@ def task_status(task_id: str) -> Dict[str, object]:
     return payload
 
 
-def _parse_metadata(metadata: Optional[str]) -> Dict[str, object]:
+def _parse_metadata(metadata: Optional[str]) -> Dict[str, Any]:
     if not metadata:
         return {}
     try:
         parsed = json.loads(metadata)
-    except json.JSONDecodeError as exc:  # pragma: no cover - FastAPI handles
-        raise ValueError("metadata must be a valid JSON object") from exc
+    except json.JSONDecodeError as exc:
+        raise ValueError("metadata должен быть корректным JSON-объектом") from exc
     if not isinstance(parsed, dict):
-        raise ValueError("metadata must be a JSON object")
+        raise ValueError("metadata должен быть JSON-объектом")
     return parsed

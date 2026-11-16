@@ -1,3 +1,5 @@
+export type RagDocumentStatus = "queued" | "processing" | "ingested" | "failed" | string;
+
 export type RagDocument = {
   document_id: string;
   original_file: string;
@@ -6,9 +8,41 @@ export type RagDocument = {
   chunks: number;
   uploaded_at: string;
   metadata: Record<string, unknown>;
-  status?: string;
+  title?: string;
+  category?: string | null;
+  audience?: string | null;
+  status?: RagDocumentStatus;
   job_id?: string;
   error?: string | null;
+  content_type?: string | null;
+  updated_at?: string | null;
+  indexed_at?: string | null;
+};
+
+export type RagStats = {
+  registry: { documents: number; by_status: Record<string, number>; chunks: number; size_bytes: number };
+  index: {
+    mode: string;
+    collection: string;
+    configured_vector_size: number;
+    vector_size: number | null;
+    points: number | null;
+    status: string | null;
+    dimension_mismatch: boolean;
+    error?: string;
+    embeddings: { model: string; dimension: number; remote: boolean };
+  };
+  categories: Record<string, string>;
+  audiences: Record<string, string>;
+  limits: { max_upload_mb: number; extensions: string[] };
+};
+
+export type RagSearchResult = {
+  content: string;
+  score: number;
+  vector_score?: number;
+  keyword_score?: number;
+  metadata: Record<string, unknown>;
 };
 
 export type RagChunk = {

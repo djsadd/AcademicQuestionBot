@@ -56,13 +56,18 @@ def citations_from_context(context: List[Dict[str, Any]], limit: int = 4) -> Lis
     seen: set[tuple[Any, Any]] = set()
     for item in context:
         metadata = item.get("metadata") or {}
-        key = (metadata.get("file_name") or metadata.get("original_file"), metadata.get("chunk_index"))
+        name = metadata.get("original_file") or metadata.get("file_name")
+        key = (metadata.get("document_id") or name, metadata.get("chunk_index"))
         if key in seen:
             continue
         seen.add(key)
         citations.append(
             {
-                "file_name": metadata.get("file_name") or metadata.get("original_file"),
+                "document_id": metadata.get("document_id"),
+                "title": metadata.get("title") or name,
+                "file_name": name,
+                "page": metadata.get("page"),
+                "section": metadata.get("section"),
                 "source_path": metadata.get("source_path"),
                 "chunk_index": metadata.get("chunk_index"),
                 "score": item.get("score"),

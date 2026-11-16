@@ -325,7 +325,6 @@ label { font-size: 0.875rem; }
   background: var(--surface-2);
   color: var(--text-muted);
   white-space: nowrap;
-  text-transform: capitalize;
 }
 
 .status-pill::before {

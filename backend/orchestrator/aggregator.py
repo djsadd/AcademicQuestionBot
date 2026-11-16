@@ -193,15 +193,21 @@ class ResponseAggregator:
         lines: List[str] = []
         for idx, item in enumerate(context[:MAX_CONTEXT_ITEMS], 1):
             metadata = item.get("metadata") or {}
-            source = metadata.get("file_name") or metadata.get("original_file") or metadata.get("source_path") or "Источник"
+            source = metadata.get("title") or metadata.get("original_file") or metadata.get("file_name") or "Источник"
+            where = ", ".join(
+                part for part in (
+                    f"стр. {metadata['page']}" if metadata.get("page") else "",
+                    str(metadata.get("section") or "")[:80],
+                ) if part
+            )
             content = " ".join(str(item.get("content") or "").split())
-            lines.append(f"[{idx}] {source}: {content[:CONTEXT_ITEM_CHARS]}")
+            lines.append(f"[{idx}] {source}{f' ({where})' if where else ''}: {content[:CONTEXT_ITEM_CHARS]}")
         return "\n".join(lines)
 
     def _format_citations(self, citations: List[Dict[str, Any]]) -> str:
         if not citations:
             return "- нет"
-        names = list(dict.fromkeys(cite.get("file_name") or "Источник" for cite in citations))
+        names = list(dict.fromkeys(cite.get("title") or cite.get("file_name") or "Источник" for cite in citations))
         return "\n".join(f"- {name}" for name in names)
 
     # ------------------------------------------------- backwards compatibility

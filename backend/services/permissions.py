@@ -40,6 +40,24 @@ def _admin_roles() -> set[str]:
     return roles
 
 
+@lru_cache(maxsize=1)
+def _bootstrap_admins() -> set[str]:
+    """Logins / Telegram ids that are always admins (ADMIN_LOGINS) — bootstraps the first admin."""
+    raw = os.getenv("ADMIN_LOGINS", "")
+    return {item.strip().lower() for item in raw.split(",") if item.strip()}
+
+
+def is_admin(user: dict | None) -> bool:
+    if not user:
+        return False
+    role = str(user.get("platonus_role") or "").strip().lower()
+    if role and role in _admin_roles():
+        return True
+    identities = {str(user.get("username") or "").strip().lower(), str(user.get("telegram_id") or "").strip()}
+    identities.discard("")
+    return bool(identities & _bootstrap_admins())
+
+
 def get_current_user(authorization: str | None = Header(default=None)) -> dict:
     token = _extract_bearer_token(authorization)
     telegram_id = _get_telegram_id_from_token(token)
@@ -54,9 +72,8 @@ def require_user(user: dict = Depends(get_current_user)) -> dict:
 
 
 def require_admin(user: dict = Depends(get_current_user)) -> dict:
-    role = str(user.get("platonus_role") or "").strip().lower()
-    if not role or role not in _admin_roles():
-        raise HTTPException(status_code=403, detail="Admin role required.")
+    if not is_admin(user):
+        raise HTTPException(status_code=403, detail="Нужны права администратора.")
     return user
 
 

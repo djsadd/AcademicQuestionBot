@@ -1,72 +1,49 @@
-"""Celery worker configuration and ingestion tasks."""
+"""Celery worker configuration and knowledge-base indexing tasks."""
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from typing import Any, Dict, Optional
 
 from celery import Celery
+from celery.signals import worker_process_init
 
-from ..rag.service import rag_service
 from ..db import rag_documents
 
 BROKER_URL = os.getenv("CELERY_BROKER_URL") or os.getenv("REDIS_URL", "redis://redis:6379/0")
 
-celery_app = Celery(
-    "academic_question_bot",
-    broker=BROKER_URL,
-    backend=BROKER_URL,
+celery_app = Celery("academic_question_bot", broker=BROKER_URL, backend=BROKER_URL)
+celery_app.conf.update(
+    task_acks_late=True,  # a crashed worker does not lose the indexing job
+    task_reject_on_worker_lost=True,
+    worker_prefetch_multiplier=1,
+    task_time_limit=60 * 30,
+    task_soft_time_limit=60 * 25,
+    broker_connection_retry_on_startup=True,
+    broker_connection_timeout=3,
+    redis_socket_connect_timeout=3,
+    redis_socket_timeout=5,
+    result_expires=60 * 60 * 24,
 )
 
 
-@celery_app.task(name="workers.ingest_documents")
-def ingest_documents(
-    path: Optional[str] = None,
-    *,
-    metadata: Optional[Dict[str, Any]] = None,
-    document_id: Optional[str] = None,
-    stored_file: Optional[str] = None,
-    job_id: Optional[str] = None,
-    file_id: Optional[str] = None,
-    db_metadata: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    """Ingest a saved document into the vector store."""
-    if not path:
-        return {"status": "error", "detail": "path is required"}
-    file_path = Path(path)
-    if not file_path.exists():
-        return {"status": "error", "detail": f"path not found: {path}"}
-
-    rag_documents.ensure_tables()
-    if job_id:
-        rag_documents.update_job_status(job_id=job_id, status="processing", started=True)
-
+@worker_process_init.connect
+def _init_worker(**_: Any) -> None:
     try:
-        result = rag_service.ingest_path(
-            file_path,
-            metadata=metadata,
-            document_id=document_id,
-            register=True,
-            stored_file=stored_file,
-        )
-        if document_id and file_id:
-            rag_documents.create_document(
-                document_id=document_id,
-                file_id=file_id,
-                job_id=job_id,
-                chunks=result.get("chunks", 0),
-                size_bytes=file_path.stat().st_size,
-                metadata=db_metadata,
-            )
-        if job_id:
-            rag_documents.update_job_status(job_id=job_id, status="ingested", finished=True)
-        return {"status": "ingested", **result}
-    except Exception as exc:  # pragma: no cover - Celery will log
-        if job_id:
-            rag_documents.update_job_status(
-                job_id=job_id,
-                status="failed",
-                error=str(exc),
-                finished=True,
-            )
-        raise
+        rag_documents.ensure_tables()
+    except Exception:  # pragma: no cover - logged by celery
+        pass
+
+
+@celery_app.task(name="workers.index_document")
+def index_document_task(document_id: str) -> Dict[str, Any]:
+    from ..services.knowledge_base import index_document
+
+    return index_document(document_id)
+
+
+@celery_app.task(name="workers.ingest_documents")
+def ingest_documents(path: Optional[str] = None, *, document_id: Optional[str] = None, **_: Any) -> Dict[str, Any]:
+    """Legacy task name kept so messages queued before the upgrade still run."""
+    if not document_id:
+        return {"status": "error", "detail": "document_id is required"}
+    return index_document_task(document_id)
