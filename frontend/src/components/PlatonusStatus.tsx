@@ -1,168 +1,95 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  fetchPlatonusSession,
-  fetchStudentAcademicCalendar,
-  PlatonusSessionStatus,
-} from "../api/platonus";
+import { useState, type FormEvent } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { fetchPlatonusSession, fetchStudentAcademicCalendar } from "../api/platonus";
+import { Callout, LoadingRows, PageHeader, StatCard } from "./ui/Admin";
+import { Icon } from "./ui/Icon";
 
 function formatAge(seconds: number | null) {
-  if (seconds === null) return "unknown";
+  if (seconds === null) return "—";
   const minutes = Math.floor(seconds / 60);
-  const remainder = seconds % 60;
-  return `${minutes}m ${remainder}s`;
+  return minutes ? `${minutes} мин ${seconds % 60} с` : `${seconds} с`;
 }
 
 function formatTimestamp(epoch: number | null) {
-  if (!epoch) return "unknown";
-  return new Date(epoch * 1000).toLocaleString();
+  if (!epoch) return "—";
+  return new Date(epoch * 1000).toLocaleString("ru-RU", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+}
+
+function Check({ ok, label }: { ok: boolean; label: string }) {
+  return (
+    <li>
+      <span className={`health-dot${ok ? " is-ok" : ""}`} />
+      <span>{label}</span>
+      <span className="muted">{ok ? "есть" : "нет"}</span>
+    </li>
+  );
 }
 
 export function PlatonusStatus() {
-  const [status, setStatus] = useState<PlatonusSessionStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [personId, setPersonId] = useState("20458");
-  const [cardResponse, setCardResponse] = useState<string | null>(null);
-  const [cardError, setCardError] = useState<string | null>(null);
-  const [cardLoading, setCardLoading] = useState(false);
+  const [personId, setPersonId] = useState("");
+  const sessionQuery = useQuery({ queryKey: ["platonus-session"], queryFn: fetchPlatonusSession, refetchInterval: 30_000 });
+  const calendar = useMutation({ mutationFn: (id: string) => fetchStudentAcademicCalendar(id, "ru") });
+  const status = sessionQuery.data;
 
-  const loadStatus = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchPlatonusSession();
-      setStatus(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load status.");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadStatus();
-  }, [loadStatus]);
-
-  const tokenState = useMemo(() => {
-    if (!status) return "unknown";
-    return status.token_present ? "active" : "missing";
-  }, [status]);
-
-  const loadStudentAcademicCalendar = useCallback(async () => {
-    if (!personId.trim()) {
-      setCardError("Enter a person id.");
-      return;
-    }
-    setCardLoading(true);
-    setCardError(null);
-    setCardResponse(null);
-    try {
-      const data = await fetchStudentAcademicCalendar(personId.trim(), "ru");
-      setCardResponse(JSON.stringify(data, null, 2));
-    } catch (err) {
-      setCardError(err instanceof Error ? err.message : "Failed to load student card.");
-    } finally {
-      setCardLoading(false);
-    }
-  }, [personId]);
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    if (personId.trim()) calendar.mutate(personId.trim());
+  };
 
   return (
-    <section className="feature-section">
-      <div className="feature-section__header">
-        <div>
-          <p className="eyebrow">Platonus</p>
-          <h2>Session monitor</h2>
-          <p className="muted">
-            Background login refresh status, token presence, and last login time.
-          </p>
-        </div>
-        <span className="feature-section__status">
-          {tokenState === "active" ? "TOKEN OK" : "TOKEN MISSING"}
-        </span>
-      </div>
-
-      <div className="panel">
-        <div className="status-card__header">
-          <strong>Current session</strong>
-          <button className="ghost" onClick={loadStatus} disabled={loading}>
-            {loading ? "Refreshing..." : "Refresh"}
+    <div className="stack-lg">
+      <PageHeader
+        eyebrow="Интеграция"
+        title="Platonus"
+        description="Служебная сессия, через которую ассистент получает персональные данные студентов (календарь, статус)."
+        actions={
+          <button type="button" className="ghost" onClick={() => sessionQuery.refetch()} disabled={sessionQuery.isFetching}>
+            <Icon name="refresh" size={16} /> {sessionQuery.isFetching ? "Обновляем…" : "Обновить"}
           </button>
-        </div>
+        }
+      />
 
-        {error && <p className="error">Error: {error}</p>}
-
-        {!error && !status && <p className="muted">Loading session status...</p>}
-
-        {status && (
-          <div className="doc-meta-grid">
-            <div className="status-card">
-              <div className="status-card__header">
-                <strong>Token</strong>
-                <span
-                  className={`status-pill ${
-                    status.token_present ? "status-success" : "status-failure"
-                  }`}
-                >
-                  {status.token_present ? "Present" : "Missing"}
-                </span>
-              </div>
-              <p className="muted">Last login: {formatTimestamp(status.last_login)}</p>
-              <p className="muted">Age: {formatAge(status.age_seconds)}</p>
-            </div>
-
-            <div className="status-card">
-              <div className="status-card__header">
-                <strong>Session meta</strong>
-              </div>
-              <p className="muted">
-                Cookie: {status.cookie_present ? "present" : "missing"}
-              </p>
-              <p className="muted">SID: {status.sid_present ? "present" : "missing"}</p>
-              <p className="muted">
-                User agent: {status.user_agent_present ? "present" : "missing"}
-              </p>
-            </div>
-
-            <div className="status-card">
-              <div className="status-card__header">
-                <strong>Refresh policy</strong>
-              </div>
-              <p className="muted">
-                Interval: {Math.round(status.refresh_seconds / 60)} minutes
-              </p>
-            </div>
+      {sessionQuery.isLoading ? (
+        <LoadingRows rows={1} height={110} />
+      ) : sessionQuery.isError ? (
+        <Callout tone="danger" title="Сервис Platonus недоступен">{(sessionQuery.error as Error).message}</Callout>
+      ) : status ? (
+        <>
+          {!status.token_present ? (
+            <Callout tone="danger" title="Нет активной сессии">Ассистент не сможет показывать студентам календарь. Проверьте PLATONUS_LOGIN / PLATONUS_PASSWORD.</Callout>
+          ) : null}
+          <div className="stat-grid">
+            <StatCard label="Сессия" icon="link" tone={status.token_present ? "success" : "danger"} value={status.token_present ? "Активна" : "Нет"} />
+            <StatCard label="Последний вход" icon="clock" value={formatTimestamp(status.last_login)} hint={`возраст ${formatAge(status.age_seconds)}`} />
+            <StatCard label="Обновление" icon="refresh" value={`${Math.round(status.refresh_seconds / 60)} мин`} hint="интервал автологина" />
           </div>
-        )}
-      </div>
+          <section className="panel">
+            <h3>Параметры сессии</h3>
+            <ul className="health-list">
+              <Check ok={status.token_present} label="Токен" />
+              <Check ok={status.cookie_present} label="Cookie" />
+              <Check ok={status.sid_present} label="SID" />
+              <Check ok={status.user_agent_present} label="User-Agent" />
+            </ul>
+          </section>
+        </>
+      ) : null}
 
-      <div className="panel">
-        <div className="status-card__header">
-          <strong>Student academic calendar request</strong>
-          <button
-            className="ghost"
-            onClick={loadStudentAcademicCalendar}
-            disabled={cardLoading}
-          >
-            {cardLoading ? "Requesting..." : "Send request"}
+      <section className="panel">
+        <div>
+          <h3>Проверка календаря студента</h3>
+          <p className="muted">Запрос академического календаря по Person ID — так же, как его получает агент деканата.</p>
+        </div>
+        <form className="search-bar" onSubmit={submit}>
+          <Icon name="user" size={18} />
+          <input value={personId} onChange={(event) => setPersonId(event.target.value)} placeholder="Person ID, например 20458" aria-label="Person ID" inputMode="numeric" />
+          <button type="submit" className="primary" disabled={!personId.trim() || calendar.isPending}>
+            {calendar.isPending ? <span className="spinner spinner--on-brand" /> : null} Запросить
           </button>
-        </div>
-        <div className="actions" style={{ marginTop: "1rem" }}>
-          <label className="file-input" style={{ flex: 1 }}>
-            <span className="muted">Person ID</span>
-            <input
-              type="text"
-              value={personId}
-              onChange={(event) => setPersonId(event.target.value)}
-            />
-          </label>
-        </div>
-        {cardError && <p className="error">Error: {cardError}</p>}
-        {cardResponse && (
-          <pre className="doc-meta__json" style={{ marginTop: "1rem" }}>
-            {cardResponse}
-          </pre>
-        )}
-      </div>
-    </section>
+        </form>
+        {calendar.isError ? <Callout tone="danger" title="Ошибка запроса">{(calendar.error as Error).message}</Callout> : null}
+        {calendar.data ? <pre className="code-block">{JSON.stringify(calendar.data, null, 2)}</pre> : null}
+      </section>
+    </div>
   );
 }

@@ -90,3 +90,84 @@ export function Tabs<T extends string>({ value, onChange, items }: { value: T; o
     </div>
   );
 }
+
+export function Pagination({
+  page,
+  pages,
+  onChange,
+  hasNext,
+  perPage,
+  perPageOptions,
+  onPerPageChange,
+  total,
+}: {
+  page: number;
+  pages?: number;
+  onChange: (page: number) => void;
+  hasNext?: boolean;
+  perPage?: number;
+  perPageOptions?: readonly number[];
+  onPerPageChange?: (value: number) => void;
+  total?: number;
+}) {
+  const canNext = pages ? page < pages : Boolean(hasNext);
+  return (
+    <div className="pager">
+      <span className="pager__info muted">
+        {total !== undefined ? `Всего: ${total.toLocaleString("ru-RU")}` : null}
+        {perPage && perPageOptions && onPerPageChange ? (
+          <select value={perPage} onChange={(event) => onPerPageChange(Number(event.target.value))} aria-label="Строк на странице">
+            {perPageOptions.map((option) => (
+              <option key={option} value={option}>{option} на странице</option>
+            ))}
+          </select>
+        ) : null}
+      </span>
+      <div className="pager__controls">
+        <button type="button" className="icon-button" onClick={() => onChange(page - 1)} disabled={page <= 1} aria-label="Предыдущая страница">
+          <Icon name="chevronRight" size={16} style={{ transform: "rotate(180deg)" }} />
+        </button>
+        <span className="pager__page">{pages ? `${page} из ${pages}` : page}</span>
+        <button type="button" className="icon-button" onClick={() => onChange(page + 1)} disabled={!canNext} aria-label="Следующая страница">
+          <Icon name="chevronRight" size={16} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function LoadingRows({ rows = 3, height = 52 }: { rows?: number; height?: number }) {
+  return (
+    <div className="skeleton-list">
+      {Array.from({ length: rows }, (_, index) => <div key={index} className="skeleton" style={{ height }} />)}
+    </div>
+  );
+}
+
+export function Drawer({ title, subtitle, onClose, children, width = 980 }: { title: ReactNode; subtitle?: ReactNode; onClose: () => void; children: ReactNode; width?: number }) {
+  return (
+    <div className="drawer" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
+      <aside className="drawer__panel" role="dialog" aria-modal="true" style={{ maxWidth: width }} onKeyDown={(event) => event.key === "Escape" && onClose()}>
+        <header className="drawer__head">
+          <div className="drawer__title">
+            <h3>{title}</h3>
+            {subtitle ? <span className="muted">{subtitle}</span> : null}
+          </div>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Закрыть" autoFocus>
+            <Icon name="x" />
+          </button>
+        </header>
+        <div className="drawer__body">{children}</div>
+      </aside>
+    </div>
+  );
+}
+
+export function JsonDetails({ title, value, open = false }: { title: string; value: unknown; open?: boolean }) {
+  return (
+    <details className="json-details" open={open}>
+      <summary>{title}</summary>
+      <pre className="code-block">{JSON.stringify(value ?? null, null, 2)}</pre>
+    </details>
+  );
+}

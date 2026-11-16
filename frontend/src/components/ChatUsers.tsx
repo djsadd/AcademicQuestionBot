@@ -1,203 +1,158 @@
-import { useEffect, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAdminUsers, updateAdminUserRole } from "../api/admin";
 import type { AdminUser } from "../types";
-import { formatDate } from "../utils/format";
+import { formatNumber, formatRelative } from "../utils/format";
+import { Callout, EmptyState, LoadingRows, PageHeader, StatCard } from "./ui/Admin";
+import { Icon } from "./ui/Icon";
 
 const ROLE_OPTIONS = [
   { value: "", label: "Без роли" },
-  { value: "student", label: "student" },
-  { value: "teacher", label: "teacher" },
-  { value: "staff", label: "staff" },
-  { value: "deanery", label: "deanery" },
-  { value: "admin", label: "admin" },
+  { value: "student", label: "Студент" },
+  { value: "teacher", label: "Преподаватель" },
+  { value: "staff", label: "Сотрудник" },
+  { value: "deanery", label: "Деканат" },
+  { value: "admin", label: "Администратор" },
 ];
+const ADMIN_ROLES = new Set(["admin", "administrator", "superuser", "staff", "dean", "deanery"]);
 
-function getDisplayName(user: AdminUser) {
-  return (
-    user.platonus_fullname ||
-    [user.first_name, user.last_name].filter(Boolean).join(" ") ||
-    user.username ||
-    user.platonus_email ||
-    `User ${user.telegram_id}`
-  );
-}
+const displayName = (user: AdminUser) =>
+  user.platonus_fullname || [user.first_name, user.last_name].filter(Boolean).join(" ") || user.username || user.platonus_email || `Пользователь ${user.telegram_id}`;
 
-function ChatUsersPanel({ userItems }: { userItems: AdminUser[] }) {
+const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("") || "U";
+
+function RoleEditor({ user }: { user: AdminUser }) {
   const queryClient = useQueryClient();
-  const [draftRoles, setDraftRoles] = useState<Record<number, string>>({});
-  const [updatedUserId, setUpdatedUserId] = useState<number | null>(null);
-
-  useEffect(() => {
-    setDraftRoles((current) => {
-      const next: Record<number, string> = {};
-      for (const item of userItems) {
-        next[item.telegram_id] = current[item.telegram_id] ?? item.platonus_role ?? "";
-      }
-      return next;
-    });
-  }, [userItems]);
-
-  const updateRoleMutation = useMutation({
-    mutationFn: ({ telegramId, role }: { telegramId: number; role: string | null }) =>
-      updateAdminUserRole(telegramId, role),
-    onSuccess: (response) => {
-      const updatedUser = response.user;
-      setUpdatedUserId(updatedUser.telegram_id);
-      setDraftRoles((current) => ({
-        ...current,
-        [updatedUser.telegram_id]: updatedUser.platonus_role ?? "",
-      }));
-      queryClient.setQueryData(["admin-users"], (current: { items?: AdminUser[]; limit?: number } | undefined) => {
-        if (!current?.items) return current;
-        return {
-          ...current,
-          items: current.items.map((item) => (
-            item.telegram_id === updatedUser.telegram_id ? updatedUser : item
-          )),
-        };
-      });
-      void queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+  const [role, setRole] = useState(user.platonus_role ?? "");
+  const [saved, setSaved] = useState(false);
+  const mutation = useMutation({
+    mutationFn: () => updateAdminUserRole(user.telegram_id, role || null),
+    onSuccess: () => {
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 2000);
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
     },
   });
-
-  function handleSave(item: AdminUser) {
-    const draftRole = (draftRoles[item.telegram_id] ?? "").trim();
-    setUpdatedUserId(null);
-    updateRoleMutation.mutate({
-      telegramId: item.telegram_id,
-      role: draftRole || null,
-    });
-  }
+  const changed = role !== (user.platonus_role ?? "");
+  const known = ROLE_OPTIONS.some((option) => option.value === role);
 
   return (
-    <div className="panel">
-      <div className="feature-section__header">
-        <div>
-          <p className="eyebrow">Users</p>
-          <h3>Пользователи чата</h3>
-          <p className="muted">Список аккаунтов с идентификаторами, активностью и ручным назначением ролей.</p>
-        </div>
-        <span className="muted">{userItems.length} записей</span>
-      </div>
-
-      {updateRoleMutation.isError ? (
-        <p className="error">
-          {updateRoleMutation.error instanceof Error
-            ? updateRoleMutation.error.message
-            : "Не удалось обновить роль пользователя."}
-        </p>
+    <div className="role-editor">
+      <select value={role} onChange={(event) => setRole(event.target.value)} disabled={mutation.isPending} aria-label="Роль">
+        {!known ? <option value={role}>{role}</option> : null}
+        {ROLE_OPTIONS.map((option) => <option key={option.value || "none"} value={option.value}>{option.label}</option>)}
+      </select>
+      {changed ? (
+        <button type="button" className="primary btn--sm" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+          {mutation.isPending ? "…" : "Сохранить"}
+        </button>
+      ) : saved ? (
+        <span className="success role-editor__ok"><Icon name="check" size={14} /> Сохранено</span>
       ) : null}
-
-      {userItems.length === 0 ? (
-        <p className="muted">Пользователей пока нет.</p>
-      ) : (
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Пользователь</th>
-                <th>Идентификаторы</th>
-                <th>Активность</th>
-                <th>Назначение роли</th>
-              </tr>
-            </thead>
-            <tbody>
-              {userItems.map((item) => {
-                const draftRole = draftRoles[item.telegram_id] ?? item.platonus_role ?? "";
-                const isChanged = draftRole !== (item.platonus_role ?? "");
-
-                return (
-                  <tr key={item.telegram_id}>
-                    <td>
-                      <div className="doc-name">
-                        <strong>{getDisplayName(item)}</strong>
-                        <small>{item.platonus_email || item.username || "Email или логин не указан"}</small>
-                        <small>
-                          Статус: {item.platonus_status_name || (item.platonus_auth ? "Авторизован" : "Не авторизован")}
-                        </small>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="doc-name">
-                        <small>Telegram ID: {item.telegram_id}</small>
-                        <small>Person ID: {item.platonus_person_id ?? "-"}</small>
-                        <small>ИИН: {item.platonus_iin ?? "-"}</small>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="doc-name">
-                        <small>События: {item.event_count}</small>
-                        <small>Сессии: {item.session_count}</small>
-                        <small>Последняя активность: {item.last_seen ? formatDate(item.last_seen) : "-"}</small>
-                      </div>
-                    </td>
-                    <td>
-                      <div className="doc-name">
-                        <select
-                          value={draftRole}
-                          onChange={(event) =>
-                            setDraftRoles((current) => ({
-                              ...current,
-                              [item.telegram_id]: event.target.value,
-                            }))
-                          }
-                          disabled={updateRoleMutation.isPending}
-                        >
-                          {ROLE_OPTIONS.map((option) => (
-                            <option key={option.value || "empty"} value={option.value}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          className="ghost"
-                          onClick={() => handleSave(item)}
-                          disabled={updateRoleMutation.isPending || !isChanged}
-                        >
-                          {updateRoleMutation.isPending ? "Сохранение..." : "Сохранить"}
-                        </button>
-                        <small>Текущая роль: {item.platonus_role || "-"}</small>
-                        {updatedUserId === item.telegram_id ? <small>Роль обновлена.</small> : null}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {mutation.isError ? <span className="error role-editor__err">{(mutation.error as Error).message}</span> : null}
     </div>
   );
 }
 
 export function ChatUsers() {
-  const usersQuery = useQuery({
-    queryKey: ["admin-users"],
-    queryFn: () => fetchAdminUsers(200),
-  });
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState("");
+  const usersQuery = useQuery({ queryKey: ["admin-users"], queryFn: () => fetchAdminUsers(200) });
+  const users = useMemo(() => usersQuery.data?.items ?? [], [usersQuery.data]);
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return users.filter((user) => {
+      if (roleFilter === "admins" && !ADMIN_ROLES.has((user.platonus_role ?? "").toLowerCase())) return false;
+      if (roleFilter === "none" && user.platonus_role) return false;
+      if (!needle) return true;
+      return [displayName(user), user.username, user.platonus_email, user.platonus_iin, String(user.telegram_id)]
+        .some((value) => String(value ?? "").toLowerCase().includes(needle));
+    });
+  }, [users, search, roleFilter]);
+
+  const admins = users.filter((user) => ADMIN_ROLES.has((user.platonus_role ?? "").toLowerCase())).length;
+  const platonus = users.filter((user) => user.platonus_auth).length;
+  const activeWeek = users.filter((user) => user.last_seen && Date.now() - new Date(user.last_seen).getTime() < 7 * 86_400_000).length;
 
   return (
-    <section className="feature-section">
-      <div className="feature-section__header">
-        <div>
-          <p className="eyebrow">Users</p>
-          <h2>Пользователи</h2>
-          <p className="muted">Раздел администрирования пользователей: список аккаунтов, активность и назначение ролей.</p>
-        </div>
-        <span className="feature-section__status">
-          {usersQuery.data?.items.length ?? 0} users
-        </span>
+    <div className="stack-lg">
+      <PageHeader
+        eyebrow="Доступ"
+        title="Пользователи"
+        description="Все, кто входил в кабинет. Здесь назначаются роли: администраторы видят базу знаний, аналитику и настройки."
+      />
+
+      <div className="stat-grid">
+        <StatCard label="Пользователей" icon="users" value={formatNumber(users.length)} />
+        <StatCard label="Активны за 7 дней" icon="activity" tone="brand" value={formatNumber(activeWeek)} />
+        <StatCard label="Через Platonus" icon="link" tone="success" value={formatNumber(platonus)} />
+        <StatCard label="Администраторов" icon="shield" value={formatNumber(admins)} />
       </div>
 
-      {usersQuery.isLoading ? (
-        <p>Загрузка пользователей...</p>
-      ) : usersQuery.isError ? (
-        <p className="error">Не удалось загрузить список пользователей.</p>
-      ) : (
-        <ChatUsersPanel userItems={usersQuery.data?.items ?? []} />
-      )}
-    </section>
+      <section className="panel">
+        <div className="toolbar">
+          <label className="toolbar__search">
+            <Icon name="search" size={16} />
+            <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Имя, логин, email, ИИН" />
+          </label>
+          <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)} aria-label="Фильтр по роли">
+            <option value="">Все пользователи</option>
+            <option value="admins">Администраторы</option>
+            <option value="none">Без роли</option>
+          </select>
+        </div>
+
+        {usersQuery.isLoading ? (
+          <LoadingRows />
+        ) : usersQuery.isError ? (
+          <Callout tone="danger" title="Не удалось загрузить пользователей">{(usersQuery.error as Error).message}</Callout>
+        ) : !filtered.length ? (
+          <EmptyState icon="users" title={users.length ? "Никого не найдено" : "Пользователей пока нет"} />
+        ) : (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Пользователь</th>
+                  <th>Platonus</th>
+                  <th className="num">Диалоги</th>
+                  <th>Был в сети</th>
+                  <th>Роль</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((user) => {
+                  const name = displayName(user);
+                  return (
+                    <tr key={user.telegram_id}>
+                      <td>
+                        <div className="person">
+                          <span className="person__avatar">{initials(name)}</span>
+                          <span className="person__text">
+                            <strong>{name}</strong>
+                            <span>{user.platonus_email || user.username || `ID ${user.telegram_id}`}</span>
+                          </span>
+                        </div>
+                      </td>
+                      <td>
+                        {user.platonus_auth ? <span className="tag tag--success"><Icon name="check" size={12} /> подключён</span> : <span className="tag tag--muted">нет</span>}
+                        {user.platonus_status_name ? <div className="muted cell-sub">{user.platonus_status_name}</div> : null}
+                      </td>
+                      <td className="num">
+                        {formatNumber(user.session_count)}
+                        <div className="muted cell-sub">{formatNumber(user.event_count)} сообщ.</div>
+                      </td>
+                      <td className="nowrap muted">{user.last_seen ? formatRelative(user.last_seen) : "—"}</td>
+                      <td><RoleEditor key={`${user.telegram_id}-${user.platonus_role}`} user={user} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
   );
 }

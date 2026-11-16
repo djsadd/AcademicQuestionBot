@@ -2,148 +2,119 @@ import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchAgentsOverview } from "../api/admin";
 import type { AgentOverviewItem } from "../types";
-import { formatDate } from "../utils/format";
+import { formatNumber, formatRelative } from "../utils/format";
+import { Callout, EmptyState, LoadingRows, PageHeader, StatCard } from "./ui/Admin";
+import { Icon, type IconName } from "./ui/Icon";
 
 const WINDOW_OPTIONS = [7, 30, 90] as const;
 
-function getStateClassName(state: string) {
-  if (state === "healthy") return "status-success";
-  if (state === "degraded") return "status-failed";
-  return "status-pending";
-}
+const STATE_META: Record<string, { label: string; className: string }> = {
+  healthy: { label: "Работает", className: "status-success" },
+  degraded: { label: "Есть ошибки", className: "status-failed" },
+  idle: { label: "Не используется", className: "status-idle" },
+};
 
-function formatChannels(item: AgentOverviewItem) {
-  if (!item.channel_breakdown.length) return "Нет данных";
-  return item.channel_breakdown.map((entry) => `${entry.channel}: ${entry.count}`).join(", ");
+const AGENT_ICONS: Record<string, IconName> = {
+  intent: "sparkles",
+  tutor: "book",
+  policy: "file",
+  admission: "cap",
+  dean: "calendar",
+  validator: "shield",
+};
+
+function AgentCard({ item }: { item: AgentOverviewItem }) {
+  const state = STATE_META[item.state] ?? { label: item.state, className: "status-pending" };
+  const rate = Math.max(0, Math.min(100, item.success_rate || 0));
+  return (
+    <article className="agent-card">
+      <header className="agent-card__head">
+        <span className="agent-card__icon"><Icon name={AGENT_ICONS[item.key] ?? "cpu"} size={20} /></span>
+        <div className="agent-card__title">
+          <strong>{item.label}</strong>
+          <span className="muted">{item.description || item.name}</span>
+        </div>
+        <span className={`status-pill ${state.className}`}>{state.label}</span>
+      </header>
+
+      <div className="agent-card__metrics">
+        <div><span>Запуски</span><strong>{formatNumber(item.executions)}</strong></div>
+        <div><span>Сессии</span><strong>{formatNumber(item.sessions)}</strong></div>
+        <div><span>Ошибки</span><strong className={item.error_count ? "text-danger" : undefined}>{formatNumber(item.error_count)}</strong></div>
+        <div><span>Прямые ответы</span><strong>{formatNumber(item.direct_response_count)}</strong></div>
+      </div>
+
+      <div className="agent-card__rate">
+        <div className="agent-card__rate-label">
+          <span>Успешность</span>
+          <strong>{item.executions ? `${rate}%` : "—"}</strong>
+        </div>
+        <div className="progress"><span style={{ width: `${item.executions ? rate : 0}%` }} /></div>
+      </div>
+
+      <footer className="agent-card__foot">
+        <span>
+          <Icon name="users" size={13} /> {formatNumber(item.authenticated_count)} авториз. · {formatNumber(item.anonymous_count)} аноним.
+        </span>
+        <span><Icon name="clock" size={13} /> {item.last_used_at ? formatRelative(item.last_used_at) : "не запускался"}</span>
+      </footer>
+      {item.channel_breakdown.length ? (
+        <div className="chip-row">
+          {item.channel_breakdown.map((entry) => (
+            <span key={entry.channel} className="tag tag--muted">{entry.channel}: {formatNumber(entry.count)}</span>
+          ))}
+        </div>
+      ) : null}
+      {item.last_error ? <div className="agent-card__error" title={item.last_error}>{item.last_error}</div> : null}
+    </article>
+  );
 }
 
 export function AgentsDashboard() {
   const [windowDays, setWindowDays] = useState<number>(30);
-
   const agentsQuery = useQuery({
     queryKey: ["agents-overview", windowDays],
     queryFn: () => fetchAgentsOverview(windowDays),
+    refetchInterval: 60_000,
   });
-
   const summary = agentsQuery.data?.summary;
   const items = agentsQuery.data?.items ?? [];
 
   return (
-    <section className="feature-section">
-      <div className="feature-section__header">
-        <div>
-          <p className="eyebrow">Agents</p>
-          <h2>Агенты, метрики и состояние</h2>
-          <p className="muted">Сводка по всем агентам из оркестратора на основе логов исполнения.</p>
-        </div>
-        <span className="feature-section__status">
-          {summary?.active_agents ?? 0} active
-        </span>
-      </div>
-
-      <div className="admin-toolbar">
-        <div className="admin-toolbar__summary">
-          <strong>Все агенты: {summary?.total_agents ?? 0}</strong>
-          <span className="muted">
-            Healthy: {summary?.healthy_agents ?? 0} · Degraded: {summary?.degraded_agents ?? 0} · Idle: {summary?.idle_agents ?? 0}
-          </span>
-        </div>
-
-        <label className="admin-toolbar__control">
-          <span>Окно аналитики</span>
-          <select value={windowDays} onChange={(event) => setWindowDays(Number(event.target.value))}>
+    <div className="stack-lg">
+      <PageHeader
+        eyebrow="Мониторинг"
+        title="ИИ-агенты"
+        description="Нагрузка и надёжность каждого агента пайплайна по журналу выполнения."
+        actions={
+          <div className="segmented" role="group" aria-label="Период">
             {WINDOW_OPTIONS.map((option) => (
-              <option key={option} value={option}>
-                {option} дней
-              </option>
+              <button key={option} type="button" className={windowDays === option ? "is-active" : undefined} onClick={() => setWindowDays(option)}>
+                {option} дн.
+              </button>
             ))}
-          </select>
-        </label>
-      </div>
+          </div>
+        }
+      />
 
-      <div className="analytics-summary-grid">
-        <article className="analytics-summary-card">
-          <span>Активные агенты</span>
-          <strong>{summary?.active_agents ?? 0}</strong>
-        </article>
-        <article className="analytics-summary-card">
-          <span>Healthy</span>
-          <strong>{summary?.healthy_agents ?? 0}</strong>
-        </article>
-        <article className="analytics-summary-card">
-          <span>Degraded</span>
-          <strong>{summary?.degraded_agents ?? 0}</strong>
-        </article>
-        <article className="analytics-summary-card">
-          <span>Idle</span>
-          <strong>{summary?.idle_agents ?? 0}</strong>
-        </article>
+      <div className="stat-grid">
+        <StatCard label="Всего агентов" icon="cpu" value={formatNumber(summary?.total_agents)} />
+        <StatCard label="Активны за период" icon="activity" tone="brand" value={formatNumber(summary?.active_agents)} />
+        <StatCard label="Работают без ошибок" icon="check" tone="success" value={formatNumber(summary?.healthy_agents)} />
+        <StatCard label="С ошибками" icon="alert" tone={summary?.degraded_agents ? "danger" : undefined} value={formatNumber(summary?.degraded_agents)} />
       </div>
 
       {agentsQuery.isLoading ? (
-        <p>Загрузка метрик агентов...</p>
+        <LoadingRows rows={3} height={180} />
       ) : agentsQuery.isError ? (
-        <p className="error">Не удалось загрузить метрики агентов.</p>
+        <Callout tone="danger" title="Не удалось загрузить метрики агентов">{(agentsQuery.error as Error).message}</Callout>
+      ) : !items.length ? (
+        <EmptyState icon="cpu" title="Нет данных" text="Метрики появятся после первых диалогов." />
       ) : (
-        <div className="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>Агент</th>
-                <th>Состояние</th>
-                <th>Метрики</th>
-                <th>Трафик</th>
-                <th>Последняя активность</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((item) => (
-                <tr key={item.key}>
-                  <td>
-                    <div className="doc-name">
-                      <strong>{item.label}</strong>
-                      <small>{item.name}</small>
-                      <small>{item.description || "Описание не задано"}</small>
-                      <small>Тип: {item.kind}</small>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="doc-name">
-                      <span className={`status-pill ${getStateClassName(item.state)}`}>
-                        {item.state}
-                      </span>
-                      <small>Last status: {item.last_status || "-"}</small>
-                      <small>{item.last_error ? `Ошибка: ${item.last_error}` : "Ошибок не зафиксировано"}</small>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="doc-name">
-                      <small>Запуски: {item.executions}</small>
-                      <small>Сессии: {item.sessions}</small>
-                      <small>Успешно: {item.success_count}</small>
-                      <small>Ошибки: {item.error_count}</small>
-                      <small>Success rate: {item.success_rate}%</small>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="doc-name">
-                      <small>Authenticated: {item.authenticated_count}</small>
-                      <small>Anonymous: {item.anonymous_count}</small>
-                      <small>Direct responses: {item.direct_response_count}</small>
-                      <small>Channels: {formatChannels(item)}</small>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="doc-name">
-                      <small>{item.last_used_at ? formatDate(item.last_used_at) : "Нет запусков"}</small>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="agent-grid">
+          {items.map((item) => <AgentCard key={item.key} item={item} />)}
         </div>
       )}
-    </section>
+    </div>
   );
 }

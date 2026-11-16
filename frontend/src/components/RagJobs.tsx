@@ -52,9 +52,9 @@ export function RagJobs() {
                 {jobs.map((job) => (
                   <tr key={job.job_id}>
                     <td>
-                      <div className="doc-name">
+                      <div>
                         {job.document_id ? <Link to={`/rag/${job.document_id}`}><strong>{job.original_file}</strong></Link> : <strong>{job.original_file}</strong>}
-                        <small className="muted">{formatBytes(job.size_bytes)}</small>
+                        <div className="muted cell-sub">{formatBytes(job.size_bytes)}</div>
                       </div>
                     </td>
                     <td><StatusBadge status={job.status} /></td>

@@ -89,7 +89,7 @@ img, svg { display: block; }
 
 .muted { color: var(--text-muted); }
 .error { color: var(--danger); }
-.success, .success-text { color: var(--success); }
+.success { color: var(--success); }
 
 /* ------------------------------------------------------------- buttons */
 button {
@@ -231,28 +231,7 @@ input[type="radio"] { accent-color: var(--brand-solid); }
 
 label { font-size: 0.875rem; }
 
-.file-input,
-.metadata-input,
-.admin-toolbar__control {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-weight: 500;
-  color: var(--text-muted);
-}
-
-.file-input input[type="file"] {
-  padding: 10px;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-md);
-  background: var(--surface-2);
-  cursor: pointer;
-}
-
-/* --------------------------------------------------------------- cards */
-.panel,
-.feature-section,
-.status-card {
+.panel {
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -260,57 +239,6 @@ label { font-size: 0.875rem; }
 }
 
 .panel { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-4); }
-.feature-section { padding: var(--space-6); display: flex; flex-direction: column; gap: var(--space-5); }
-.feature-section > ul { margin: 0; padding-left: 1.2rem; color: var(--text-muted); }
-
-.feature-section__header,
-.section-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-4);
-  flex-wrap: wrap;
-}
-
-.feature-section__header h2,
-.section-header h2 { margin-top: 4px; }
-
-.feature-section__header .muted,
-.section-header .muted { margin-top: 6px; max-width: 70ch; }
-
-.feature-section__status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: var(--radius-full);
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--text-muted);
-  font-size: 0.78rem;
-  font-weight: 550;
-  white-space: nowrap;
-}
-
-.status-card { padding: var(--space-4) var(--space-5); display: flex; flex-direction: column; gap: 6px; }
-
-.status-card__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.actions,
-.table-actions,
-.profile-panel__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  align-items: center;
-}
-
-.upload-grid { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); align-items: end; }
 
 /* --------------------------------------------------------- status pills */
 .status-pill {
@@ -388,42 +316,6 @@ td {
 tbody tr:last-child td { border-bottom: none; }
 tbody tr { transition: background var(--duration) var(--ease); }
 tbody tr:hover { background: color-mix(in srgb, var(--surface-2) 60%, transparent); }
-
-.doc-name { font-weight: 550; color: var(--text); word-break: break-word; }
-.doc-name small, .doc-name .muted { display: block; font-weight: 400; font-size: 0.8rem; }
-
-/* -------------------------------------------------------- admin toolbar */
-.admin-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: var(--space-4);
-}
-
-.admin-toolbar__summary { display: flex; flex-wrap: wrap; gap: var(--space-2); color: var(--text-muted); font-size: 0.875rem; }
-.admin-toolbar__control select,
-.admin-toolbar__control input { min-width: 180px; }
-
-.pagination {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.pagination__status { color: var(--text-muted); font-size: 0.85rem; padding: 0 var(--space-2); }
-
-/* ------------------------------------------------------------- profile */
-.profile-panel__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-}
-
-.profile-panel__logout { color: var(--danger); }
 
 /* ---------------------------------------------------------- utilities */
 .stack { display: flex; flex-direction: column; gap: var(--space-4); }

@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { NavLink, Navigate, useLocation } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchAdmissionInfo, fetchAdmissionPrograms, updateAdmissionInfo } from "../api/admin";
-import { AdmissionApplications } from "./AdmissionApplications";
 import type { AdmissionInfoPayload, AdmissionProgram, AdmissionTechnicalContact } from "../types";
+import { formatNumber } from "../utils/format";
+import { AdmissionApplications } from "./AdmissionApplications";
+import { Callout, Drawer, EmptyState, LoadingRows, PageHeader, Pagination } from "./ui/Admin";
+import { Icon, type IconName } from "./ui/Icon";
 
 const LEVEL_OPTIONS = [
   { value: "bachelor", label: "Бакалавриат" },
@@ -11,959 +14,393 @@ const LEVEL_OPTIONS = [
   { value: "doctorate", label: "Докторантура" },
   { value: "second_higher", label: "Второе высшее" },
 ] as const;
+const LEVEL_LABELS: Record<string, string> = Object.fromEntries(LEVEL_OPTIONS.map((item) => [item.value, item.label]));
 
-const LEVEL_LABELS: Record<string, string> = {
-  bachelor: "Бакалавриат / Bachelor",
-  master: "Магистратура / Master",
-  doctorate: "Докторантура / Doctorate",
-  second_higher: "Второе высшее / Second higher education",
+const SECTIONS: { key: string; label: string; icon: IconName }[] = [
+  { key: "programs", label: "Программы", icon: "cap" },
+  { key: "contacts", label: "Контакты", icon: "phone" },
+  { key: "general", label: "Общее", icon: "settings" },
+  { key: "scholarships", label: "Стипендии", icon: "wallet" },
+  { key: "documents", label: "Документы", icon: "file" },
+  { key: "durations", label: "Сроки обучения", icon: "clock" },
+  { key: "foreign-admission", label: "Иностранцы", icon: "link" },
+  { key: "management", label: "Руководство", icon: "users" },
+  { key: "applications", label: "Заявки", icon: "layers" },
+];
+
+type JsonKey = "scholarships" | "management" | "foreign_admission" | "duration_rules" | "documents";
+const JSON_SECTIONS: Record<string, { key: JsonKey; title: string; description: string }> = {
+  scholarships: { key: "scholarships", title: "Стипендии и гранты", description: "Государственные гранты, скидки и стипендии, о которых рассказывает агент." },
+  management: { key: "management", title: "Руководство", description: "Ректорат и руководители подразделений." },
+  "foreign-admission": { key: "foreign_admission", title: "Приём иностранных граждан", description: "Правила и документы для иностранных абитуриентов." },
+  durations: { key: "duration_rules", title: "Сроки обучения", description: "Правила расчёта длительности обучения по уровням и базам." },
+  documents: { key: "documents", title: "Документы для поступления", description: "Списки документов по уровням обучения." },
 };
+const JSON_KEYS: JsonKey[] = ["scholarships", "management", "foreign_admission", "duration_rules", "documents"];
 
-const ADMISSION_SECTIONS = [
-  { key: "general", label: "Общее" },
-  { key: "contacts", label: "Контакты" },
-  { key: "scholarships", label: "Стипендии" },
-  { key: "management", label: "Руководство" },
-  { key: "foreign-admission", label: "Иностранцы" },
-  { key: "programs", label: "Программы" },
-  { key: "durations", label: "Сроки" },
-  { key: "documents", label: "Документы" },
-  { key: "applications", label: "Заявки" },
-] as const;
+const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
+const linesToArray = (value: string) => value.split(/\r?\n/).map((item) => item.trim()).filter(Boolean);
+const arrayToLines = (value?: string[]) => (value ?? []).join("\n");
+const asText = (value: unknown) => (typeof value === "string" ? value : value == null ? "" : JSON.stringify(value));
+const toNumber = (value: string) => (value === "" ? null : Number(value));
 
-type AdmissionSectionKey = (typeof ADMISSION_SECTIONS)[number]["key"];
-const PROGRAMS_PAGE_SIZES = [4, 6, 8, 12] as const;
-
-function clonePayload(payload: AdmissionInfoPayload): AdmissionInfoPayload {
-  return JSON.parse(JSON.stringify(payload)) as AdmissionInfoPayload;
-}
-
-function linesToArray(value: string): string[] {
-  return value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function arrayToLines(value: string[] | undefined): string {
-  return (value ?? []).join("\n");
-}
-
-function parseJsonSection(label: string, value: string): Record<string, unknown> {
-  try {
-    const parsed = JSON.parse(value);
-    if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") {
-      throw new Error(`${label} должен быть JSON-объектом.`);
-    }
-    return parsed as Record<string, unknown>;
-  } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
-    throw new Error(`${label}: ${detail}`);
-  }
-}
-
-function createEmptyProgram(): AdmissionProgram {
+function emptyProgram(): AdmissionProgram {
   return {
-    id: "",
-    name: "",
-    name_ru: "",
-    name_kk: "",
-    name_en: "",
-    profile_subject_1: "",
-    profile_subject_2: "",
-    aliases: [],
-    level: "bachelor",
-    duration: "",
-    tuition: {
-      amount: null,
-      period: "",
-    },
-    passing_score: {
-      gop_code: "",
-      grant: null,
-      grant_full: null,
-      grant_short: null,
-      paid: null,
-      exam: "",
-      notes: [],
-    },
+    id: "", name: "", name_ru: "", name_kk: "", name_en: "", profile_subject_1: "", profile_subject_2: "",
+    aliases: [], level: "bachelor", duration: "", tuition: { amount: null, period: "" },
+    passing_score: { gop_code: "", grant: null, grant_full: null, grant_short: null, paid: null, exam: "", notes: [] },
     source: "",
   };
 }
 
-function createEmptyTechnicalContact(): AdmissionTechnicalContact {
-  return {
-    name: "",
-    phone: "",
-    note: "",
-  };
+function parseJsonObject(label: string, value: string): Record<string, unknown> {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch (error) {
+    throw new Error(`${label}: ${(error as Error).message}`);
+  }
+  if (!parsed || Array.isArray(parsed) || typeof parsed !== "object") throw new Error(`${label}: должен быть JSON-объектом.`);
+  return parsed as Record<string, unknown>;
 }
 
-function formatProgramLevel(level: string | null | undefined): string {
-  if (!level) return "—";
-  return LEVEL_LABELS[level] ?? level;
-}
-
-function formatCompactNumber(value: number | null | undefined): string {
-  if (value == null || Number.isNaN(value)) return "—";
-  return new Intl.NumberFormat("ru-RU").format(value);
-}
-
-function ProgramEditorFields({
-  program,
-  index,
-  onChange,
-  onRemove,
-}: {
-  program: AdmissionProgram;
-  index: number;
-  onChange: (index: number, nextValue: AdmissionProgram) => void;
-  onRemove?: (index: number) => void;
-}) {
-  const updateField = (field: keyof AdmissionProgram, value: unknown) => {
-    onChange(index, { ...program, [field]: value });
-  };
-
-  const updateTuitionField = (field: string, value: unknown) => {
-    onChange(index, {
-      ...program,
-      tuition: {
-        ...program.tuition,
-        [field]: value,
-      },
-    });
-  };
-
-  const updatePassingField = (field: string, value: unknown) => {
-    onChange(index, {
-      ...program,
-      passing_score: {
-        ...program.passing_score,
-        [field]: value,
-      },
-    });
-  };
-
+function Field({ label, hint, wide, children }: { label: string; hint?: string; wide?: boolean; children: ReactNode }) {
   return (
-    <>
-      <div className="admission-editor__program-header">
-        <div>
-          <strong>{program.name || `Программа ${index + 1}`}</strong>
-          <p className="muted">Карточка специальности</p>
-        </div>
-        <button type="button" className="ghost" onClick={() => onRemove?.(index)} disabled={!onRemove}>
-          Удалить
-        </button>
-      </div>
-
-      <div className="admission-editor__grid">
-        <label>
-          <span>ID</span>
-          <input value={program.id ?? ""} onChange={(event) => updateField("id", event.target.value)} />
-        </label>
-        <label>
-          <span>Уровень</span>
-          <select value={program.level} onChange={(event) => updateField("level", event.target.value)}>
-            {LEVEL_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          <span>Основное название</span>
-          <input value={program.name} onChange={(event) => updateField("name", event.target.value)} />
-        </label>
-        <label>
-          <span>Название RU</span>
-          <input value={program.name_ru ?? ""} onChange={(event) => updateField("name_ru", event.target.value)} />
-        </label>
-        <label>
-          <span>Название KK</span>
-          <input value={program.name_kk ?? ""} onChange={(event) => updateField("name_kk", event.target.value)} />
-        </label>
-        <label>
-          <span>Название EN</span>
-          <input value={program.name_en ?? ""} onChange={(event) => updateField("name_en", event.target.value)} />
-        </label>
-        <label>
-          <span>Профильный предмет 1</span>
-          <input
-            value={program.profile_subject_1 ?? ""}
-            onChange={(event) => updateField("profile_subject_1", event.target.value)}
-          />
-        </label>
-        <label>
-          <span>Профильный предмет 2</span>
-          <input
-            value={program.profile_subject_2 ?? ""}
-            onChange={(event) => updateField("profile_subject_2", event.target.value)}
-          />
-        </label>
-        <label>
-          <span>Источник (URL)</span>
-          <input value={program.source ?? ""} onChange={(event) => updateField("source", event.target.value)} />
-        </label>
-      </div>
-
-      <label>
-        <span>Синонимы / aliases, по одному на строку</span>
-        <textarea
-          rows={4}
-          value={arrayToLines(program.aliases)}
-          onChange={(event) => updateField("aliases", linesToArray(event.target.value))}
-        />
-      </label>
-
-      <label>
-        <span>Длительность обучения</span>
-        <textarea
-          rows={3}
-          value={typeof program.duration === "string" ? program.duration : JSON.stringify(program.duration, null, 2)}
-          onChange={(event) => updateField("duration", event.target.value)}
-        />
-      </label>
-
-      <div className="admission-editor__grid">
-        <label>
-          <span>Стоимость</span>
-          <input
-            type="number"
-            value={program.tuition.amount ?? ""}
-            onChange={(event) => updateTuitionField("amount", event.target.value === "" ? null : Number(event.target.value))}
-          />
-        </label>
-        <label>
-          <span>Период оплаты</span>
-          <input
-            value={typeof program.tuition.period === "string" ? program.tuition.period : JSON.stringify(program.tuition.period ?? "", null, 2)}
-            onChange={(event) => updateTuitionField("period", event.target.value)}
-          />
-        </label>
-        <label>
-          <span>ГОП код</span>
-          <input
-            value={program.passing_score.gop_code ?? ""}
-            onChange={(event) => updatePassingField("gop_code", event.target.value)}
-          />
-        </label>
-        <label>
-          <span>Экзамен</span>
-          <input
-            value={typeof program.passing_score.exam === "string" ? program.passing_score.exam : JSON.stringify(program.passing_score.exam ?? "", null, 2)}
-            onChange={(event) => updatePassingField("exam", event.target.value)}
-          />
-        </label>
-        <label>
-          <span>Грант полный курс</span>
-          <input
-            type="number"
-            value={program.passing_score.grant_full ?? ""}
-            onChange={(event) => updatePassingField("grant_full", event.target.value === "" ? null : Number(event.target.value))}
-          />
-        </label>
-        <label>
-          <span>Грант</span>
-          <input
-            type="number"
-            value={program.passing_score.grant ?? ""}
-            onChange={(event) => updatePassingField("grant", event.target.value === "" ? null : Number(event.target.value))}
-          />
-        </label>
-        <label>
-          <span>Грант сокращенный курс</span>
-          <input
-            type="number"
-            value={program.passing_score.grant_short ?? ""}
-            onChange={(event) => updatePassingField("grant_short", event.target.value === "" ? null : Number(event.target.value))}
-          />
-        </label>
-        <label>
-          <span>Платное</span>
-          <input
-            type="number"
-            value={program.passing_score.paid ?? ""}
-            onChange={(event) => updatePassingField("paid", event.target.value === "" ? null : Number(event.target.value))}
-          />
-        </label>
-      </div>
-
-      <label>
-        <span>Примечания к проходным баллам, по одному на строку</span>
-        <textarea
-          rows={4}
-          value={arrayToLines(program.passing_score.notes)}
-          onChange={(event) => updatePassingField("notes", linesToArray(event.target.value))}
-        />
-      </label>
-    </>
+    <label className={`field${wide ? " form-grid__wide" : ""}`}>
+      <span className="field__label">{label}</span>
+      {children}
+      {hint ? <span className="field__hint">{hint}</span> : null}
+    </label>
   );
 }
 
-function TechnicalContactCard({
-  contact,
-  index,
-  onChange,
-  onRemove,
-}: {
-  contact: AdmissionTechnicalContact;
-  index: number;
-  onChange: (index: number, nextValue: AdmissionTechnicalContact) => void;
-  onRemove: (index: number) => void;
-}) {
+/* ------------------------------------------------------------ program */
+function ProgramForm({ program, onChange }: { program: AdmissionProgram; onChange: (next: AdmissionProgram) => void }) {
+  const set = (patch: Partial<AdmissionProgram>) => onChange({ ...program, ...patch });
+  const setTuition = (patch: Partial<AdmissionProgram["tuition"]>) => set({ tuition: { ...program.tuition, ...patch } });
+  const setScore = (patch: Partial<AdmissionProgram["passing_score"]>) => set({ passing_score: { ...program.passing_score, ...patch } });
+
   return (
-    <article className="admission-editor__tech-card">
-      <div className="admission-editor__program-header">
-        <strong>Тех. контакт {index + 1}</strong>
-        <button type="button" className="ghost" onClick={() => onRemove(index)}>
-          Удалить
-        </button>
-      </div>
-      <div className="admission-editor__grid">
-        <label>
-          <span>Имя</span>
-          <input
-            value={contact.name}
-            onChange={(event) => onChange(index, { ...contact, name: event.target.value })}
-          />
-        </label>
-        <label>
-          <span>Телефон</span>
-          <input
-            value={contact.phone}
-            onChange={(event) => onChange(index, { ...contact, phone: event.target.value })}
-          />
-        </label>
-      </div>
-      <label>
-        <span>Примечание</span>
-        <textarea
-          rows={2}
-          value={contact.note ?? ""}
-          onChange={(event) => onChange(index, { ...contact, note: event.target.value })}
-        />
-      </label>
-    </article>
+    <div className="stack-lg">
+      <section className="form-section">
+        <h4>Основное</h4>
+        <div className="form-grid">
+          <Field label="Название" wide><input value={program.name} onChange={(e) => set({ name: e.target.value })} /></Field>
+          <Field label="Уровень">
+            <select value={program.level} onChange={(e) => set({ level: e.target.value })}>
+              {LEVEL_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
+          </Field>
+          <Field label="ID"><input value={program.id ?? ""} onChange={(e) => set({ id: e.target.value })} /></Field>
+          <Field label="Название (RU)"><input value={program.name_ru ?? ""} onChange={(e) => set({ name_ru: e.target.value })} /></Field>
+          <Field label="Название (KK)"><input value={program.name_kk ?? ""} onChange={(e) => set({ name_kk: e.target.value })} /></Field>
+          <Field label="Название (EN)"><input value={program.name_en ?? ""} onChange={(e) => set({ name_en: e.target.value })} /></Field>
+          <Field label="Источник (URL)"><input value={program.source ?? ""} onChange={(e) => set({ source: e.target.value })} placeholder="https://" /></Field>
+          <Field label="Синонимы" hint="По одному на строку — так абитуриенты могут называть программу" wide>
+            <textarea rows={3} value={arrayToLines(program.aliases)} onChange={(e) => set({ aliases: linesToArray(e.target.value) })} />
+          </Field>
+        </div>
+      </section>
+
+      <section className="form-section">
+        <h4>Стоимость и сроки</h4>
+        <div className="form-grid">
+          <Field label="Стоимость, ₸"><input type="number" value={program.tuition.amount ?? ""} onChange={(e) => setTuition({ amount: toNumber(e.target.value) })} /></Field>
+          <Field label="Период оплаты"><input value={asText(program.tuition.period)} onChange={(e) => setTuition({ period: e.target.value })} placeholder="в год" /></Field>
+          <Field label="Длительность обучения" wide><input value={asText(program.duration)} onChange={(e) => set({ duration: e.target.value })} placeholder="4 года" /></Field>
+        </div>
+      </section>
+
+      <section className="form-section">
+        <h4>Поступление</h4>
+        <div className="form-grid form-grid--3">
+          <Field label="Профильный предмет 1"><input value={program.profile_subject_1 ?? ""} onChange={(e) => set({ profile_subject_1: e.target.value })} /></Field>
+          <Field label="Профильный предмет 2"><input value={program.profile_subject_2 ?? ""} onChange={(e) => set({ profile_subject_2: e.target.value })} /></Field>
+          <Field label="Код ГОП"><input value={program.passing_score.gop_code ?? ""} onChange={(e) => setScore({ gop_code: e.target.value })} /></Field>
+          <Field label="Грант"><input type="number" value={program.passing_score.grant ?? ""} onChange={(e) => setScore({ grant: toNumber(e.target.value) })} /></Field>
+          <Field label="Грант (полный курс)"><input type="number" value={program.passing_score.grant_full ?? ""} onChange={(e) => setScore({ grant_full: toNumber(e.target.value) })} /></Field>
+          <Field label="Грант (сокращённый)"><input type="number" value={program.passing_score.grant_short ?? ""} onChange={(e) => setScore({ grant_short: toNumber(e.target.value) })} /></Field>
+          <Field label="Платное обучение"><input type="number" value={program.passing_score.paid ?? ""} onChange={(e) => setScore({ paid: toNumber(e.target.value) })} /></Field>
+          <Field label="Экзамен"><input value={asText(program.passing_score.exam)} onChange={(e) => setScore({ exam: e.target.value })} /></Field>
+          <Field label="Примечания к баллам" hint="По одному на строку" wide>
+            <textarea rows={3} value={arrayToLines(program.passing_score.notes)} onChange={(e) => setScore({ notes: linesToArray(e.target.value) })} />
+          </Field>
+        </div>
+      </section>
+    </div>
   );
 }
 
-function SectionShell({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description: string;
-  children: ReactNode;
-}) {
+function ProgramsSection({ programs, onChange }: { programs: AdmissionProgram[]; onChange: (programs: AdmissionProgram[]) => void }) {
+  const [search, setSearch] = useState("");
+  const [level, setLevel] = useState("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [editing, setEditing] = useState<number | null>(null);
+
+  useEffect(() => setPage(1), [search, level, pageSize]);
+
+  // Filtering happens on the server (it knows aliases / translations); rows map back by index.
+  const query = useQuery({
+    queryKey: ["admission-programs", page, pageSize, level, search],
+    queryFn: () => fetchAdmissionPrograms(page, pageSize, level, search),
+    placeholderData: (previous) => previous,
+  });
+  const rows = useMemo(
+    () => (query.data?.items ?? []).map(({ program_index }) => ({ index: program_index, program: programs[program_index] })).filter((row) => row.program),
+    [programs, query.data],
+  );
+  const counts = useMemo(() => {
+    const result: Record<string, number> = {};
+    for (const program of programs) result[program.level] = (result[program.level] ?? 0) + 1;
+    return result;
+  }, [programs]);
+
+  const update = (index: number, next: AdmissionProgram) => onChange(programs.map((item, i) => (i === index ? next : item)));
+  const remove = (index: number) => {
+    const program = programs[index];
+    if (window.confirm(`Удалить программу «${program?.name || "без названия"}»?`)) {
+      onChange(programs.filter((_, i) => i !== index));
+      setEditing(null);
+    }
+  };
+
   return (
-    <section className="feature-section">
-      <div className="feature-section__header">
+    <section className="panel">
+      <div className="panel__head">
         <div>
-          <p className="eyebrow">Admissions</p>
-          <h2>{title}</h2>
-          <p className="muted">{description}</p>
+          <h3>Образовательные программы</h3>
+          <p className="muted">Цены, проходные баллы и профильные предметы, которые агент называет абитуриентам.</p>
+        </div>
+        <button type="button" className="primary" onClick={() => { onChange([...programs, emptyProgram()]); setEditing(programs.length); }}>
+          <Icon name="plus" size={16} /> Добавить программу
+        </button>
+      </div>
+
+      <div className="toolbar">
+        <label className="toolbar__search">
+          <Icon name="search" size={16} />
+          <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Название, ID, синоним, код ГОП" />
+        </label>
+        <div className="segmented" role="group" aria-label="Уровень">
+          <button type="button" className={level === "all" ? "is-active" : undefined} onClick={() => setLevel("all")}>Все · {programs.length}</button>
+          {LEVEL_OPTIONS.filter((option) => counts[option.value]).map((option) => (
+            <button key={option.value} type="button" className={level === option.value ? "is-active" : undefined} onClick={() => setLevel(option.value)}>
+              {option.label} · {counts[option.value]}
+            </button>
+          ))}
         </div>
       </div>
-      <div className="panel admission-editor">{children}</div>
+
+      {query.isLoading ? (
+        <LoadingRows rows={5} />
+      ) : query.isError ? (
+        <Callout tone="danger" title="Не удалось загрузить программы">{(query.error as Error).message}</Callout>
+      ) : !rows.length ? (
+        <EmptyState icon="cap" title="Программы не найдены" text="Измените фильтр или добавьте программу." />
+      ) : (
+        <>
+          <div className="table-wrapper">
+            <table className="click-table">
+              <thead>
+                <tr>
+                  <th>Программа</th>
+                  <th>Уровень</th>
+                  <th className="num">Стоимость</th>
+                  <th className="num">Проходной балл</th>
+                  <th aria-label="Действия" />
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map(({ program, index }) => {
+                  const score = program.passing_score.grant_full ?? program.passing_score.grant ?? program.passing_score.paid;
+                  return (
+                    <tr key={`${program.id}-${index}`} onClick={() => setEditing(index)}>
+                      <td>
+                        <strong>{program.name || "Без названия"}</strong>
+                        <div className="muted cell-sub">
+                          {[program.passing_score.gop_code, program.profile_subject_1 && `${program.profile_subject_1} + ${program.profile_subject_2 || "—"}`].filter(Boolean).join(" · ") || "—"}
+                        </div>
+                      </td>
+                      <td><span className="tag">{LEVEL_LABELS[program.level] ?? program.level}</span></td>
+                      <td className="num nowrap">
+                        {program.tuition.amount != null ? `${formatNumber(program.tuition.amount)} ₸` : "—"}
+                        {program.tuition.period ? <div className="muted cell-sub">{asText(program.tuition.period)}</div> : null}
+                      </td>
+                      <td className="num">{score != null ? formatNumber(score) : "—"}</td>
+                      <td>
+                        <div className="row-actions">
+                          <button type="button" className="icon-button" aria-label="Изменить" onClick={(e) => { e.stopPropagation(); setEditing(index); }}><Icon name="edit" size={16} /></button>
+                          <button type="button" className="icon-button icon-button--danger" aria-label="Удалить" onClick={(e) => { e.stopPropagation(); remove(index); }}><Icon name="trash" size={16} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={page} pages={query.data?.pages} onChange={setPage} total={query.data?.total} perPage={pageSize} perPageOptions={[10, 20, 50]} onPerPageChange={setPageSize} />
+        </>
+      )}
+
+      {editing !== null && programs[editing] ? (
+        <Drawer title={programs[editing].name || "Новая программа"} subtitle="Изменения применятся после нажатия «Сохранить» внизу страницы" onClose={() => setEditing(null)} width={760}>
+          <ProgramForm program={programs[editing]} onChange={(next) => update(editing, next)} />
+          <div className="drawer__foot">
+            <button type="button" className="ghost btn--danger" onClick={() => remove(editing)}><Icon name="trash" size={16} /> Удалить</button>
+            <button type="button" className="primary" onClick={() => setEditing(null)}>Готово</button>
+          </div>
+        </Drawer>
+      ) : null}
     </section>
   );
 }
 
-function GeneralSection({
-  formState,
-  setFormState,
-}: {
-  formState: AdmissionInfoPayload;
-  setFormState: Dispatch<SetStateAction<AdmissionInfoPayload | null>>;
-}) {
-  return (
-    <SectionShell
-      title="Общие данные"
-      description="Базовая информация о вузе и служебные поля admission_info.json."
-    >
-      <div className="admission-editor__grid">
-        <label>
-          <span>Учреждение</span>
-          <input
-            value={formState.institution}
-            onChange={(event) => setFormState((current) => current ? { ...current, institution: event.target.value } : current)}
-          />
-        </label>
-        <label>
-          <span>Валюта</span>
-          <input
-            value={formState.currency}
-            onChange={(event) => setFormState((current) => current ? { ...current, currency: event.target.value } : current)}
-          />
-        </label>
-        <label>
-          <span>Последнее обновление</span>
-          <input value={formState.last_updated ?? ""} readOnly />
-        </label>
-      </div>
-    </SectionShell>
-  );
-}
-
-function ContactsSection({
-  formState,
-  updateContacts,
-  updateTechnicalContact,
-  removeTechnicalContact,
-}: {
-  formState: AdmissionInfoPayload;
-  updateContacts: (field: string, value: unknown) => void;
-  updateTechnicalContact: (index: number, nextValue: AdmissionTechnicalContact) => void;
-  removeTechnicalContact: (index: number) => void;
-}) {
-  return (
-    <SectionShell
-      title="Контакты"
-      description="Отдельная страница для контактов приемной комиссии и технических контактов."
-    >
-      <div className="admission-editor__grid">
-        <label>
-          <span>Отдел</span>
-          <input value={formState.contacts.department ?? ""} onChange={(event) => updateContacts("department", event.target.value)} />
-        </label>
-        <label>
-          <span>Сайт</span>
-          <input value={String(formState.contacts.website ?? "")} onChange={(event) => updateContacts("website", event.target.value)} />
-        </label>
-      </div>
-
-      <label>
-        <span>Адрес</span>
-        <textarea rows={3} value={formState.contacts.address ?? ""} onChange={(event) => updateContacts("address", event.target.value)} />
-      </label>
-
-      <label>
-        <span>Часы работы</span>
-        <textarea rows={2} value={formState.contacts.working_hours ?? ""} onChange={(event) => updateContacts("working_hours", event.target.value)} />
-      </label>
-
-      <div className="admission-editor__grid">
-        <label>
-          <span>Телефоны, по одному на строку</span>
-          <textarea
-            rows={4}
-            value={arrayToLines(formState.contacts.phone)}
-            onChange={(event) => updateContacts("phone", linesToArray(event.target.value))}
-          />
-        </label>
-        <label>
-          <span>Email, по одному на строку</span>
-          <textarea
-            rows={4}
-            value={arrayToLines(formState.contacts.email)}
-            onChange={(event) => updateContacts("email", linesToArray(event.target.value))}
-          />
-        </label>
-      </div>
-
-      <div className="admission-editor__section-header">
-        <strong>Технические контакты</strong>
-        <button
-          type="button"
-          className="ghost"
-          onClick={() => updateContacts("technical_contacts", [...(formState.contacts.technical_contacts ?? []), createEmptyTechnicalContact()])}
-        >
-          Добавить контакт
-        </button>
-      </div>
-
-      <div className="admission-editor__stack">
-        {(formState.contacts.technical_contacts ?? []).map((contact, index) => (
-          <TechnicalContactCard
-            key={`${contact.name}-${index}`}
-            contact={contact}
-            index={index}
-            onChange={updateTechnicalContact}
-            onRemove={removeTechnicalContact}
-          />
-        ))}
-      </div>
-    </SectionShell>
-  );
-}
-
-function ProgramsSection({
-  programs,
-  updateProgram,
-  removeProgram,
-  addProgram,
-}: {
-  programs: AdmissionProgram[];
-  updateProgram: (index: number, nextValue: AdmissionProgram) => void;
-  removeProgram: (index: number) => void;
-  addProgram: () => void;
-}) {
-  const [searchValue, setSearchValue] = useState("");
-  const [levelFilter, setLevelFilter] = useState<string>("all");
-  const [pageSize, setPageSize] = useState<number>(6);
-  const [page, setPage] = useState<number>(1);
-  const [editingIndex, setEditingIndex] = useState<number | null>(null);
-
-  useEffect(() => {
-    setPage(1);
-  }, [levelFilter, pageSize, searchValue]);
-
-  useEffect(() => {
-    if (editingIndex == null) return;
-    if (editingIndex >= programs.length) {
-      setEditingIndex(programs.length ? programs.length - 1 : null);
-    }
-  }, [editingIndex, programs.length]);
-
-  const editingProgramIndex = editingIndex ?? 0;
-  const editingProgram = editingIndex != null ? programs[editingProgramIndex] : null;
-
-  const programsQuery = useQuery({
-    queryKey: ["admission-programs", page, pageSize, levelFilter, searchValue],
-    queryFn: () => fetchAdmissionPrograms(page, pageSize, levelFilter, searchValue),
-    placeholderData: (previousData) => previousData,
-  });
-
-  const pageCount = Math.max(1, programsQuery.data?.pages ?? 1);
-  const currentPage = Math.min(page, pageCount);
-
-  useEffect(() => {
-    if (page > pageCount) {
-      setPage(pageCount);
-    }
-  }, [page, pageCount]);
-
-  const paginatedPrograms = useMemo(
-    () =>
-      (programsQuery.data?.items ?? [])
-        .map(({ program_index }) => ({
-          index: program_index,
-          program: programs[program_index],
-        }))
-        .filter((item) => Boolean(item.program)),
-    [programs, programsQuery.data],
-  );
-
+/* ----------------------------------------------------------- contacts */
+function ContactsSection({ contacts, onChange }: { contacts: AdmissionInfoPayload["contacts"]; onChange: (patch: Partial<AdmissionInfoPayload["contacts"]>) => void }) {
+  const technical: AdmissionTechnicalContact[] = contacts.technical_contacts ?? [];
+  const setTechnical = (next: AdmissionTechnicalContact[]) => onChange({ technical_contacts: next });
   return (
     <>
-      <div className="admission-editor__section-header admission-editor__program-toolbar">
-        <div className="admission-editor__program-toolbar-copy">
-          <strong>Programs</strong>
-          <p className="muted">Bright table, backend filters, modal editing.</p>
+      <section className="panel">
+        <h3>Приёмная комиссия</h3>
+        <div className="form-grid">
+          <Field label="Отдел"><input value={contacts.department ?? ""} onChange={(e) => onChange({ department: e.target.value })} /></Field>
+          <Field label="Сайт"><input value={asText(contacts.website)} onChange={(e) => onChange({ website: e.target.value })} placeholder="https://" /></Field>
+          <Field label="Адрес" wide><textarea rows={2} value={contacts.address ?? ""} onChange={(e) => onChange({ address: e.target.value })} /></Field>
+          <Field label="Часы работы" wide><input value={contacts.working_hours ?? ""} onChange={(e) => onChange({ working_hours: e.target.value })} placeholder="Пн–Пт 9:00–18:00" /></Field>
+          <Field label="Телефоны" hint="По одному на строку"><textarea rows={3} value={arrayToLines(contacts.phone)} onChange={(e) => onChange({ phone: linesToArray(e.target.value) })} /></Field>
+          <Field label="Email" hint="По одному на строку"><textarea rows={3} value={arrayToLines(contacts.email)} onChange={(e) => onChange({ email: linesToArray(e.target.value) })} /></Field>
         </div>
-        <button
-          type="button"
-          className="ghost"
-          onClick={() => {
-            addProgram();
-            setEditingIndex(programs.length);
-          }}
-        >
-          Add program
-        </button>
-      </div>
+      </section>
 
-      <div className="admission-editor__program-filters">
-        <label className="admission-editor__program-search">
-          <span>Search</span>
-          <input
-            type="search"
-            value={searchValue}
-            onChange={(event) => setSearchValue(event.target.value)}
-            placeholder="Name, ID, alias, GOP..."
-          />
-        </label>
-        <div className="admission-editor__program-levels" role="tablist" aria-label="Program level filter">
-          <button
-            type="button"
-            className={`admission-editor__filter-chip${levelFilter === "all" ? " is-active" : ""}`}
-            onClick={() => setLevelFilter("all")}
-          >
-            All
+      <section className="panel">
+        <div className="panel__head">
+          <div>
+            <h3>Технические контакты</h3>
+            <p className="muted">Кому звонить по проблемам с подачей документов и личным кабинетом.</p>
+          </div>
+          <button type="button" className="ghost" onClick={() => setTechnical([...technical, { name: "", phone: "", note: "" }])}>
+            <Icon name="plus" size={16} /> Добавить
           </button>
-          {LEVEL_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              className={`admission-editor__filter-chip${levelFilter === option.value ? " is-active" : ""}`}
-              onClick={() => setLevelFilter(option.value)}
-            >
-              {option.label}
-            </button>
-          ))}
         </div>
-        <div className="admission-editor__program-meta">
-          <label>
-            <span>Per page</span>
-            <select value={pageSize} onChange={(event) => setPageSize(Number(event.target.value))}>
-              {PROGRAMS_PAGE_SIZES.map((size) => (
-                <option key={size} value={size}>
-                  {size}
-                </option>
-              ))}
-            </select>
-          </label>
-          <div className="admission-editor__program-stats">
-            <strong>{programsQuery.data?.total ?? 0}</strong>
-            <span>server matches</span>
-          </div>
-        </div>
-      </div>
-
-      {programsQuery.isLoading ? (
-        <div className="admission-editor__empty-state">
-          <strong>Loading programs</strong>
-          <p className="muted">Fetching filtered results from the backend.</p>
-        </div>
-      ) : programsQuery.isError ? (
-        <div className="admission-editor__empty-state">
-          <strong>Failed to load programs</strong>
-          <p className="muted">Try changing the filter or refreshing the page.</p>
-        </div>
-      ) : paginatedPrograms.length ? (
-        <div className="admission-editor__program-table-wrap">
-          <table className="admission-editor__program-table">
-            <thead>
-              <tr>
-                <th>Program</th>
-                <th>ID / GOP</th>
-                <th>Степень</th>
-                <th>Источник</th>
-                <th>Tuition</th>
-                <th>Passing score</th>
-                <th className="admission-editor__program-actions-head">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paginatedPrograms.map(({ program, index }) => (
-                <tr key={`${program.id ?? program.name}-${index}`}>
-                  <td data-label="Program">
-                    <div className="admission-editor__program-cell-main">
-                      <strong>{program.name || `Program ${index + 1}`}</strong>
-                      <span>{program.name_ru || program.name_kk || program.name_en || "No alternate name"}</span>
-                    </div>
-                  </td>
-                  <td data-label="ID / GOP">
-                    <div className="admission-editor__program-cell-meta">
-                      <strong>{program.id || "-"}</strong>
-                      <span>{program.passing_score.gop_code || "GOP not set"}</span>
-                    </div>
-                  </td>
-                  <td data-label="Степень">{formatProgramLevel(program.level)}</td>
-                  <td data-label="Источник">
-                    {program.source ? (
-                      <a href={program.source} target="_blank" rel="noreferrer">
-                        {program.source}
-                      </a>
-                    ) : (
-                      "-"
-                    )}
-                  </td>
-                  <td data-label="Tuition">
-                    {program.tuition.amount != null
-                      ? `${formatCompactNumber(program.tuition.amount)}${program.tuition.period ? ` ? ${String(program.tuition.period)}` : ""}`
-                      : "-"}
-                  </td>
-                  <td data-label="Passing score">
-                    {program.passing_score.paid != null
-                      ? `Paid: ${formatCompactNumber(program.passing_score.paid)}`
-                      : program.passing_score.grant_full != null
-                        ? `Grant: ${formatCompactNumber(program.passing_score.grant_full)}`
-                        : program.passing_score.grant != null
-                          ? `Grant: ${formatCompactNumber(program.passing_score.grant)}`
-                        : "-"}
-                  </td>
-                  <td data-label="Actions">
-                    <div className="admission-editor__program-row-actions">
-                      <button type="button" className="ghost" onClick={() => setEditingIndex(index)}>
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="ghost danger"
-                        onClick={() => {
-                          if (editingIndex === index) {
-                            setEditingIndex(null);
-                          }
-                          removeProgram(index);
-                        }}
-                      >
-                        Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="admission-editor__stack">
-          <div className="admission-editor__empty-state">
-            <strong>No programs found</strong>
-            <p className="muted">Adjust backend filters or add a new program.</p>
-          </div>
-        </div>
-      )}
-      {(programsQuery.data?.total ?? 0) > 0 ? (
-        <div className="admission-editor__pagination">
-          <div className="admission-editor__pagination-status">
-            Showing {(currentPage - 1) * pageSize + 1}-{Math.min(currentPage * pageSize, programsQuery.data?.total ?? 0)} of {programsQuery.data?.total ?? 0}
-          </div>
-          <div className="admission-editor__pagination-controls">
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => setPage((current) => Math.max(1, current - 1))}
-              disabled={currentPage === 1}
-            >
-              Prev
-            </button>
-            {Array.from({ length: pageCount }, (_, index) => index + 1)
-              .slice(Math.max(0, currentPage - 3), Math.max(0, currentPage - 3) + 5)
-              .map((pageNumber) => (
-                <button
-                  key={pageNumber}
-                  type="button"
-                  className={`admission-editor__page-chip${pageNumber === currentPage ? " is-active" : ""}`}
-                  onClick={() => setPage(pageNumber)}
-                >
-                  {pageNumber}
-                </button>
-              ))}
-            <button
-              type="button"
-              className="ghost"
-              onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
-              disabled={currentPage === pageCount}
-            >
-              Next
-            </button>
-          </div>
-        </div>
-      ) : null}
-
-      {editingProgram ? (
-        <div
-          className="chat-properties-modal__overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Program editing"
-          onMouseDown={(event) => {
-            if (event.target === event.currentTarget) {
-              setEditingIndex(null);
-            }
-          }}
-        >
-          <div className="chat-properties-modal__panel admission-editor__program-modal">
-            <div className="chat-properties-modal__header">
-              <div>
-                <h3>{editingProgram.name || `Program ${editingProgramIndex + 1}`}</h3>
-                <p className="muted">Edit the full card in a separate modal.</p>
+        {!technical.length ? (
+          <EmptyState icon="phone" title="Нет технических контактов" />
+        ) : (
+          <div className="stack">
+            {technical.map((contact, index) => (
+              <div key={index} className="contact-row">
+                <input value={contact.name} onChange={(e) => setTechnical(technical.map((c, i) => (i === index ? { ...c, name: e.target.value } : c)))} placeholder="Имя" aria-label="Имя" />
+                <input value={contact.phone} onChange={(e) => setTechnical(technical.map((c, i) => (i === index ? { ...c, phone: e.target.value } : c)))} placeholder="Телефон" aria-label="Телефон" />
+                <input value={contact.note ?? ""} onChange={(e) => setTechnical(technical.map((c, i) => (i === index ? { ...c, note: e.target.value } : c)))} placeholder="Примечание" aria-label="Примечание" />
+                <button type="button" className="icon-button icon-button--danger" aria-label="Удалить" onClick={() => setTechnical(technical.filter((_, i) => i !== index))}><Icon name="trash" size={16} /></button>
               </div>
-              <button
-                type="button"
-                className="icon-button icon-button--ghost"
-                onClick={() => setEditingIndex(null)}
-                aria-label="Close"
-              >
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <line x1="6" y1="6" x2="18" y2="18" />
-                  <line x1="18" y1="6" x2="6" y2="18" />
-                </svg>
-              </button>
-            </div>
-
-            <div className="admission-editor admission-editor__program-modal-body">
-              <ProgramEditorFields
-                program={editingProgram}
-                index={editingProgramIndex}
-                onChange={updateProgram}
-                onRemove={(index) => {
-                  removeProgram(index);
-                  setEditingIndex(null);
-                }}
-              />
-            </div>
-
-            <div className="admission-editor__program-modal-footer">
-              <button type="button" className="primary" onClick={() => setEditingIndex(null)}>
-                Done
-              </button>
-            </div>
+            ))}
           </div>
-        </div>
-      ) : null}
+        )}
+      </section>
     </>
   );
 }
 
-function JsonSection({
-  title,
-  description,
-  value,
-  onChange,
-}: {
-  title: string;
-  description: string;
-  value: string;
-  onChange: (value: string) => void;
-}) {
+function JsonEditor({ title, description, value, onChange }: { title: string; description: string; value: string; onChange: (value: string) => void }) {
+  const error = useMemo(() => {
+    try {
+      parseJsonObject(title, value);
+      return null;
+    } catch (err) {
+      return (err as Error).message;
+    }
+  }, [title, value]);
+  const format = () => {
+    try {
+      onChange(JSON.stringify(JSON.parse(value), null, 2));
+    } catch {
+      // keep invalid text as is
+    }
+  };
   return (
-    <SectionShell title={title} description={description}>
-      <label>
-        <span>JSON</span>
-        <textarea rows={20} value={value} onChange={(event) => onChange(event.target.value)} />
-      </label>
-    </SectionShell>
+    <section className="panel">
+      <div className="panel__head">
+        <div>
+          <h3>{title}</h3>
+          <p className="muted">{description}</p>
+        </div>
+        <div className="row">
+          <span className={`tag ${error ? "tag--danger" : "tag--success"}`}><Icon name={error ? "alert" : "check"} size={12} /> {error ? "Ошибка JSON" : "JSON корректен"}</span>
+          <button type="button" className="ghost btn--sm" onClick={format} disabled={Boolean(error)}>Форматировать</button>
+        </div>
+      </div>
+      <textarea className={`code-editor${error ? " is-invalid" : ""}`} spellCheck={false} rows={22} value={value} onChange={(e) => onChange(e.target.value)} aria-label={title} />
+      {error ? <span className="error field__hint">{error}</span> : null}
+    </section>
   );
 }
 
-function AdmissionInfoEditor() {
+/* ---------------------------------------------------------------- page */
+function AdmissionInfoEditor({ section }: { section: string }) {
   const queryClient = useQueryClient();
-  const location = useLocation();
-  const [formState, setFormState] = useState<AdmissionInfoPayload | null>(null);
-  const [durationRulesText, setDurationRulesText] = useState("{}");
-  const [documentsText, setDocumentsText] = useState("{}");
-  const [scholarshipsText, setScholarshipsText] = useState("{}");
-  const [managementText, setManagementText] = useState("{}");
-  const [foreignAdmissionText, setForeignAdmissionText] = useState("{}");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const infoQuery = useQuery({ queryKey: ["admission-info"], queryFn: fetchAdmissionInfo });
+  const [form, setForm] = useState<AdmissionInfoPayload | null>(null);
+  const [jsonTexts, setJsonTexts] = useState<Record<JsonKey, string>>({} as Record<JsonKey, string>);
+  const [message, setMessage] = useState<{ tone: "success" | "danger"; text: string } | null>(null);
 
-  const admissionInfoQuery = useQuery({
-    queryKey: ["admission-info"],
-    queryFn: fetchAdmissionInfo,
-  });
+  const load = (payload: AdmissionInfoPayload) => {
+    setForm(clone(payload));
+    setJsonTexts(Object.fromEntries(JSON_KEYS.map((key) => [key, JSON.stringify(payload[key] ?? {}, null, 2)])) as Record<JsonKey, string>);
+  };
 
   useEffect(() => {
-    if (!admissionInfoQuery.data?.data) return;
-    const payload = clonePayload(admissionInfoQuery.data.data);
-    setFormState(payload);
-    setDurationRulesText(JSON.stringify(payload.duration_rules ?? {}, null, 2));
-    setDocumentsText(JSON.stringify(payload.documents ?? {}, null, 2));
-    setScholarshipsText(JSON.stringify(payload.scholarships ?? {}, null, 2));
-    setManagementText(JSON.stringify(payload.management ?? {}, null, 2));
-    setForeignAdmissionText(JSON.stringify(payload.foreign_admission ?? {}, null, 2));
-    setErrorMessage(null);
-  }, [admissionInfoQuery.data]);
+    if (infoQuery.data?.data) load(infoQuery.data.data);
+  }, [infoQuery.data]);
 
-  const saveMutation = useMutation({
+  const original = infoQuery.data?.data;
+  const dirty = useMemo(() => {
+    if (!form || !original) return false;
+    const { scholarships: _s, management: _m, foreign_admission: _f, duration_rules: _d, documents: _doc, ...rest } = form;
+    const { scholarships: _s2, management: _m2, foreign_admission: _f2, duration_rules: _d2, documents: _doc2, ...restOriginal } = original;
+    if (JSON.stringify(rest) !== JSON.stringify(restOriginal)) return true;
+    return JSON_KEYS.some((key) => jsonTexts[key] !== JSON.stringify(original[key] ?? {}, null, 2));
+  }, [form, original, jsonTexts]);
+
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+
+  const save = useMutation({
     mutationFn: updateAdmissionInfo,
     onSuccess: (response) => {
       queryClient.setQueryData(["admission-info"], response);
-      setSuccessMessage("Изменения сохранены в admission_info.json.");
-      setErrorMessage(null);
+      queryClient.invalidateQueries({ queryKey: ["admission-programs"] });
+      setMessage({ tone: "success", text: "Изменения сохранены. Агент уже использует новые данные." });
     },
-    onError: (error) => {
-      setSuccessMessage(null);
-      setErrorMessage(error instanceof Error ? error.message : "Не удалось сохранить admission_info.json.");
-    },
+    onError: (error) => setMessage({ tone: "danger", text: error instanceof Error ? error.message : "Не удалось сохранить." }),
   });
 
-  if (admissionInfoQuery.isLoading || !formState) {
-    return <SectionShell title="Admissions" description="Загрузка admission-данных..."><p>Загрузка...</p></SectionShell>;
-  }
-
-  if (admissionInfoQuery.isError) {
-    return <SectionShell title="Admissions" description="Не удалось загрузить данные."><p className="error">Ошибка загрузки.</p></SectionShell>;
-  }
-
-  const pathname = location.pathname.replace(/\/+$/, "");
-  const lastSegment = pathname.split("/").pop() || "general";
-  const section = ADMISSION_SECTIONS.some((item) => item.key === lastSegment)
-    ? (lastSegment as AdmissionSectionKey)
-    : "general";
-
-  const sourcePath = admissionInfoQuery.data?.source_path ?? "";
-
-  const updateContacts = (field: string, value: unknown) => {
-    setFormState((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        contacts: {
-          ...current.contacts,
-          [field]: value,
-        },
-      };
-    });
-  };
-
-  const updateProgram = (index: number, nextValue: AdmissionProgram) => {
-    setFormState((current) => {
-      if (!current) return current;
-      const programs = [...current.programs];
-      programs[index] = nextValue;
-      return { ...current, programs };
-    });
-  };
-
-  const removeProgram = (index: number) => {
-    setFormState((current) => {
-      if (!current) return current;
-      return {
-        ...current,
-        programs: current.programs.filter((_, itemIndex) => itemIndex !== index),
-      };
-    });
-  };
-
-  const updateTechnicalContact = (index: number, nextValue: AdmissionTechnicalContact) => {
-    const currentContacts = Array.isArray(formState.contacts.technical_contacts)
-      ? formState.contacts.technical_contacts
-      : [];
-    const nextContacts = [...currentContacts];
-    nextContacts[index] = nextValue;
-    updateContacts("technical_contacts", nextContacts);
-  };
-
-  const removeTechnicalContact = (index: number) => {
-    const currentContacts = Array.isArray(formState.contacts.technical_contacts)
-      ? formState.contacts.technical_contacts
-      : [];
-    updateContacts(
-      "technical_contacts",
-      currentContacts.filter((_, itemIndex) => itemIndex !== index),
-    );
-  };
-
-  const handleReset = () => {
-    if (!admissionInfoQuery.data?.data) return;
-    const payload = clonePayload(admissionInfoQuery.data.data);
-    setFormState(payload);
-    setDurationRulesText(JSON.stringify(payload.duration_rules ?? {}, null, 2));
-    setDocumentsText(JSON.stringify(payload.documents ?? {}, null, 2));
-    setScholarshipsText(JSON.stringify(payload.scholarships ?? {}, null, 2));
-    setManagementText(JSON.stringify(payload.management ?? {}, null, 2));
-    setForeignAdmissionText(JSON.stringify(payload.foreign_admission ?? {}, null, 2));
-    setErrorMessage(null);
-    setSuccessMessage(null);
-  };
+  if (infoQuery.isLoading || (!form && !infoQuery.isError)) return <LoadingRows rows={4} height={80} />;
+  if (infoQuery.isError || !form) return <Callout tone="danger" title="Не удалось загрузить данные приёмной комиссии">{(infoQuery.error as Error | null)?.message}</Callout>;
 
   const handleSave = () => {
     try {
+      const jsonBlocks = Object.fromEntries(
+        JSON_KEYS.map((key) => [key, parseJsonObject(Object.values(JSON_SECTIONS).find((s) => s.key === key)?.title ?? key, jsonTexts[key])]),
+      );
       const payload: AdmissionInfoPayload = {
-        ...formState,
+        ...form,
+        ...jsonBlocks,
         contacts: {
-          ...formState.contacts,
-          phone: formState.contacts.phone ?? [],
-          email: formState.contacts.email ?? [],
-          technical_contacts: (formState.contacts.technical_contacts ?? []).map((contact) => ({
-            ...contact,
-            name: contact.name.trim(),
-            phone: contact.phone.trim(),
-            note: (contact.note ?? "").trim(),
-          })),
+          ...form.contacts,
+          phone: form.contacts.phone ?? [],
+          email: form.contacts.email ?? [],
+          technical_contacts: (form.contacts.technical_contacts ?? [])
+            .map((contact) => ({ ...contact, name: contact.name.trim(), phone: contact.phone.trim(), note: (contact.note ?? "").trim() }))
+            .filter((contact) => contact.name || contact.phone),
         },
-        scholarships: parseJsonSection("Блок scholarships", scholarshipsText),
-        management: parseJsonSection("Блок management", managementText),
-        foreign_admission: parseJsonSection("Блок foreign_admission", foreignAdmissionText),
-        duration_rules: parseJsonSection("Блок duration_rules", durationRulesText),
-        documents: parseJsonSection("Блок documents", documentsText),
-        programs: formState.programs.map((program) => ({
+        programs: form.programs.map((program) => ({
           ...program,
           name: program.name.trim(),
           id: (program.id ?? "").trim(),
@@ -975,10 +412,7 @@ function AdmissionInfoEditor() {
           source: (program.source ?? "").trim(),
           aliases: (program.aliases ?? []).map((item) => item.trim()).filter(Boolean),
           duration: typeof program.duration === "string" ? program.duration.trim() : program.duration,
-          tuition: {
-            ...program.tuition,
-            period: typeof program.tuition.period === "string" ? program.tuition.period.trim() : program.tuition.period,
-          },
+          tuition: { ...program.tuition, period: typeof program.tuition.period === "string" ? program.tuition.period.trim() : program.tuition.period },
           passing_score: {
             ...program.passing_score,
             exam: typeof program.passing_score.exam === "string" ? program.passing_score.exam.trim() : program.passing_score.exam,
@@ -986,142 +420,94 @@ function AdmissionInfoEditor() {
           },
         })),
       };
-      setSuccessMessage(null);
-      setErrorMessage(null);
-      saveMutation.mutate(payload);
+      setMessage(null);
+      save.mutate(payload);
     } catch (error) {
-      setSuccessMessage(null);
-      setErrorMessage(error instanceof Error ? error.message : "Не удалось подготовить данные к сохранению.");
+      setMessage({ tone: "danger", text: (error as Error).message });
     }
   };
 
-  let content: ReactNode = null;
-  if (section === "general") {
-    content = <GeneralSection formState={formState} setFormState={setFormState} />;
+  const reset = () => {
+    if (original && window.confirm("Отменить все несохранённые изменения?")) {
+      load(original);
+      setMessage(null);
+    }
+  };
+
+  const jsonSection = JSON_SECTIONS[section];
+  let content: ReactNode;
+  if (section === "programs") {
+    content = <ProgramsSection programs={form.programs} onChange={(programs) => setForm({ ...form, programs })} />;
   } else if (section === "contacts") {
-    content = (
-      <ContactsSection
-        formState={formState}
-        updateContacts={updateContacts}
-        updateTechnicalContact={updateTechnicalContact}
-        removeTechnicalContact={removeTechnicalContact}
-      />
-    );
-  } else if (section === "scholarships") {
-    content = (
-      <JsonSection
-        title="Стипендии и госгранты"
-        description="Отдельная страница для блока scholarships."
-        value={scholarshipsText}
-        onChange={setScholarshipsText}
-      />
-    );
-  } else if (section === "management") {
-    content = (
-      <JsonSection
-        title="Руководство"
-        description="Отдельная страница для блока management."
-        value={managementText}
-        onChange={setManagementText}
-      />
-    );
-  } else if (section === "foreign-admission") {
-    content = (
-      <JsonSection
-        title="Прием иностранных граждан"
-        description="Отдельная страница для блока foreign_admission."
-        value={foreignAdmissionText}
-        onChange={setForeignAdmissionText}
-      />
-    );
-  } else if (section === "programs") {
-    content = (
-      <ProgramsSection
-        programs={formState.programs}
-        updateProgram={updateProgram}
-        removeProgram={removeProgram}
-        addProgram={() => setFormState((current) => current ? { ...current, programs: [...current.programs, createEmptyProgram()] } : current)}
-      />
-    );
-  } else if (section === "durations") {
-    content = (
-      <JsonSection
-        title="Сроки обучения"
-        description="Отдельная страница для блока duration_rules."
-        value={durationRulesText}
-        onChange={setDurationRulesText}
-      />
-    );
-  } else if (section === "documents") {
-    content = (
-      <JsonSection
-        title="Документы"
-        description="Отдельная страница для блока documents."
-        value={documentsText}
-        onChange={setDocumentsText}
-      />
-    );
+    content = <ContactsSection contacts={form.contacts} onChange={(patch) => setForm({ ...form, contacts: { ...form.contacts, ...patch } })} />;
   } else if (section === "applications") {
     content = <AdmissionApplications />;
+  } else if (jsonSection) {
+    content = (
+      <JsonEditor
+        title={jsonSection.title}
+        description={jsonSection.description}
+        value={jsonTexts[jsonSection.key] ?? "{}"}
+        onChange={(value) => setJsonTexts({ ...jsonTexts, [jsonSection.key]: value })}
+      />
+    );
+  } else {
+    content = (
+      <section className="panel">
+        <h3>Общие данные</h3>
+        <div className="form-grid">
+          <Field label="Учреждение" wide><input value={form.institution} onChange={(e) => setForm({ ...form, institution: e.target.value })} /></Field>
+          <Field label="Валюта"><input value={form.currency} onChange={(e) => setForm({ ...form, currency: e.target.value })} /></Field>
+          <Field label="Последнее обновление" hint="Заполняется автоматически при сохранении"><input value={form.last_updated ?? ""} readOnly /></Field>
+        </div>
+        <p className="muted field__hint">Файл данных: <code>{infoQuery.data?.source_path}</code></p>
+      </section>
+    );
   }
 
   return (
-    <div className="admissions-admin-page">
-      <div className="feature-section admissions-admin-shell">
-        <div className="feature-section__header">
-          <div>
-            <p className="eyebrow">Admissions</p>
-            <h2>Управление admission_info.json</h2>
-            <p className="muted">Каждый блок вынесен на отдельную страницу внутри раздела admissions.</p>
-          </div>
-          <span className="feature-section__status">{formState.programs.length} programs</span>
-        </div>
+    <div className="stack-lg">
+      <PageHeader
+        eyebrow="База знаний"
+        title="Приёмная комиссия"
+        description={<>Структурированные данные, по которым агент отвечает абитуриентам: {formatNumber(form.programs.length)} программ, контакты, документы и гранты.</>}
+      />
 
-        <div className="admin-toolbar">
-          <div className="admin-toolbar__summary">
-            <strong>Файл: {sourcePath}</strong>
-            <span className="muted">Последнее обновление: {formState.last_updated || "не указано"}</span>
-          </div>
-          {section !== "applications" ? (
-            <div className="admission-editor__actions">
-              <button type="button" className="ghost" onClick={handleReset} disabled={saveMutation.isPending}>
-                Сбросить
-              </button>
-              <button type="button" className="primary" onClick={handleSave} disabled={saveMutation.isPending}>
-                {saveMutation.isPending ? "Сохранение..." : "Сохранить"}
-              </button>
-            </div>
-          ) : null}
-        </div>
+      <nav className="subnav" aria-label="Разделы">
+        {SECTIONS.map((item) => (
+          <NavLink key={item.key} to={`/admissions/${item.key}`} className={({ isActive }) => `subnav__item${isActive ? " is-active" : ""}`}>
+            <Icon name={item.icon} size={15} /> {item.label}
+          </NavLink>
+        ))}
+      </nav>
 
-        {errorMessage ? <p className="error">{errorMessage}</p> : null}
-        {successMessage ? <p className="success-text">{successMessage}</p> : null}
+      {message ? (
+        <Callout tone={message.tone} title={message.tone === "success" ? "Готово" : "Ошибка"} action={<button type="button" className="ghost btn--sm" onClick={() => setMessage(null)}>Скрыть</button>}>
+          {message.text}
+        </Callout>
+      ) : null}
 
-        <div className="admissions-admin-layout">
-          <aside className="admissions-admin-sidebar">
-            {ADMISSION_SECTIONS.map((item) => (
-              <NavLink
-                key={item.key}
-                to={`/admissions/${item.key}`}
-                className={({ isActive }) => `admissions-admin-sidebar__link${isActive ? " active" : ""}`}
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </aside>
-          <div className="admissions-admin-content">
-            {content}
+      {content}
+
+      {dirty && section !== "applications" ? (
+        <div className="save-bar" role="status">
+          <span><span className="status-dot status-dot--warning" /> Есть несохранённые изменения</span>
+          <div className="row">
+            <button type="button" className="ghost" onClick={reset} disabled={save.isPending}>Отменить</button>
+            <button type="button" className="primary" onClick={handleSave} disabled={save.isPending}>
+              {save.isPending ? <span className="spinner spinner--on-brand" /> : <Icon name="check" size={16} />} Сохранить
+            </button>
           </div>
         </div>
-      </div>
+      ) : null}
     </div>
   );
 }
 
 export function AdmissionsAdmin() {
   const location = useLocation();
-  if (location.pathname === "/admissions" || location.pathname === "/admissions/") {
-    return <Navigate to="/admissions/general" replace />;
-  }
-  return <AdmissionInfoEditor />;
+  const segment = location.pathname.replace(/\/+$/, "").split("/")[2];
+  if (!segment) return <Navigate to="/admissions/programs" replace />;
+  if (!SECTIONS.some((item) => item.key === segment)) return <Navigate to="/admissions/programs" replace />;
+  return <AdmissionInfoEditor section={segment} />;
 }

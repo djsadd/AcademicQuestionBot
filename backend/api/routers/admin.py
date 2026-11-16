@@ -33,12 +33,18 @@ def healthcheck() -> dict:
 
 @router.get("/platonus/session")
 def platonus_session_status() -> dict:
-    return fetch_platonus_session_status()
+    try:
+        return fetch_platonus_session_status()
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=f"Сервис Platonus недоступен: {exc}") from exc
 
 
 @router.get("/platonus/student-academic-calendar/{person_id}")
 def platonus_student_academic_calendar(person_id: str, lang: str = "ru") -> Any:
-    return fetch_student_academic_calendar(person_id, lang)
+    try:
+        return fetch_student_academic_calendar(person_id, lang)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=f"Сервис Platonus недоступен: {exc}") from exc
 
 
 @router.get("/admission-applications")

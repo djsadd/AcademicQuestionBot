@@ -1,6 +1,7 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { apiClient } from "../api/client";
+import { LogoMark } from "./ui/Logo";
 
 const TRANSLATIONS = {
   kk: {
@@ -160,82 +161,48 @@ export function MiniApp() {
     }
   };
 
+  const languages = [
+    { value: "kk", label: "Қаз" },
+    { value: "ru", label: "Рус" },
+    { value: "en", label: "Eng" },
+  ] as const;
+
   return (
-    <section className="mini-app">
-      <div className="mini-app__card">
-        <div className="mini-app__head">
-          <p className="mini-app__eyebrow">Academic Question Bot</p>
-          <h1 className="mini-app__title">Platonus access</h1>
-          <p className="mini-app__subtitle">
-            Подключите студенческий профиль, чтобы открыть чат и академические сервисы.
-          </p>
+    <div className="auth-card mini-app">
+      <div className="mini-app__top">
+        <LogoMark size={40} />
+        <div className="segmented" role="group" aria-label="Язык">
+          {languages.map((item) => (
+            <button key={item.value} type="button" className={language === item.value ? "is-active" : undefined} onClick={() => setLanguage(item.value)}>
+              {item.label}
+            </button>
+          ))}
         </div>
-        <div className="mini-app__lang">
-          <button
-            type="button"
-            className={language === "kk" ? "active" : undefined}
-            onClick={() => setLanguage("kk")}
-          >
-            Қазақша
-          </button>
-          <button
-            type="button"
-            className={language === "ru" ? "active" : undefined}
-            onClick={() => setLanguage("ru")}
-          >
-            Русский
-          </button>
-          <button
-            type="button"
-            className={language === "en" ? "active" : undefined}
-            onClick={() => setLanguage("en")}
-          >
-            English
-          </button>
-        </div>
-
-        <form className="mini-app__form" onSubmit={handleSubmit}>
-          <label className="mini-app__field">
-            <span>{t.login}</span>
-            <input
-              type="text"
-              name="login"
-              placeholder={t.loginPlaceholder}
-              value={login}
-              onChange={(event) => setLogin(event.target.value)}
-              autoComplete="username"
-            />
-          </label>
-
-          <label className="mini-app__field">
-            <span>{t.password}</span>
-            <input
-              type="password"
-              name="password"
-              placeholder={t.passwordPlaceholder}
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              autoComplete="current-password"
-            />
-          </label>
-
-          <label className="mini-app__agreement">
-            <input
-              type="checkbox"
-              checked={agreed}
-              onChange={(event) => setAgreed(event.target.checked)}
-            />
-            <span>{t.agree}</span>
-          </label>
-
-          <button className="primary" type="submit" disabled={!canSubmit}>
-            {busy ? t.submitting : t.submit}
-          </button>
-
-          {status ? <p className="mini-app__status">{status}</p> : null}
-        </form>
       </div>
-    </section>
+      <div className="auth-card__head">
+        <h1>Platonus</h1>
+        <p className="muted">Подключите студенческий профиль, чтобы открыть чат и академические сервисы.</p>
+      </div>
+
+      <form className="auth-form" onSubmit={handleSubmit}>
+        <label className="field">
+          <span className="field__label">{t.login}</span>
+          <input type="text" name="login" placeholder={t.loginPlaceholder} value={login} onChange={(event) => setLogin(event.target.value)} autoComplete="username" />
+        </label>
+        <label className="field">
+          <span className="field__label">{t.password}</span>
+          <input type="password" name="password" placeholder={t.passwordPlaceholder} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" />
+        </label>
+        <label className="checkbox">
+          <input type="checkbox" checked={agreed} onChange={(event) => setAgreed(event.target.checked)} />
+          <span>{t.agree}</span>
+        </label>
+        {status ? <div className="callout callout--info"><span className="callout__text">{status}</span></div> : null}
+        <button className="primary btn--lg auth-form__submit" type="submit" disabled={!canSubmit}>
+          {busy ? <span className="spinner spinner--on-brand" /> : null}
+          {busy ? t.submitting : t.submit}
+        </button>
+      </form>
+    </div>
   );
 }
-

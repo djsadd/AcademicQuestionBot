@@ -66,17 +66,6 @@ app = FastAPI(
     openapi_url=None if settings.is_production else "/api/openapi.json",
 )
 
-allow_all = "*" in settings.cors_origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"] if allow_all else list(settings.cors_origins),
-    # Credentials must not be combined with a wildcard origin.
-    allow_credentials=not allow_all,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["X-Request-ID"],
-)
-app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 @app.middleware("http")
@@ -96,6 +85,21 @@ async def request_context(request: Request, call_next):
     if not request.url.path.startswith("/api/health"):
         logger.info("%s %s -> %s %.0fms [%s]", request.method, request.url.path, response.status_code, elapsed, request_id)
     return response
+
+
+# Added last = outermost: CORS headers are present even on error responses,
+# so the browser shows the real error instead of a misleading "CORS policy" one.
+allow_all = "*" in settings.cors_origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"] if allow_all else list(settings.cors_origins),
+    # Credentials must not be combined with a wildcard origin.
+    allow_credentials=not allow_all,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["X-Request-ID"],
+)
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 @app.get("/api/health", tags=["health"])
