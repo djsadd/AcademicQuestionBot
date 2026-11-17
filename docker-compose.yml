@@ -154,6 +154,8 @@ volumes:
   qdrant_data:
     name: academicquestionbot_qdrant_data
   postgres_data:
-    name: academicquestionbot_postgres_data
+    # To keep using data from an older (e.g. anonymous) volume, set POSTGRES_VOLUME
+    # in .env to its name — see scripts/find_postgres_volumes.sh.
+    name: ${POSTGRES_VOLUME:-academicquestionbot_postgres_data}
   redis_data:
     name: academicquestionbot_redis_data
